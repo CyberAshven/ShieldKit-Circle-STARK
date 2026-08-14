@@ -1,0 +1,25 @@
+# OS / editor
+.DS_Store
+*.swp
+*~
+.idea/
+.vscode/
+
+# Secrets — never commit
+*.wif
+*.pem
+*wallet*.json
+**/funding-wallet.json
+.env
+.env.*
+
+# Local scratch
+.cache/
+.local/
+node_modules/
+.atlas-cycle-stage-*
+Telegram_export/
+research-lanes/bch-shielded-pool-design/sources/telegram-2026-07-29/
+__pycache__/
+*.py[cod]
+.pytest_cache/

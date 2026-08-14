@@ -1,0 +1,2 @@
+node --test *.test.mjs
+node generate.mjs --check
