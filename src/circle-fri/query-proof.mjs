@@ -133,7 +133,7 @@ const indexTopology = (topology, layerLength) => {
   return Object.freeze({ ...topology, pairByLeaf, layerLength });
 };
 
-const buildPublicTopologies = (parameters) => {
+export const buildCircleFriPublicTopologies = (parameters) => {
   const topologies = [];
   let domain = buildStandardCoset(parameters.logDomain);
   for (let round = 0; round < parameters.logDegreeBound; round += 1) {
@@ -306,7 +306,7 @@ const verifyCircleFriQueriesOrThrow = ({
   }
   transcript.absorb('fri-final-codeword', encodeM31Vector(proof.finalCodeword, 'finalCodeword'));
   const queryIndices = deriveUniqueQueryIndices(transcript, parameters.queryCount, parameters.domainLength);
-  const topologies = buildPublicTopologies(parameters);
+  const topologies = buildCircleFriPublicTopologies(parameters);
 
   for (let query = 0; query < queryIndices.length; query += 1) {
     let currentIndex = queryIndices[query];
