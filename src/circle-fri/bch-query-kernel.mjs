@@ -69,6 +69,7 @@ const OP = Object.freeze({
   OP_1: 0x51,
   OP_2: 0x52,
   OP_INPUTINDEX: 0xc0,
+  OP_TXINPUTCOUNT: 0xc3,
   OP_IF: 0x63,
   OP_BEGIN: 0x65,
   OP_UNTIL: 0x66,
@@ -706,6 +707,7 @@ export const createBchCircleFriQueryFixture = ({
   protocolContext = new Uint8Array(),
   queryOrdinal = 0,
   queryInputBaseIndex = 0,
+  expectedTransactionInputCount,
 }) => {
   const verdict = verifyCircleFriQueries({ proof, expected, protocolContext });
   require(verdict.ok, `Circle-FRI proof must verify before BCH lowering: ${verdict.reason ?? 'invalid'}`);
@@ -713,6 +715,14 @@ export const createBchCircleFriQueryFixture = ({
   require(Number.isSafeInteger(queryOrdinal) && queryOrdinal >= 0 && queryOrdinal < parameters.queryCount, 'queryOrdinal is out of range');
   require(Number.isSafeInteger(queryInputBaseIndex) && queryInputBaseIndex >= 0, 'queryInputBaseIndex is out of range');
   require(queryInputBaseIndex <= 0xffff_ffff - parameters.queryCount, 'query input segment exceeds the u32 input-index range');
+  const minimumTransactionInputCount = queryInputBaseIndex + parameters.queryCount;
+  const transactionInputCount = expectedTransactionInputCount ?? minimumTransactionInputCount;
+  require(
+    Number.isSafeInteger(transactionInputCount)
+      && transactionInputCount >= minimumTransactionInputCount
+      && transactionInputCount <= 0xffff_ffff,
+    'expectedTransactionInputCount does not cover the query segment',
+  );
   const transcriptTrace = buildHostTranscriptTrace({ proof, parameters, protocolContext });
   for (let queryIndex = 0; queryIndex < parameters.queryCount; queryIndex += 1) {
     require(transcriptTrace.queries[queryIndex].index === verdict.queryIndices[queryIndex], `host transcript query trace disagrees at query ${queryIndex}`);
@@ -763,6 +773,7 @@ export const createBchCircleFriQueryFixture = ({
     topologyOpeningRuntimeSupplied: true,
     topologyPlanRuntimeConsumed: true,
     activeInputIndexQuerySelection: true,
+    transactionInputCountRuntimeBound: true,
     proofSpecificRedeem: false,
     queryOrdinalSpecificRedeem: false,
     parameters,
@@ -771,6 +782,7 @@ export const createBchCircleFriQueryFixture = ({
     selectedQueryTrace: transcriptTrace.queries[queryOrdinal],
     queryOrdinal,
     queryInputBaseIndex,
+    expectedTransactionInputCount: transactionInputCount,
     initialQueryIndex: verdict.queryIndices[queryOrdinal],
     finalIndex: currentIndex,
     finalCodeword: proof.finalCodeword.slice(),
@@ -781,7 +793,13 @@ export const createBchCircleFriQueryFixture = ({
 };
 
 const buildCanonicalQueryDerivation = (fixture) => {
-  const script = [];
+  const script = [
+    // INPUTINDEX alone does not prove that every query input exists. Bind the
+    // exact surrounding transaction input roster before selecting a query.
+    OP.OP_TXINPUTCOUNT,
+    ...pushNumber(fixture.expectedTransactionInputCount),
+    OP.OP_NUMEQUALVERIFY,
+  ];
   for (let query = 0; query < fixture.parameters.queryCount; query += 1) {
     if (query > 0) script.push(OP.OP_BEGIN);
     script.push(
@@ -1050,6 +1068,7 @@ export const encodeBchCircleFriMultiQueryTransactionFixture = (fixtures) => {
     require(fixture.kind === 'circle-fri-transcript-bound-query-component-v2', 'invalid multi-query fixture');
     require(fixture.parameters.queryCount === expectedCount, 'multi-query parameter mismatch');
     require(fixture.queryInputBaseIndex === queryInputBaseIndex, 'multi-query input-base mismatch');
+    require(fixture.expectedTransactionInputCount === expectedCount, 'multi-query transaction-input-count mismatch');
     require(binToHex(fixture.transcriptTrace.finalState) === transcriptIdentity, 'multi-query transcript mismatch');
   }
 
