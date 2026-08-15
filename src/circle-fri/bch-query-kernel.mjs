@@ -57,11 +57,13 @@ const OP = Object.freeze({
   OP_VERIFY: 0x69,
   OP_TOALTSTACK: 0x6b,
   OP_FROMALTSTACK: 0x6c,
+  OP_2DROP: 0x6d,
   OP_2DUP: 0x6e,
   OP_DROP: 0x75,
   OP_DUP: 0x76,
   OP_PICK: 0x79,
   OP_ROLL: 0x7a,
+  OP_2SWAP: 0x72,
   OP_SWAP: 0x7c,
   OP_CAT: 0x7e,
   OP_SPLIT: 0x7f,
@@ -88,6 +90,10 @@ const FUNCTION = Object.freeze({
   HASH_NODE_RIGHT: 3,
   DECODE_M31: 4,
   FOLD_M31: 5,
+  SAMPLE_TRANSCRIPT: 6,
+  HASH_PACKED_NODE_LEFT: 7,
+  HASH_PACKED_NODE_RIGHT: 8,
+  SAMPLE_M31_TRANSCRIPT: 9,
 });
 
 const HALF = (M31_MODULUS + 1n) / 2n;
@@ -203,7 +209,6 @@ const buildTranscriptChallenge = ({ label, upperBound, acceptedAttempt }) => {
   require(Number.isSafeInteger(acceptedAttempt) && acceptedAttempt >= 0, 'accepted challenge attempt is out of range');
   const acceptanceBound = Math.floor(TWO_TO_32 / upperBound) * upperBound;
   const labelFrame = frameBytes('accepted-challenge-label', utf8(label));
-  const digestFramePrefix = framePrefix('accepted-challenge-digest', 32);
   const script = [];
 
   for (let attempt = 0; attempt <= acceptedAttempt; attempt += 1) {
@@ -211,6 +216,25 @@ const buildTranscriptChallenge = ({ label, upperBound, acceptedAttempt }) => {
       frameBytes('label', utf8(label)),
       frameBytes('attempt', u32le(attempt)),
     );
+    if (attempt === acceptedAttempt) {
+      script.push(
+        ...encodeMinimalDataPush(drawSuffix),
+        ...encodeMinimalDataPush(labelFrame),
+        ...encodeMinimalDataPush(frameBytes('accepted-challenge-attempt', u32le(attempt))),
+        ...(upperBound === Number(M31_MODULUS)
+          ? invokeFunction(FUNCTION.SAMPLE_M31_TRANSCRIPT)
+          : [
+              OP.OP_TOALTSTACK,
+              OP.OP_TOALTSTACK,
+              ...pushNumber(upperBound),
+              ...pushNumber(acceptanceBound),
+              OP.OP_FROMALTSTACK,
+              OP.OP_FROMALTSTACK,
+              ...invokeFunction(FUNCTION.SAMPLE_TRANSCRIPT),
+            ]),
+      );
+      continue;
+    }
     script.push(
       OP.OP_DUP,
       ...encodeMinimalDataPush(CIRCLE_FRI_SQUEEZE_DOMAIN),
@@ -220,35 +244,10 @@ const buildTranscriptChallenge = ({ label, upperBound, acceptedAttempt }) => {
       OP.OP_CAT,
       OP.OP_SHA256,
       ...buildTranscriptCandidate(),
-    );
-    if (attempt < acceptedAttempt) {
-      script.push(
-        ...pushNumber(acceptanceBound),
-        OP.OP_GREATERTHANOREQUAL,
-        OP.OP_VERIFY,
-        OP.OP_DROP,
-      );
-      continue;
-    }
-    script.push(
-      OP.OP_DUP,
       ...pushNumber(acceptanceBound),
-      OP.OP_LESSTHAN,
+      OP.OP_GREATERTHANOREQUAL,
       OP.OP_VERIFY,
-      ...pushNumber(upperBound),
-      OP.OP_MOD,
-      OP.OP_TOALTSTACK,
-      OP.OP_SWAP,
-      ...encodeMinimalDataPush(labelFrame),
-      OP.OP_CAT,
-      ...encodeMinimalDataPush(digestFramePrefix),
-      OP.OP_CAT,
-      OP.OP_SWAP,
-      OP.OP_CAT,
-      ...encodeMinimalDataPush(frameBytes('accepted-challenge-attempt', u32le(attempt))),
-      OP.OP_CAT,
-      OP.OP_SHA256,
-      OP.OP_FROMALTSTACK,
+      OP.OP_DROP,
     );
   }
   return script;
@@ -280,6 +279,19 @@ const buildHashNodeFunction = (currentIsLeft) => Uint8Array.from([
 
 const HASH_NODE_LEFT_FUNCTION = buildHashNodeFunction(true);
 const HASH_NODE_RIGHT_FUNCTION = buildHashNodeFunction(false);
+const buildPackedHashNodeFunction = (nodeFunction) => Uint8Array.from([
+  // Input: packed siblings (next sibling is the final 32 bytes), current hash.
+  OP.OP_SWAP,
+  OP.OP_SIZE,
+  ...pushNumber(32),
+  OP.OP_SUB,
+  OP.OP_SPLIT,
+  OP.OP_2,
+  OP.OP_ROLL,
+  ...invokeFunction(nodeFunction),
+]);
+const HASH_PACKED_NODE_LEFT_FUNCTION = buildPackedHashNodeFunction(FUNCTION.HASH_NODE_LEFT);
+const HASH_PACKED_NODE_RIGHT_FUNCTION = buildPackedHashNodeFunction(FUNCTION.HASH_NODE_RIGHT);
 const DECODE_M31_FUNCTION = Uint8Array.from(decodeFixedM31Top());
 const FOLD_M31_FUNCTION = Uint8Array.from([
   // Input stack: left, right, inverse, coordinate, beta.
@@ -325,12 +337,72 @@ const FOLD_M31_FUNCTION = Uint8Array.from([
   OP.OP_MOD,
 ]);
 
+const SAMPLE_TRANSCRIPT_FUNCTION = Uint8Array.from([
+  // Input: state, drawSuffix, upperBound, acceptanceBound, labelFrame, attemptFrame.
+  OP.OP_TOALTSTACK, // attemptFrame
+  OP.OP_TOALTSTACK, // labelFrame
+  OP.OP_SWAP,
+  OP.OP_TOALTSTACK, // upperBound
+  OP.OP_TOALTSTACK, // acceptanceBound
+
+  // Preserve state while hashing SQUEEZE_DOMAIN || state || drawSuffix.
+  OP.OP_SWAP,
+  OP.OP_DUP,
+  ...encodeMinimalDataPush(CIRCLE_FRI_SQUEEZE_DOMAIN),
+  OP.OP_SWAP,
+  OP.OP_CAT,
+  OP.OP_2,
+  OP.OP_ROLL,
+  OP.OP_CAT,
+  OP.OP_SHA256, // state, digest
+
+  ...buildTranscriptCandidate(), // state, digest, unsigned candidate
+  OP.OP_DUP,
+  OP.OP_FROMALTSTACK, // acceptanceBound
+  OP.OP_LESSTHAN,
+  OP.OP_VERIFY,
+  OP.OP_FROMALTSTACK, // upperBound
+  OP.OP_MOD, // state, digest, sampled value
+
+  // Hash state || labelFrame || frame(digest) || attemptFrame.
+  OP.OP_2,
+  OP.OP_PICK, // state copy
+  OP.OP_FROMALTSTACK, // labelFrame
+  OP.OP_CAT,
+  ...encodeMinimalDataPush(framePrefix('accepted-challenge-digest', 32)),
+  OP.OP_CAT,
+  OP.OP_2,
+  OP.OP_PICK, // digest copy
+  OP.OP_CAT,
+  OP.OP_FROMALTSTACK, // attemptFrame
+  OP.OP_CAT,
+  OP.OP_SHA256, // state, digest, value, nextState
+  OP.OP_2SWAP,
+  OP.OP_2DROP,
+  OP.OP_SWAP, // nextState, sampled value
+]);
+
+const SAMPLE_M31_TRANSCRIPT_FUNCTION = Uint8Array.from([
+  // Input: state, drawSuffix, labelFrame, attemptFrame.
+  OP.OP_TOALTSTACK,
+  OP.OP_TOALTSTACK,
+  ...pushNumber(M31_MODULUS),
+  ...pushNumber(Number(M31_MODULUS) * 2),
+  OP.OP_FROMALTSTACK,
+  OP.OP_FROMALTSTACK,
+  ...invokeFunction(FUNCTION.SAMPLE_TRANSCRIPT),
+]);
+
 export const BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES = (
   HASH_LEAF_FUNCTION.length
   + HASH_NODE_LEFT_FUNCTION.length
   + HASH_NODE_RIGHT_FUNCTION.length
   + DECODE_M31_FUNCTION.length
   + FOLD_M31_FUNCTION.length
+  + SAMPLE_TRANSCRIPT_FUNCTION.length
+  + HASH_PACKED_NODE_LEFT_FUNCTION.length
+  + HASH_PACKED_NODE_RIGHT_FUNCTION.length
+  + SAMPLE_M31_TRANSCRIPT_FUNCTION.length
 );
 
 const QUERY_FUNCTION_DEFINITIONS = concat(
@@ -339,6 +411,10 @@ const QUERY_FUNCTION_DEFINITIONS = concat(
   defineFunction(FUNCTION.HASH_NODE_RIGHT, HASH_NODE_RIGHT_FUNCTION),
   defineFunction(FUNCTION.DECODE_M31, DECODE_M31_FUNCTION),
   defineFunction(FUNCTION.FOLD_M31, FOLD_M31_FUNCTION),
+  defineFunction(FUNCTION.SAMPLE_TRANSCRIPT, SAMPLE_TRANSCRIPT_FUNCTION),
+  defineFunction(FUNCTION.HASH_PACKED_NODE_LEFT, HASH_PACKED_NODE_LEFT_FUNCTION),
+  defineFunction(FUNCTION.HASH_PACKED_NODE_RIGHT, HASH_PACKED_NODE_RIGHT_FUNCTION),
+  defineFunction(FUNCTION.SAMPLE_M31_TRANSCRIPT, SAMPLE_M31_TRANSCRIPT_FUNCTION),
 );
 
 const assertHash = (value, name) => {
@@ -353,10 +429,11 @@ const buildMerklePartialVerification = ({ leafIndex, siblings }) => {
   for (let level = 0; level < siblings.length; level += 1) {
     assertHash(siblings[level], `siblings[${level}]`);
     script.push(...invokeFunction(
-      (index & 1) === 0 ? FUNCTION.HASH_NODE_LEFT : FUNCTION.HASH_NODE_RIGHT,
+      (index & 1) === 0 ? FUNCTION.HASH_PACKED_NODE_LEFT : FUNCTION.HASH_PACKED_NODE_RIGHT,
     ));
     index = Math.floor(index / 2);
   }
+  script.push(OP.OP_SWAP, OP.OP_0, OP.OP_EQUALVERIFY);
   return Object.freeze({ script, branchIndex: index });
 };
 
@@ -595,13 +672,14 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
 export const buildBchCircleFriQueryOperandUnlockingBytecode = (fixture) => {
   require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v1', 'query fixture is required');
   const operands = [];
+  const packPartialPath = (siblings) => concat(...siblings.slice(0, -1).reverse());
   for (let round = fixture.rounds.length - 1; round >= 0; round -= 1) {
     const item = fixture.rounds[round];
     operands.push(
       encodeM31(item.inverseTwoCoordinate),
-      ...item.opening.rightSiblings.slice(0, -1).reverse(),
+      packPartialPath(item.opening.rightSiblings),
       encodeM31(item.opening.rightValue),
-      ...item.opening.leftSiblings.slice(0, -1).reverse(),
+      packPartialPath(item.opening.leftSiblings),
       encodeM31(item.opening.leftValue),
     );
   }
