@@ -4,7 +4,11 @@
   "private": true,
   "description": "Private BCH privacy architecture research atlas",
   "type": "module",
+  "exports": {
+    "./circle-fri": "./src/circle-fri/index.mjs"
+  },
   "scripts": {
+    "circle-fri:test": "node --test test/circle-fri/*.test.mjs",
     "atlas": "node tools/atlas/cli.mjs",
     "atlas:validate": "node tools/atlas/cli.mjs validate",
     "atlas:status": "node tools/atlas/cli.mjs status",
