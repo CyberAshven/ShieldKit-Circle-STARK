@@ -49,20 +49,13 @@ export const foldPair = ({ positive, negative, coordinate, beta }) => {
   });
 };
 
-/**
- * First Circle-FRI layer: fold J twins (x,+/-y) to the distinct x line.
- */
-export const foldJLayer = (domain, codeword, beta) => {
+export const buildJFoldTopology = (domain) => {
   if (!Array.isArray(domain) || domain.length < 2 || (domain.length & 1) !== 0) {
     fail('J domain must contain an even number of points');
   }
-  const values = assertCodeword(codeword, domain.length);
-  const challenge = assertElement(beta, 'beta');
   const half = domain.length / 2;
-  const xDomain = new Array(half);
-  const folded = new Array(half);
+  const nextDomain = new Array(half);
   const pairs = new Array(half);
-
   for (let index = 0; index < half; index += 1) {
     const twin = jTwinIndex(index, domain.length);
     const positive = assertCirclePoint(domain[index], `domain[${index}]`);
@@ -70,29 +63,23 @@ export const foldJLayer = (domain, codeword, beta) => {
     if (positive.x !== negative.x || positive.y !== neg(negative.y)) {
       fail(`domain points ${index} and ${twin} are not J twins`);
     }
-    const result = foldPair({
-      positive: values[index],
-      negative: values[twin],
+    if (positive.y === 0n) fail(`domain points ${index} and ${twin} have zero fold coordinate`);
+    nextDomain[index] = positive.x;
+    pairs[index] = Object.freeze({
+      leftIndex: index,
+      rightIndex: twin,
       coordinate: positive.y,
-      beta: challenge,
+      image: positive.x,
     });
-    xDomain[index] = positive.x;
-    folded[index] = result.value;
-    pairs[index] = Object.freeze({ index, twin, x: positive.x, y: positive.y, ...result });
   }
-  return Object.freeze({ domain: xDomain, codeword: folded, pairs });
+  return Object.freeze({ domain: nextDomain, pairs });
 };
 
-/**
- * Later Circle-FRI layers: fold x and -x to pi(x)=2*x^2-1.
- */
-export const foldPiLayer = (xDomain, codeword, beta) => {
+export const buildPiFoldTopology = (xDomain) => {
   if (!Array.isArray(xDomain) || xDomain.length < 2 || (xDomain.length & 1) !== 0) {
     fail('pi domain must contain an even number of x coordinates');
   }
   const xs = xDomain.map((x, index) => assertElement(x, `xDomain[${index}]`));
-  const values = assertCodeword(codeword, xs.length);
-  const challenge = assertElement(beta, 'beta');
   const byImage = new Map();
   for (let index = 0; index < xs.length; index += 1) {
     const image = piX(xs[index]);
@@ -103,7 +90,6 @@ export const foldPiLayer = (xDomain, codeword, beta) => {
   }
 
   const nextDomain = [];
-  const folded = [];
   const pairs = [];
   for (const [imageText, indices] of byImage) {
     if (indices.length !== 2) fail(`pi image ${imageText} does not have exactly two preimages`);
@@ -111,24 +97,64 @@ export const foldPiLayer = (xDomain, codeword, beta) => {
     const leftX = xs[leftIndex];
     const rightX = xs[rightIndex];
     if (rightX !== neg(leftX)) fail(`pi preimages ${leftIndex} and ${rightIndex} are not x/-x`);
-    const result = foldPair({
-      positive: values[leftIndex],
-      negative: values[rightIndex],
-      coordinate: leftX,
-      beta: challenge,
-    });
+    if (leftX === 0n) fail(`pi preimages ${leftIndex} and ${rightIndex} have zero fold coordinate`);
     const image = BigInt(imageText);
     nextDomain.push(image);
-    folded.push(result.value);
     pairs.push(Object.freeze({
       leftIndex,
       rightIndex,
-      x: leftX,
+      coordinate: leftX,
       image,
-      ...result,
     }));
   }
-  return Object.freeze({ domain: nextDomain, codeword: folded, pairs });
+  return Object.freeze({ domain: nextDomain, pairs });
+};
+
+/**
+ * First Circle-FRI layer: fold J twins (x,+/-y) to the distinct x line.
+ */
+export const foldJLayer = (domain, codeword, beta) => {
+  const values = assertCodeword(codeword, domain.length);
+  const challenge = assertElement(beta, 'beta');
+  const topology = buildJFoldTopology(domain);
+  const folded = new Array(topology.pairs.length);
+  const pairs = new Array(topology.pairs.length);
+
+  for (let index = 0; index < topology.pairs.length; index += 1) {
+    const pair = topology.pairs[index];
+    const result = foldPair({
+      positive: values[pair.leftIndex],
+      negative: values[pair.rightIndex],
+      coordinate: pair.coordinate,
+      beta: challenge,
+    });
+    folded[index] = result.value;
+    pairs[index] = Object.freeze({ ...pair, ...result });
+  }
+  return Object.freeze({ domain: topology.domain, codeword: folded, pairs });
+};
+
+/**
+ * Later Circle-FRI layers: fold x and -x to pi(x)=2*x^2-1.
+ */
+export const foldPiLayer = (xDomain, codeword, beta) => {
+  const values = assertCodeword(codeword, xDomain.length);
+  const challenge = assertElement(beta, 'beta');
+  const topology = buildPiFoldTopology(xDomain);
+  const folded = new Array(topology.pairs.length);
+  const pairs = new Array(topology.pairs.length);
+  for (let index = 0; index < topology.pairs.length; index += 1) {
+    const pair = topology.pairs[index];
+    const result = foldPair({
+      positive: values[pair.leftIndex],
+      negative: values[pair.rightIndex],
+      coordinate: pair.coordinate,
+      beta: challenge,
+    });
+    folded[index] = result.value;
+    pairs[index] = Object.freeze({ ...pair, ...result });
+  }
+  return Object.freeze({ domain: topology.domain, codeword: folded, pairs });
 };
 
 export const foldCircleCodeword = ({ domain, codeword, challenges }) => {

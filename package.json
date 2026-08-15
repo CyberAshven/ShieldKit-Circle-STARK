@@ -9,6 +9,7 @@
   },
   "scripts": {
     "circle-fri:test": "node --test test/circle-fri/*.test.mjs",
+    "circle-fri:measure": "node tools/circle-fri-query-kat.mjs --summary",
     "atlas": "node tools/atlas/cli.mjs",
     "atlas:validate": "node tools/atlas/cli.mjs validate",
     "atlas:status": "node tools/atlas/cli.mjs status",
