@@ -73,6 +73,7 @@ const OP = Object.freeze({
   OP_FROMALTSTACK: 0x6c,
   OP_2DROP: 0x6d,
   OP_2DUP: 0x6e,
+  OP_2OVER: 0x70,
   OP_DROP: 0x75,
   OP_DUP: 0x76,
   OP_PICK: 0x79,
@@ -102,7 +103,6 @@ const OP = Object.freeze({
 });
 
 const FUNCTION = Object.freeze({
-  HASH_LEAF: 1,
   HASH_NODE_LEFT: 2,
   HASH_NODE_RIGHT: 3,
   DECODE_M31: 4,
@@ -111,6 +111,7 @@ const FUNCTION = Object.freeze({
   HASH_PACKED_NODE_LEFT: 7,
   HASH_PACKED_NODE_RIGHT: 8,
   SAMPLE_M31_TRANSCRIPT: 9,
+  HASH_LEAF_PLAIN: 10,
 });
 
 const HALF = (M31_MODULUS + 1n) / 2n;
@@ -276,9 +277,7 @@ const buildTranscriptChallenge = ({ label, upperBound, acceptedAttempt }) => {
   return script;
 };
 
-const HASH_LEAF_FUNCTION = Uint8Array.from([
-  OP.OP_DUP,
-  OP.OP_TOALTSTACK,
+const HASH_LEAF_PLAIN_FUNCTION = Uint8Array.from([
   ...encodeMinimalDataPush(M31_MERKLE_LEAF_DOMAIN),
   OP.OP_SWAP,
   OP.OP_CAT,
@@ -417,8 +416,7 @@ const SAMPLE_M31_TRANSCRIPT_FUNCTION = Uint8Array.from([
 ]);
 
 export const BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES = (
-  HASH_LEAF_FUNCTION.length
-  + HASH_NODE_LEFT_FUNCTION.length
+  HASH_NODE_LEFT_FUNCTION.length
   + HASH_NODE_RIGHT_FUNCTION.length
   + DECODE_M31_FUNCTION.length
   + FOLD_M31_FUNCTION.length
@@ -426,10 +424,10 @@ export const BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES = (
   + HASH_PACKED_NODE_LEFT_FUNCTION.length
   + HASH_PACKED_NODE_RIGHT_FUNCTION.length
   + SAMPLE_M31_TRANSCRIPT_FUNCTION.length
+  + HASH_LEAF_PLAIN_FUNCTION.length
 );
 
 const QUERY_FUNCTION_DEFINITIONS = concat(
-  defineFunction(FUNCTION.HASH_LEAF, HASH_LEAF_FUNCTION),
   defineFunction(FUNCTION.HASH_NODE_LEFT, HASH_NODE_LEFT_FUNCTION),
   defineFunction(FUNCTION.HASH_NODE_RIGHT, HASH_NODE_RIGHT_FUNCTION),
   defineFunction(FUNCTION.DECODE_M31, DECODE_M31_FUNCTION),
@@ -438,58 +436,125 @@ const QUERY_FUNCTION_DEFINITIONS = concat(
   defineFunction(FUNCTION.HASH_PACKED_NODE_LEFT, HASH_PACKED_NODE_LEFT_FUNCTION),
   defineFunction(FUNCTION.HASH_PACKED_NODE_RIGHT, HASH_PACKED_NODE_RIGHT_FUNCTION),
   defineFunction(FUNCTION.SAMPLE_M31_TRANSCRIPT, SAMPLE_M31_TRANSCRIPT_FUNCTION),
+  defineFunction(FUNCTION.HASH_LEAF_PLAIN, HASH_LEAF_PLAIN_FUNCTION),
 );
 
-const assertHash = (value, name) => {
-  require(value instanceof Uint8Array && value.length === 32, `${name} must be exactly 32 bytes`);
-  return value;
-};
-
-const buildMerklePartialVerification = ({ leafIndex, siblings }) => {
-  require(Array.isArray(siblings), 'siblings must be an array');
-  const script = [...invokeFunction(FUNCTION.HASH_LEAF)];
-  let index = leafIndex;
-  for (let level = 0; level < siblings.length; level += 1) {
-    assertHash(siblings[level], `siblings[${level}]`);
-    script.push(...invokeFunction(
-      (index & 1) === 0 ? FUNCTION.HASH_PACKED_NODE_LEFT : FUNCTION.HASH_PACKED_NODE_RIGHT,
-    ));
-    index = Math.floor(index / 2);
-  }
-  script.push(OP.OP_SWAP, OP.OP_0, OP.OP_EQUALVERIFY);
-  return Object.freeze({ script, branchIndex: index });
-};
-
-const buildMerklePairVerification = ({ leftIndex, rightIndex, leftSiblings, rightSiblings }) => {
-  require(leftSiblings.length === rightSiblings.length && leftSiblings.length >= 1, 'paired Merkle paths must have equal nonzero length');
-  const left = buildMerklePartialVerification({
-    leafIndex: leftIndex,
-    siblings: leftSiblings.slice(0, -1),
-  });
-  const right = buildMerklePartialVerification({
-    leafIndex: rightIndex,
-    siblings: rightSiblings.slice(0, -1),
-  });
-  require((left.branchIndex ^ 1) === right.branchIndex, 'fold partners must meet as sibling branches at the Merkle root');
-  require(Math.floor(left.branchIndex / 2) === Math.floor(right.branchIndex / 2), 'fold partner branches do not share a Merkle parent');
-  return [
-    ...left.script,
-    OP.OP_TOALTSTACK, // alt: leftRaw, leftBranchHash
-    ...right.script, // alt: leftRaw, leftBranchHash, rightRaw; main: rightBranchHash
-    OP.OP_FROMALTSTACK,
-    OP.OP_FROMALTSTACK,
-    OP.OP_2,
-    OP.OP_ROLL, // rightRaw, leftBranchHash, rightBranchHash
-    ...((left.branchIndex & 1) === 0 ? [OP.OP_SWAP] : []),
-    ...invokeFunction(FUNCTION.HASH_NODE_LEFT),
-    ...pushNumber(3),
-    OP.OP_PICK, // runtime root below inverse and right raw value
-    OP.OP_EQUALVERIFY,
-    OP.OP_TOALTSTACK, // alt: leftRaw, rightRaw
+const buildDynamicMerklePartialVerification = (partialPathLength) => {
+  require(Number.isSafeInteger(partialPathLength) && partialPathLength >= 0, 'partial Merkle path length is invalid');
+  const script = [
+    OP.OP_SWAP, // packed path, index, raw value
+    OP.OP_DUP,
+    OP.OP_TOALTSTACK,
+    ...invokeFunction(FUNCTION.HASH_LEAF_PLAIN),
+    OP.OP_SWAP, // packed path, current hash, index
   ];
+  for (let level = 0; level < partialPathLength; level += 1) {
+    script.push(
+      OP.OP_DUP,
+      ...pushNumber(2),
+      OP.OP_MOD,
+      OP.OP_IF,
+      OP.OP_TOALTSTACK,
+      ...invokeFunction(FUNCTION.HASH_PACKED_NODE_RIGHT),
+      OP.OP_FROMALTSTACK,
+      OP.OP_ELSE,
+      OP.OP_TOALTSTACK,
+      ...invokeFunction(FUNCTION.HASH_PACKED_NODE_LEFT),
+      OP.OP_FROMALTSTACK,
+      OP.OP_ENDIF,
+      ...pushNumber(2),
+      OP.OP_DIV,
+    );
+  }
+  script.push(
+    ...pushNumber(2),
+    OP.OP_ROLL,
+    OP.OP_0,
+    OP.OP_EQUALVERIFY,
+    OP.OP_FROMALTSTACK,
+    OP.OP_SWAP,
+    ...pushNumber(2),
+    OP.OP_ROLL,
+    OP.OP_SWAP, // raw value, branch hash, branch index
+  );
+  return script;
 };
 
-const buildTranscriptBoundFoldVerification = ({ coordinate, continuitySide, isLast }) => {
+const buildDynamicMerklePairVerification = (partialPathLength) => [
+  // Duplicate the left packed path, raw value, and authenticated index.
+  OP.OP_2OVER,
+  ...pushNumber(2),
+  OP.OP_PICK,
+  ...buildDynamicMerklePartialVerification(partialPathLength),
+
+  // Duplicate the right packed path, raw value, and authenticated index.
+  ...pushNumber(8),
+  OP.OP_PICK,
+  ...pushNumber(8),
+  OP.OP_PICK,
+  ...pushNumber(6),
+  OP.OP_PICK,
+  ...buildDynamicMerklePartialVerification(partialPathLength),
+
+  // Committed left/right entries must reach branches 0/1 at their shared root.
+  ...pushNumber(3),
+  OP.OP_PICK,
+  OP.OP_0,
+  OP.OP_NUMEQUALVERIFY,
+  OP.OP_DUP,
+  OP.OP_1,
+  OP.OP_NUMEQUALVERIFY,
+
+  // Preserve the runtime root, then hash the two computed branch hashes.
+  ...pushNumber(13),
+  OP.OP_PICK,
+  OP.OP_TOALTSTACK,
+  ...pushNumber(4),
+  OP.OP_PICK,
+  ...pushNumber(2),
+  OP.OP_PICK,
+  OP.OP_CAT,
+  ...encodeMinimalDataPush(M31_MERKLE_NODE_DOMAIN),
+  OP.OP_SWAP,
+  OP.OP_CAT,
+  OP.OP_HASH256,
+  OP.OP_FROMALTSTACK,
+  OP.OP_EQUALVERIFY,
+
+  // Preserve raw values for the fold, then remove paths, indexes, and branches.
+  ...pushNumber(5),
+  OP.OP_PICK,
+  OP.OP_TOALTSTACK,
+  ...pushNumber(2),
+  OP.OP_PICK,
+  OP.OP_TOALTSTACK,
+  OP.OP_2DROP,
+  OP.OP_2DROP,
+  OP.OP_2DROP,
+  OP.OP_2DROP,
+  OP.OP_2DROP,
+  OP.OP_2DROP,
+];
+
+const extractTopBytes = (offset, length) => [
+  ...(offset === 0 ? [] : [
+    ...pushNumber(offset),
+    OP.OP_SPLIT,
+    OP.OP_SWAP,
+    OP.OP_DROP,
+  ]),
+  ...pushNumber(length),
+  OP.OP_SPLIT,
+  OP.OP_DROP,
+];
+
+const decodeUnsignedTop = () => [
+  ...encodeMinimalDataPush(ZERO_BYTE),
+  OP.OP_CAT,
+  OP.OP_BIN2NUM,
+];
+
+const buildTranscriptBoundFoldVerification = ({ round, isLast }) => {
   const script = [
     // Recover right then left raw values. Altstack is:
     // [previousFold?], transcriptState, derivedBeta, leftRaw, rightRaw.
@@ -503,23 +568,44 @@ const buildTranscriptBoundFoldVerification = ({ coordinate, continuitySide, isLa
     ...invokeFunction(FUNCTION.DECODE_M31), // inverse(2*coordinate)
     OP.OP_FROMALTSTACK, // derived beta
     OP.OP_FROMALTSTACK, // transcript state
+    OP.OP_FROMALTSTACK, // authenticated topology round plan
+    OP.OP_DUP,
+    ...extractTopBytes(20, 1),
+    OP.OP_BIN2NUM,
+    OP.OP_TOALTSTACK, // continuity side
+    ...extractTopBytes(16, 4),
+    ...invokeFunction(FUNCTION.DECODE_M31), // coordinate
+    OP.OP_FROMALTSTACK, // continuity side
   ];
 
-  if (continuitySide !== null) {
+  if (round === 0) {
+    script.push(OP.OP_0, OP.OP_NUMEQUALVERIFY);
+  } else {
     script.push(
-      OP.OP_FROMALTSTACK, // previous fold
-      ...(pushNumber(continuitySide === 'left' ? 5 : 4)),
+      OP.OP_DUP,
+      OP.OP_1,
+      OP.OP_NUMEQUAL,
+      OP.OP_IF,
+      OP.OP_DROP,
+      OP.OP_FROMALTSTACK,
+      ...pushNumber(6),
       OP.OP_PICK,
-      OP.OP_SWAP,
       OP.OP_NUMEQUALVERIFY,
+      OP.OP_ELSE,
+      OP.OP_2,
+      OP.OP_NUMEQUALVERIFY,
+      OP.OP_FROMALTSTACK,
+      ...pushNumber(5),
+      OP.OP_PICK,
+      OP.OP_NUMEQUALVERIFY,
+      OP.OP_ENDIF,
     );
   }
 
   script.push(
+    OP.OP_SWAP,
     OP.OP_TOALTSTACK, // transcript state
-    OP.OP_TOALTSTACK, // beta
-    ...pushNumber(coordinate),
-    OP.OP_FROMALTSTACK,
+    OP.OP_SWAP, // inverse, coordinate, beta
     ...invokeFunction(FUNCTION.FOLD_M31),
     OP.OP_SWAP,
     OP.OP_DROP, // consume the runtime root retained below the fold operands
@@ -655,6 +741,7 @@ export const createBchCircleFriQueryFixture = ({
     transcriptDerivationIncluded: true,
     proofCommitmentsRuntimeSupplied: true,
     topologyOpeningRuntimeSupplied: true,
+    topologyPlanRuntimeConsumed: true,
     proofSpecificRedeem: true,
     parameters,
     protocolContext: new Uint8Array(protocolContext),
@@ -797,7 +884,21 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
   ];
   for (let round = 0; round < fixture.rounds.length; round += 1) {
     const item = fixture.rounds[round];
+    const remainingRoundCount = fixture.parameters.logDegreeBound - round;
+    const topologyRecordDepth = 3 + remainingRoundCount * 6;
     script.push(
+      ...pushNumber(topologyRecordDepth),
+      OP.OP_PICK,
+      ...extractTopBytes(14 + round * 21, 21),
+      OP.OP_DUP,
+      OP.OP_TOALTSTACK, // authenticated round plan retained for fold semantics
+      OP.OP_DUP,
+      ...extractTopBytes(8, 4),
+      ...decodeUnsignedTop(),
+      OP.OP_TOALTSTACK, // right index
+      ...extractTopBytes(4, 4),
+      ...decodeUnsignedTop(),
+      OP.OP_TOALTSTACK, // left index
       ...pushNumber(6),
       OP.OP_PICK, // runtime root below this round's five opening operands
       ...buildTranscriptAbsorbRuntime(`fri-layer-root-${round}`, 32),
@@ -806,18 +907,16 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
         upperBound: Number(M31_MODULUS),
         acceptedAttempt: item.transcriptSample.attempt,
       }),
+      OP.OP_FROMALTSTACK, // left index
+      OP.OP_FROMALTSTACK, // right index
+      OP.OP_SWAP,
+      OP.OP_2SWAP,
       OP.OP_SWAP,
       OP.OP_TOALTSTACK, // transcript state
       OP.OP_TOALTSTACK, // derived beta
-      ...buildMerklePairVerification({
-        leftIndex: item.leftIndex,
-        rightIndex: item.rightIndex,
-        leftSiblings: item.opening.leftSiblings,
-        rightSiblings: item.opening.rightSiblings,
-      }),
+      ...buildDynamicMerklePairVerification(fixture.parameters.logDomain - round - 1),
       ...buildTranscriptBoundFoldVerification({
-        coordinate: item.coordinate,
-        continuitySide: item.continuitySide,
+        round,
         isLast: round === fixture.rounds.length - 1,
       }),
     );
@@ -830,12 +929,15 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
     ...buildCanonicalQueryDerivation(fixture),
     OP.OP_DROP, // final transcript state
     OP.OP_SWAP, // folded value, runtime final codeword
-    ...(fixture.finalIndex === 0 ? [] : [
-      ...pushNumber(fixture.finalIndex * 4),
-      OP.OP_SPLIT,
-      OP.OP_SWAP,
-      OP.OP_DROP,
-    ]),
+    ...pushNumber(3),
+    OP.OP_PICK,
+    ...extractTopBytes(14 + (fixture.parameters.logDegreeBound - 1) * 21 + 12, 4),
+    ...decodeUnsignedTop(),
+    ...pushNumber(4),
+    OP.OP_MUL,
+    OP.OP_SPLIT,
+    OP.OP_SWAP,
+    OP.OP_DROP,
     ...pushNumber(4),
     OP.OP_SPLIT,
     OP.OP_DROP,

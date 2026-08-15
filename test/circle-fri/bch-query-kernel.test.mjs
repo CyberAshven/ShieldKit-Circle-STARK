@@ -45,6 +45,7 @@ test('BCH-2026 P2SH32 accepts one complete authenticated Circle-FRI query chain'
   assert.equal(honest.transcriptDerivationIncluded, true);
   assert.equal(honest.proofCommitmentsRuntimeSupplied, true);
   assert.equal(honest.topologyOpeningRuntimeSupplied, true);
+  assert.equal(honest.topologyPlanRuntimeConsumed, true);
   assert.equal(honest.proofSpecificRedeem, true);
   assert.equal(materialized.lockingBytecode.length, 35);
   assert.ok(materialized.redeemBytecode.length <= 10_000);
@@ -57,13 +58,13 @@ test('query component measures real hashes, arithmetic, stack, and transaction b
   const materialized = materializeBchCircleFriQueryP2sh32(honest);
   const result = evaluateBchCircleFriQueryP2sh32(honest);
   const wires = encodeBchCircleFriQueryP2sh32TransactionFixture(honest);
-  assert.equal(materialized.redeemBytecode.length, 2_415);
+  assert.equal(materialized.redeemBytecode.length, 4_276);
   assert.equal(materialized.operandUnlockingBytecode.length, 2_892);
-  assert.equal(materialized.unlockingBytecode.length, 5_310);
-  assert.equal(wires.transactionHex.length / 2, 5_373);
-  assert.equal(result.metrics.hashDigestIterations, 364);
-  assert.equal(result.metrics.operationCost, 469_555);
-  assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 360);
+  assert.equal(materialized.unlockingBytecode.length, 7_171);
+  assert.equal(wires.transactionHex.length / 2, 7_234);
+  assert.equal(result.metrics.hashDigestIterations, 393);
+  assert.equal(result.metrics.operationCost, 650_179);
+  assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 358);
   assert.equal(result.metrics.signatureCheckCount, 0);
   assert.ok(result.metrics.operationCost < result.metrics.limits.maximumOperationCost);
   assert.ok(result.metrics.stackMaximums.cumulativeMemoryItems < 1_000);
@@ -119,6 +120,15 @@ test('runtime topology record and opening path are bound to the fixed verifier r
   wrongPath.topologyOpening.siblings[0][0] ^= 1;
   assert.deepEqual(buildBchCircleFriQueryRedeemBytecode(wrongPath), honestRedeem);
   assert.equal(evaluateBchCircleFriQueryP2sh32(wrongPath).accepted, false);
+
+  const hostTopologyMetadata = structuredClone(honest);
+  hostTopologyMetadata.rounds[0].leftIndex ^= 1;
+  hostTopologyMetadata.rounds[1].rightIndex ^= 1;
+  hostTopologyMetadata.rounds[2].coordinate = (hostTopologyMetadata.rounds[2].coordinate + 1n) % M31_MODULUS;
+  hostTopologyMetadata.rounds[3].continuitySide = hostTopologyMetadata.rounds[3].continuitySide === 'left' ? 'right' : 'left';
+  hostTopologyMetadata.finalIndex ^= 1;
+  assert.deepEqual(buildBchCircleFriQueryRedeemBytecode(hostTopologyMetadata), honestRedeem);
+  assert.equal(evaluateBchCircleFriQueryP2sh32(hostTopologyMetadata).accepted, true);
 });
 
 test('BCH Script derives canonical unique multi-query indices including duplicate retries', () => {
