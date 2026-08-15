@@ -33,6 +33,7 @@ import {
 } from './fold.mjs';
 
 import {
+  CIRCLE_FRI_QUERY_CANDIDATE_LABEL,
   assertCircleFriParameters,
   encodeCircleFriParameters,
   verifyCircleFriQueries,
@@ -70,7 +71,6 @@ const OP = Object.freeze({
   OP_UNTIL: 0x66,
   OP_ELSE: 0x67,
   OP_ENDIF: 0x68,
-  OP_VERIFY: 0x69,
   OP_TOALTSTACK: 0x6b,
   OP_FROMALTSTACK: 0x6c,
   OP_2DROP: 0x6d,
@@ -99,7 +99,6 @@ const OP = Object.freeze({
   OP_DIV: 0x96,
   OP_MOD: 0x97,
   OP_LESSTHAN: 0x9f,
-  OP_GREATERTHANOREQUAL: 0xa2,
   OP_NUMNOTEQUAL: 0x9e,
   OP_NUMEQUAL: 0x9c,
   OP_NUMEQUALVERIFY: 0x9d,
@@ -669,7 +668,7 @@ const buildHostTranscriptTrace = ({ proof, parameters, protocolContext }) => {
     for (let retry = 0; ; retry += 1) {
       const sample = sampleCircleFriTranscriptState({
         state,
-        label: `fri-query-${query}-candidate-${retry}`,
+        label: CIRCLE_FRI_QUERY_CANDIDATE_LABEL,
         upperBound: parameters.domainLength,
       });
       state = sample.state;
@@ -693,8 +692,8 @@ const buildHostTranscriptTrace = ({ proof, parameters, protocolContext }) => {
 /**
  * Bind one Fiat-Shamir-selected query to its Merkle roots, fold challenges, and
  * final constant. The generated BCH Script replays the complete transcript and
- * derives every beta and the query index; the host trace only unrolls the
- * deterministic rejection attempts.
+ * derives every beta, rejection attempt, duplicate retry, and query index. The
+ * host trace is retained only as an independently recomputed diagnostic.
  */
 export const createBchCircleFriQueryFixture = ({
   proof,
@@ -747,13 +746,16 @@ export const createBchCircleFriQueryFixture = ({
     require(topologyRecord.rounds[round].coordinate === rounds[round].coordinate, `topology table coordinate disagrees at round ${round}`);
   }
   return Object.freeze({
-    kind: 'circle-fri-transcript-bound-query-component-v1',
+    kind: 'circle-fri-transcript-bound-query-component-v2',
     transcriptDerivationIncluded: true,
     transcriptAttemptsRuntimeDerived: true,
+    queryIndicesRuntimeDerived: true,
+    queryDuplicateRetriesRuntimeDerived: true,
     proofCommitmentsRuntimeSupplied: true,
     topologyOpeningRuntimeSupplied: true,
     topologyPlanRuntimeConsumed: true,
-    proofSpecificRedeem: true,
+    proofSpecificRedeem: false,
+    queryOrdinalSpecificRedeem: true,
     parameters,
     protocolContext: new Uint8Array(protocolContext),
     transcriptTrace,
@@ -770,47 +772,45 @@ export const createBchCircleFriQueryFixture = ({
 
 const buildCanonicalQueryDerivation = (fixture) => {
   const script = [];
-  const previousAccepted = [];
   for (let query = 0; query <= fixture.queryOrdinal; query += 1) {
-    const queryTrace = fixture.transcriptTrace.queries[query];
-    for (const candidate of queryTrace.candidates) {
-      const value = candidate.sample.value;
-      script.push(
-        ...buildTranscriptChallenge({
-          label: `fri-query-${query}-candidate-${candidate.retry}`,
-          upperBound: fixture.parameters.domainLength,
-        }),
-        OP.OP_DUP,
-        ...pushNumber(value),
-        OP.OP_NUMEQUALVERIFY,
-      );
-      if (candidate.duplicateOf !== -1) {
+    if (query > 0) script.push(OP.OP_BEGIN);
+    script.push(
+      ...buildTranscriptChallenge({
+        label: CIRCLE_FRI_QUERY_CANDIDATE_LABEL,
+        upperBound: fixture.parameters.domainLength,
+      }),
+    );
+    if (query > 0) {
+      script.push(OP.OP_1);
+      for (let prior = 0; prior < query; prior += 1) {
         script.push(
-          ...pushNumber(previousAccepted[candidate.duplicateOf]),
-          OP.OP_NUMEQUALVERIFY,
-        );
-        continue;
-      }
-      for (const prior of previousAccepted) {
-        script.push(
-          OP.OP_DUP,
-          ...pushNumber(prior),
+          OP.OP_OVER,
+          ...pushNumber(query + 3 - prior),
+          OP.OP_PICK,
           OP.OP_NUMNOTEQUAL,
-          OP.OP_VERIFY,
+          OP.OP_MUL,
         );
       }
-      previousAccepted.push(value);
-      if (query === fixture.queryOrdinal) {
-        script.push(
-          OP.OP_DUP,
-          ...pushNumber(fixture.initialQueryIndex),
-          OP.OP_NUMEQUALVERIFY,
-          OP.OP_TOALTSTACK,
-        );
-      } else {
-        script.push(OP.OP_DROP);
-      }
+      script.push(
+        OP.OP_IF,
+        OP.OP_1,
+        OP.OP_ELSE,
+        OP.OP_DROP,
+        OP.OP_0,
+        OP.OP_ENDIF,
+        OP.OP_UNTIL,
+      );
     }
+    if (query < fixture.queryOrdinal) {
+      script.push(OP.OP_SWAP); // accepted query index below the transcript state
+      continue;
+    }
+    script.push(
+      OP.OP_TOALTSTACK, // selected query index
+      OP.OP_TOALTSTACK, // transcript state
+      ...Array.from({ length: query }, () => OP.OP_DROP),
+      OP.OP_FROMALTSTACK, // transcript state; selected index remains on altstack
+    );
   }
   return script;
 };
@@ -884,7 +884,7 @@ const topologyTableFor = (parameters) => {
 };
 
 export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
-  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v1', 'query fixture is required');
+  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v2', 'query fixture is required');
   const script = [
     ...QUERY_FUNCTION_DEFINITIONS,
     ...buildTranscriptInitialization({
@@ -958,7 +958,7 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
 };
 
 export const buildBchCircleFriQueryOperandUnlockingBytecode = (fixture) => {
-  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v1', 'query fixture is required');
+  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v2', 'query fixture is required');
   const operands = [
     fixture.topologyOpening.record,
     concat(...fixture.topologyOpening.siblings.slice().reverse()),
@@ -1014,7 +1014,7 @@ export const encodeBchCircleFriMultiQueryTransactionFixture = (fixtures) => {
   require(ordinals.every((ordinal, index) => ordinal === index), 'multi-query fixtures must be ordered by unique query ordinal');
   const transcriptIdentity = binToHex(fixtures[0].transcriptTrace.finalState);
   for (const fixture of fixtures) {
-    require(fixture.kind === 'circle-fri-transcript-bound-query-component-v1', 'invalid multi-query fixture');
+    require(fixture.kind === 'circle-fri-transcript-bound-query-component-v2', 'invalid multi-query fixture');
     require(fixture.parameters.queryCount === expectedCount, 'multi-query parameter mismatch');
     require(binToHex(fixture.transcriptTrace.finalState) === transcriptIdentity, 'multi-query transcript mismatch');
   }

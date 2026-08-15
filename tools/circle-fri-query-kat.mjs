@@ -29,13 +29,13 @@ export const QUERY_KAT_PARAMETERS = Object.freeze({
   queryCount: 1,
 });
 
-export const QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH query component v1');
+export const QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH query component v2');
 export const MULTI_QUERY_KAT_PARAMETERS = Object.freeze({
   logDegreeBound: 6,
   logBlowup: 3,
   queryCount: 4,
 });
-export const MULTI_QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH multi-query component v1');
+export const MULTI_QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH multi-query component v2');
 
 const buildCoefficients = (logDegreeBound) => {
   let state = 0x626368n;
@@ -72,10 +72,13 @@ export const queryKatSummary = (kat) => Object.freeze({
   kind: kat.fixture.kind,
   transcriptDerivationIncluded: kat.fixture.transcriptDerivationIncluded,
   transcriptAttemptsRuntimeDerived: kat.fixture.transcriptAttemptsRuntimeDerived,
+  queryIndicesRuntimeDerived: kat.fixture.queryIndicesRuntimeDerived,
+  queryDuplicateRetriesRuntimeDerived: kat.fixture.queryDuplicateRetriesRuntimeDerived,
   proofCommitmentsRuntimeSupplied: kat.fixture.proofCommitmentsRuntimeSupplied,
   topologyOpeningRuntimeSupplied: kat.fixture.topologyOpeningRuntimeSupplied,
   topologyPlanRuntimeConsumed: kat.fixture.topologyPlanRuntimeConsumed,
   proofSpecificRedeem: kat.fixture.proofSpecificRedeem,
+  queryOrdinalSpecificRedeem: kat.fixture.queryOrdinalSpecificRedeem,
   parameters: kat.parameters,
   initialQueryIndex: kat.fixture.initialQueryIndex,
   proof: Object.freeze({
@@ -131,13 +134,16 @@ export const buildMultiQueryKat = () => {
 };
 
 export const multiQueryKatSummary = (kat) => Object.freeze({
-  kind: 'circle-fri-transcript-bound-multi-query-transaction-v1',
+  kind: 'circle-fri-transcript-bound-multi-query-transaction-v2',
   transcriptDerivationIncluded: true,
   transcriptAttemptsRuntimeDerived: kat.fixtures.every(({ transcriptAttemptsRuntimeDerived }) => transcriptAttemptsRuntimeDerived),
+  queryIndicesRuntimeDerived: kat.fixtures.every(({ queryIndicesRuntimeDerived }) => queryIndicesRuntimeDerived),
+  queryDuplicateRetriesRuntimeDerived: kat.fixtures.every(({ queryDuplicateRetriesRuntimeDerived }) => queryDuplicateRetriesRuntimeDerived),
   proofCommitmentsRuntimeSupplied: kat.fixtures.every(({ proofCommitmentsRuntimeSupplied }) => proofCommitmentsRuntimeSupplied),
   topologyOpeningRuntimeSupplied: kat.fixtures.every(({ topologyOpeningRuntimeSupplied }) => topologyOpeningRuntimeSupplied),
   topologyPlanRuntimeConsumed: kat.fixtures.every(({ topologyPlanRuntimeConsumed }) => topologyPlanRuntimeConsumed),
   proofSpecificRedeem: kat.fixtures.some(({ proofSpecificRedeem }) => proofSpecificRedeem),
+  queryOrdinalSpecificRedeem: kat.fixtures.some(({ queryOrdinalSpecificRedeem }) => queryOrdinalSpecificRedeem),
   parameters: kat.parameters,
   queryIndices: kat.fixtures.map(({ initialQueryIndex }) => initialQueryIndex),
   proof: Object.freeze({ bytes: kat.proofBytes.length, sha256: sha256(kat.proofBytes) }),
@@ -161,7 +167,7 @@ export const buildQueryScalingReport = () => Array.from({ length: 7 }, (_, offse
   const logDegreeBound = 6 + offset;
   const kat = buildQueryKat({
     parameters: Object.freeze({ logDegreeBound, logBlowup: 3, queryCount: 1 }),
-    protocolContext: utf8('ShieldKit Circle-FRI BCH scaling component v1'),
+    protocolContext: utf8('ShieldKit Circle-FRI BCH scaling component v2'),
   });
   const withinUnlockingLimit = kat.materialized.unlockingBytecode.length <= 10_000;
   return Object.freeze({
@@ -203,7 +209,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     const kat = buildQueryKat();
     if (mode === '--bchn-vector') {
     process.stdout.write(`${JSON.stringify([[
-      'circle-fri-query-kat-v1',
+      'circle-fri-query-kat-v2',
       'ShieldKit Circle-FRI authenticated query component',
       '',
       '',
@@ -212,7 +218,7 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       0,
     ]])}\n`);
     } else if (mode === '--lean-vector') {
-      process.stdout.write(`1 circle-fri-query-kat-v1 ${kat.wires.transactionHex} ${kat.wires.sourceOutputsHex} 0\n`);
+      process.stdout.write(`1 circle-fri-query-kat-v2 ${kat.wires.transactionHex} ${kat.wires.sourceOutputsHex} 0\n`);
     } else if (mode === '--summary') {
       process.stdout.write(`${JSON.stringify(queryKatSummary(kat), null, 2)}\n`);
     } else if (mode === '--scaling') {

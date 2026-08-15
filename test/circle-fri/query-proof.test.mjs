@@ -23,7 +23,7 @@ const deterministicCoefficients = (length, seed = 0x465249n) => {
 };
 
 const PARAMETERS = Object.freeze({ logDegreeBound: 6, logBlowup: 3, queryCount: 4 });
-const CONTEXT = utf8('ShieldKit Circle-FRI executable query KAT v1');
+const CONTEXT = utf8('ShieldKit Circle-FRI executable query KAT v2');
 
 const buildProof = () => proveCircleFriQueries({
   coefficients: deterministicCoefficients(1 << PARAMETERS.logDegreeBound),
@@ -49,7 +49,7 @@ test('canonical proof codec round-trips with an exact measured byte length', () 
   assert.equal(encoded.length, estimateCircleFriQueryProofBytes(PARAMETERS));
   assert.equal(
     createHash('sha256').update(encoded).digest('hex'),
-    'e06adf75a2791b96468fd6c85563ebe010eeac5faab4789908c21420b310c093',
+    'e427288788ed9c28992c21b5becaabd4757f744eae9742d5cbca9fed9371ece3',
   );
   const decoded = decodeCircleFriQueryProof(encoded);
   assert.deepEqual(encodeCircleFriQueryProof(decoded), encoded);

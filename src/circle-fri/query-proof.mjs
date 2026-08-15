@@ -38,8 +38,9 @@ import {
   CircleFriTranscript,
 } from './transcript.mjs';
 
-export const CIRCLE_FRI_QUERY_PROOF_VERSION = 1;
+export const CIRCLE_FRI_QUERY_PROOF_VERSION = 2;
 export const CIRCLE_FRI_QUERY_PROOF_MAGIC = utf8('CFRP');
+export const CIRCLE_FRI_QUERY_CANDIDATE_LABEL = 'fri-query-candidate';
 export const DEFAULT_MAXIMUM_LOG_DOMAIN = 20;
 
 const fail = (message) => {
@@ -101,8 +102,8 @@ const deriveUniqueQueryIndices = (transcript, queryCount, domainLength) => {
   const indices = [];
   const seen = new Set();
   for (let query = 0; query < queryCount; query += 1) {
-    for (let retry = 0; ; retry += 1) {
-      const index = transcript.challengeIndex(`fri-query-${query}-candidate-${retry}`, domainLength);
+    for (;;) {
+      const index = transcript.challengeIndex(CIRCLE_FRI_QUERY_CANDIDATE_LABEL, domainLength);
       if (!seen.has(index)) {
         seen.add(index);
         indices.push(index);
