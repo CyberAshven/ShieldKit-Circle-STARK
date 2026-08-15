@@ -26,3 +26,11 @@ The Telegram-derived source package under
 intentionally excluded from this public mirror.
 The complete LABS lane validator remains bound to that private source package,
 so it is not a clean-clone validation entrypoint for this public mirror.
+
+## ABL any-amount Chipnet lab (`@ABLalgorithm`)
+
+Product profile (any amount, one set) lives in
+[`workspaces/abla-any-amount/`](workspaces/abla-any-amount/). It does **not**
+edit the sealed Fv1 0.1-ticket lane. Circle FRI is a plugin that currently
+**refuses** to verify. Chipnet marker txs compile locally; a faucet captcha
+is required to broadcast.
