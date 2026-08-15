@@ -57,6 +57,7 @@ export const buildQueryKat = () => {
 export const queryKatSummary = (kat) => Object.freeze({
   kind: kat.fixture.kind,
   transcriptDerivationIncluded: kat.fixture.transcriptDerivationIncluded,
+  proofCommitmentsRuntimeSupplied: kat.fixture.proofCommitmentsRuntimeSupplied,
   parameters: QUERY_KAT_PARAMETERS,
   initialQueryIndex: kat.fixture.initialQueryIndex,
   proof: Object.freeze({

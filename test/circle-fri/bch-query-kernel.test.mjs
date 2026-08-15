@@ -40,6 +40,8 @@ test('BCH-2026 P2SH32 accepts one complete authenticated Circle-FRI query chain'
   const wires = encodeBchCircleFriQueryP2sh32TransactionFixture(honest);
   assert.equal(result.accepted, true, result.error ?? 'BCH query component rejected');
   assert.equal(result.standard, true);
+  assert.equal(honest.transcriptDerivationIncluded, true);
+  assert.equal(honest.proofCommitmentsRuntimeSupplied, false);
   assert.equal(materialized.lockingBytecode.length, 35);
   assert.ok(materialized.redeemBytecode.length <= 10_000);
   assert.ok(materialized.unlockingBytecode.length <= 10_000);
@@ -51,12 +53,12 @@ test('query component measures real hashes, arithmetic, stack, and transaction b
   const materialized = materializeBchCircleFriQueryP2sh32(honest);
   const result = evaluateBchCircleFriQueryP2sh32(honest);
   const wires = encodeBchCircleFriQueryP2sh32TransactionFixture(honest);
-  assert.equal(materialized.redeemBytecode.length, 816);
+  assert.equal(materialized.redeemBytecode.length, 2_986);
   assert.equal(materialized.operandUnlockingBytecode.length, 2_268);
-  assert.equal(materialized.unlockingBytecode.length, 3_087);
-  assert.equal(wires.transactionHex.length / 2, 3_150);
-  assert.equal(result.metrics.hashDigestIterations, 254);
-  assert.equal(result.metrics.operationCost, 266_219);
+  assert.equal(materialized.unlockingBytecode.length, 5_257);
+  assert.equal(wires.transactionHex.length / 2, 5_320);
+  assert.equal(result.metrics.hashDigestIterations, 342);
+  assert.equal(result.metrics.operationCost, 325_777);
   assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 218);
   assert.equal(result.metrics.signatureCheckCount, 0);
   assert.ok(result.metrics.operationCost < result.metrics.limits.maximumOperationCost);
@@ -79,4 +81,18 @@ test('wrong path, value, inverse, or final value rejects', () => {
   const wrongFinal = structuredClone(honest);
   wrongFinal.finalExpected = (wrongFinal.finalExpected + 1n) % M31_MODULUS;
   assert.equal(evaluateBchCircleFriQueryP2sh32(wrongFinal).accepted, false);
+});
+
+test('wrong transcript context, rejection path, or derived query index rejects', () => {
+  const wrongContext = structuredClone(honest);
+  wrongContext.protocolContext[0] ^= 1;
+  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongContext).accepted, false);
+
+  const wrongAttempt = structuredClone(honest);
+  wrongAttempt.rounds[0].transcriptSample.attempt += 1;
+  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongAttempt).accepted, false);
+
+  const wrongQueryIndex = structuredClone(honest);
+  wrongQueryIndex.initialQueryIndex ^= 1;
+  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongQueryIndex).accepted, false);
 });

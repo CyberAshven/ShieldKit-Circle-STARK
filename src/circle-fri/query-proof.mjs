@@ -86,7 +86,7 @@ export const assertCircleFriParameters = ({
   });
 };
 
-const encodeParameters = (parameters) => Uint8Array.of(
+export const encodeCircleFriParameters = (parameters) => Uint8Array.of(
   CIRCLE_FRI_QUERY_PROOF_VERSION,
   parameters.logDegreeBound,
   parameters.logBlowup,
@@ -115,7 +115,7 @@ const deriveUniqueQueryIndices = (transcript, queryCount, domainLength) => {
 
 const prepareTranscript = (protocolContext, parameters) => {
   const transcript = new CircleFriTranscript(assertBytes(protocolContext, 'protocolContext'));
-  transcript.absorb('fri-parameters', encodeParameters(parameters));
+  transcript.absorb('fri-parameters', encodeCircleFriParameters(parameters));
   return transcript;
 };
 
@@ -385,7 +385,7 @@ export const encodeCircleFriQueryProof = (proof, { maximumLogDomain = DEFAULT_MA
   const parameters = assertProofShape(proof, maximumLogDomain);
   const chunks = [
     CIRCLE_FRI_QUERY_PROOF_MAGIC,
-    encodeParameters(parameters),
+    encodeCircleFriParameters(parameters),
     ...proof.roots,
     encodeM31Vector(proof.finalCodeword, 'finalCodeword'),
   ];

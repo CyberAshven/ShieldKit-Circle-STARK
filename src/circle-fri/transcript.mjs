@@ -10,8 +10,8 @@ import {
   utf8,
 } from './bytes.mjs';
 
-const TRANSCRIPT_DOMAIN = utf8('ShieldKit/CircleFRI/Transcript/v1\0');
-const SQUEEZE_DOMAIN = utf8('ShieldKit/CircleFRI/Squeeze/v1\0');
+export const CIRCLE_FRI_TRANSCRIPT_DOMAIN = utf8('ShieldKit/CircleFRI/Transcript/v1\0');
+export const CIRCLE_FRI_SQUEEZE_DOMAIN = utf8('ShieldKit/CircleFRI/Squeeze/v1\0');
 const TWO_TO_32 = 0x1_0000_0000;
 
 const fail = (message) => {
@@ -21,6 +21,27 @@ const fail = (message) => {
 const assertLabel = (label) => {
   if (typeof label !== 'string' || label.length === 0) fail('challenge label must be a nonempty string');
   return label;
+};
+
+const assertState = (state) => {
+  const bytes = assertBytes(state, 'transcript state');
+  if (bytes.length !== 32) fail('transcript state must be exactly 32 bytes');
+  return bytes;
+};
+
+export const initializeCircleFriTranscriptState = (protocolContext = new Uint8Array()) => sha256(
+  concatBytes(
+    CIRCLE_FRI_TRANSCRIPT_DOMAIN,
+    frameBytes('context', assertBytes(protocolContext, 'protocolContext')),
+  ),
+);
+
+export const absorbCircleFriTranscriptState = (state, label, bytes) => {
+  if (typeof label !== 'string' || label.length === 0) fail('absorb label must be a nonempty string');
+  return sha256(concatBytes(
+    assertState(state),
+    frameBytes(label, assertBytes(bytes)),
+  ));
 };
 
 /** Draw an unbiased integer by rejecting the incomplete tail of the u32 range. */
@@ -43,12 +64,46 @@ export const sampleUniformUint32 = ({ upperBound, draw, maximumAttempts = 1_000_
   fail('rejection sampling exceeded maximumAttempts');
 };
 
+/** Pure transcript squeeze used by both the host prover and BCH Script lowering. */
+export const sampleCircleFriTranscriptState = ({ state, label, upperBound }) => {
+  const beforeState = new Uint8Array(assertState(state));
+  const challengeLabel = assertLabel(label);
+  let acceptedDigest;
+  const sample = sampleUniformUint32({
+    upperBound,
+    draw: (attempt) => {
+      const digest = sha256(concatBytes(
+        CIRCLE_FRI_SQUEEZE_DOMAIN,
+        beforeState,
+        frameBytes('label', utf8(challengeLabel)),
+        frameBytes('attempt', u32le(attempt)),
+      ));
+      const candidate = readU32le(digest);
+      const acceptanceBound = Math.floor(TWO_TO_32 / upperBound) * upperBound;
+      if (candidate < acceptanceBound) acceptedDigest = digest;
+      return candidate;
+    },
+  });
+  const nextState = sha256(concatBytes(
+    beforeState,
+    frameBytes('accepted-challenge-label', utf8(challengeLabel)),
+    frameBytes('accepted-challenge-digest', acceptedDigest),
+    frameBytes('accepted-challenge-attempt', u32le(sample.attempt)),
+  ));
+  return Object.freeze({
+    ...sample,
+    label: challengeLabel,
+    beforeState,
+    digest: new Uint8Array(acceptedDigest),
+    state: nextState,
+  });
+};
+
 export class CircleFriTranscript {
   #state;
 
   constructor(protocolContext = new Uint8Array()) {
-    const context = assertBytes(protocolContext, 'protocolContext');
-    this.#state = sha256(concatBytes(TRANSCRIPT_DOMAIN, frameBytes('context', context)));
+    this.#state = initializeCircleFriTranscriptState(protocolContext);
   }
 
   get digest() {
@@ -56,39 +111,13 @@ export class CircleFriTranscript {
   }
 
   absorb(label, bytes) {
-    if (typeof label !== 'string' || label.length === 0) fail('absorb label must be a nonempty string');
-    this.#state = sha256(concatBytes(this.#state, frameBytes(label, assertBytes(bytes))));
+    this.#state = absorbCircleFriTranscriptState(this.#state, label, bytes);
     return this;
   }
 
-  #draw(label, attempt) {
-    return sha256(concatBytes(
-      SQUEEZE_DOMAIN,
-      this.#state,
-      frameBytes('label', utf8(label)),
-      frameBytes('attempt', u32le(attempt)),
-    ));
-  }
-
   #sample(label, upperBound) {
-    const challengeLabel = assertLabel(label);
-    let acceptedDigest;
-    const sample = sampleUniformUint32({
-      upperBound,
-      draw: (attempt) => {
-        const digest = this.#draw(challengeLabel, attempt);
-        const candidate = readU32le(digest);
-        const acceptanceBound = Math.floor(TWO_TO_32 / upperBound) * upperBound;
-        if (candidate < acceptanceBound) acceptedDigest = digest;
-        return candidate;
-      },
-    });
-    this.#state = sha256(concatBytes(
-      this.#state,
-      frameBytes('accepted-challenge-label', utf8(challengeLabel)),
-      frameBytes('accepted-challenge-digest', acceptedDigest),
-      frameBytes('accepted-challenge-attempt', u32le(sample.attempt)),
-    ));
+    const sample = sampleCircleFriTranscriptState({ state: this.#state, label, upperBound });
+    this.#state = sample.state;
     return sample.value;
   }
 

@@ -31,13 +31,30 @@ import {
 
 import {
   assertCircleFriParameters,
+  encodeCircleFriParameters,
   verifyCircleFriQueries,
 } from './query-proof.mjs';
+
+import {
+  frameBytes,
+  u16le,
+  u32le,
+  utf8,
+} from './bytes.mjs';
+
+import {
+  CIRCLE_FRI_SQUEEZE_DOMAIN,
+  CIRCLE_FRI_TRANSCRIPT_DOMAIN,
+  absorbCircleFriTranscriptState,
+  initializeCircleFriTranscriptState,
+  sampleCircleFriTranscriptState,
+} from './transcript.mjs';
 
 const OP = Object.freeze({
   OP_0: 0x00,
   OP_1: 0x51,
   OP_2: 0x52,
+  OP_VERIFY: 0x69,
   OP_TOALTSTACK: 0x6b,
   OP_FROMALTSTACK: 0x6c,
   OP_2DUP: 0x6e,
@@ -47,6 +64,8 @@ const OP = Object.freeze({
   OP_ROLL: 0x7a,
   OP_SWAP: 0x7c,
   OP_CAT: 0x7e,
+  OP_SPLIT: 0x7f,
+  OP_BIN2NUM: 0x81,
   OP_SIZE: 0x82,
   OP_EQUALVERIFY: 0x88,
   OP_DEFINE: 0x89,
@@ -55,8 +74,11 @@ const OP = Object.freeze({
   OP_SUB: 0x94,
   OP_MUL: 0x95,
   OP_MOD: 0x97,
+  OP_LESSTHAN: 0x9f,
+  OP_GREATERTHANOREQUAL: 0xa2,
   OP_NUMEQUAL: 0x9c,
   OP_NUMEQUALVERIFY: 0x9d,
+  OP_SHA256: 0xa8,
   OP_HASH256: 0xaa,
 });
 
@@ -135,6 +157,102 @@ const invokeFunction = (identifier) => [
   ...pushFunctionId(identifier),
   OP.OP_INVOKE,
 ];
+
+const TWO_TO_32 = 0x1_0000_0000;
+const ZERO_BYTE = Uint8Array.of(0);
+
+const framePrefix = (label, payloadLength) => {
+  const labelBytes = utf8(label);
+  return concat(u16le(labelBytes.length), labelBytes, u32le(payloadLength));
+};
+
+const buildTranscriptInitialization = ({ protocolContext, parameters }) => [
+  ...encodeMinimalDataPush(concat(
+    CIRCLE_FRI_TRANSCRIPT_DOMAIN,
+    frameBytes('context', protocolContext),
+  )),
+  OP.OP_SHA256,
+  ...encodeMinimalDataPush(frameBytes('fri-parameters', encodeCircleFriParameters(parameters))),
+  OP.OP_CAT,
+  OP.OP_SHA256,
+];
+
+const buildTranscriptAbsorbConstant = (label, payload) => [
+  ...encodeMinimalDataPush(frameBytes(label, payload)),
+  OP.OP_CAT,
+  OP.OP_SHA256,
+];
+
+const buildTranscriptCandidate = () => [
+  OP.OP_DUP,
+  ...pushNumber(4),
+  OP.OP_SPLIT,
+  OP.OP_DROP,
+  ...encodeMinimalDataPush(ZERO_BYTE),
+  OP.OP_CAT,
+  OP.OP_BIN2NUM,
+];
+
+/**
+ * Input: transcript state. Output: updated transcript state, sampled integer.
+ * The accepted attempt is derived off-chain only to unroll the deterministic
+ * rejection path; every rejected/accepted predicate is re-executed in Script.
+ */
+const buildTranscriptChallenge = ({ label, upperBound, acceptedAttempt }) => {
+  require(Number.isSafeInteger(upperBound) && upperBound >= 1 && upperBound <= 0xffff_ffff, 'challenge upperBound is out of range');
+  require(Number.isSafeInteger(acceptedAttempt) && acceptedAttempt >= 0, 'accepted challenge attempt is out of range');
+  const acceptanceBound = Math.floor(TWO_TO_32 / upperBound) * upperBound;
+  const labelFrame = frameBytes('accepted-challenge-label', utf8(label));
+  const digestFramePrefix = framePrefix('accepted-challenge-digest', 32);
+  const script = [];
+
+  for (let attempt = 0; attempt <= acceptedAttempt; attempt += 1) {
+    const drawSuffix = concat(
+      frameBytes('label', utf8(label)),
+      frameBytes('attempt', u32le(attempt)),
+    );
+    script.push(
+      OP.OP_DUP,
+      ...encodeMinimalDataPush(CIRCLE_FRI_SQUEEZE_DOMAIN),
+      OP.OP_SWAP,
+      OP.OP_CAT,
+      ...encodeMinimalDataPush(drawSuffix),
+      OP.OP_CAT,
+      OP.OP_SHA256,
+      ...buildTranscriptCandidate(),
+    );
+    if (attempt < acceptedAttempt) {
+      script.push(
+        ...pushNumber(acceptanceBound),
+        OP.OP_GREATERTHANOREQUAL,
+        OP.OP_VERIFY,
+        OP.OP_DROP,
+      );
+      continue;
+    }
+    script.push(
+      OP.OP_DUP,
+      ...pushNumber(acceptanceBound),
+      OP.OP_LESSTHAN,
+      OP.OP_VERIFY,
+      ...pushNumber(upperBound),
+      OP.OP_MOD,
+      OP.OP_TOALTSTACK,
+      OP.OP_SWAP,
+      ...encodeMinimalDataPush(labelFrame),
+      OP.OP_CAT,
+      ...encodeMinimalDataPush(digestFramePrefix),
+      OP.OP_CAT,
+      OP.OP_SWAP,
+      OP.OP_CAT,
+      ...encodeMinimalDataPush(frameBytes('accepted-challenge-attempt', u32le(attempt))),
+      OP.OP_CAT,
+      OP.OP_SHA256,
+      OP.OP_FROMALTSTACK,
+    );
+  }
+  return script;
+};
 
 const HASH_LEAF_FUNCTION = Uint8Array.from([
   OP.OP_DUP,
@@ -271,9 +389,10 @@ const buildMerklePairVerification = ({ leftIndex, rightIndex, leftSiblings, righ
   ];
 };
 
-const buildFoldVerification = ({ coordinate, beta, continuitySide, finalExpected, isLast }) => {
+const buildTranscriptBoundFoldVerification = ({ coordinate, continuitySide, isLast }) => {
   const script = [
-    // Recover right then left raw values, leaving any prior folded value on altstack.
+    // Recover right then left raw values. Altstack is:
+    // [previousFold?], transcriptState, derivedBeta, leftRaw, rightRaw.
     OP.OP_FROMALTSTACK,
     OP.OP_FROMALTSTACK,
     ...invokeFunction(FUNCTION.DECODE_M31), // left
@@ -282,26 +401,33 @@ const buildFoldVerification = ({ coordinate, beta, continuitySide, finalExpected
     OP.OP_2,
     OP.OP_ROLL,
     ...invokeFunction(FUNCTION.DECODE_M31), // inverse(2*coordinate)
+    OP.OP_FROMALTSTACK, // derived beta
+    OP.OP_FROMALTSTACK, // transcript state
   ];
 
   if (continuitySide !== null) {
     script.push(
-      continuitySide === 'left' ? OP.OP_2 : OP.OP_1,
+      OP.OP_FROMALTSTACK, // previous fold
+      ...(pushNumber(continuitySide === 'left' ? 5 : 4)),
       OP.OP_PICK,
-      OP.OP_FROMALTSTACK,
+      OP.OP_SWAP,
       OP.OP_NUMEQUALVERIFY,
     );
   }
 
   script.push(
+    OP.OP_TOALTSTACK, // transcript state
+    OP.OP_TOALTSTACK, // beta
     ...pushNumber(coordinate),
-    ...pushNumber(beta),
+    OP.OP_FROMALTSTACK,
     ...invokeFunction(FUNCTION.FOLD_M31),
   );
-  if (isLast) {
-    script.push(...pushNumber(finalExpected), OP.OP_NUMEQUAL);
-  } else {
-    script.push(OP.OP_TOALTSTACK);
+  if (!isLast) {
+    script.push(
+      OP.OP_FROMALTSTACK, // folded value, transcript state
+      OP.OP_SWAP,
+      OP.OP_TOALTSTACK, // transcript state on main, folded value on alt
+    );
   }
   return script;
 };
@@ -317,10 +443,45 @@ const buildTopologies = (parameters) => {
   return result;
 };
 
+const encodeFinalCodeword = (values) => concat(...values.map(encodeM31));
+
+const buildHostTranscriptTrace = ({ proof, parameters, protocolContext }) => {
+  let state = initializeCircleFriTranscriptState(protocolContext);
+  state = absorbCircleFriTranscriptState(
+    state,
+    'fri-parameters',
+    encodeCircleFriParameters(parameters),
+  );
+  const rounds = proof.roots.map((root, round) => {
+    state = absorbCircleFriTranscriptState(state, `fri-layer-root-${round}`, root);
+    const sample = sampleCircleFriTranscriptState({
+      state,
+      label: `fri-fold-beta-${round}`,
+      upperBound: Number(M31_MODULUS),
+    });
+    state = sample.state;
+    return Object.freeze({ round, sample });
+  });
+  const finalCodewordBytes = encodeFinalCodeword(proof.finalCodeword);
+  state = absorbCircleFriTranscriptState(state, 'fri-final-codeword', finalCodewordBytes);
+  const querySample = sampleCircleFriTranscriptState({
+    state,
+    label: 'fri-query-0-candidate-0',
+    upperBound: parameters.domainLength,
+  });
+  return Object.freeze({
+    rounds,
+    finalCodewordBytes,
+    querySample,
+    finalState: querySample.state,
+  });
+};
+
 /**
- * Bind one already Fiat-Shamir-selected query to its Merkle roots, fold
- * challenges, and final constant. This component intentionally excludes the
- * transcript derivation itself; it measures the full authenticated query path.
+ * Bind one Fiat-Shamir-selected query to its Merkle roots, fold challenges, and
+ * final constant. The generated BCH Script replays the complete transcript and
+ * derives every beta and the query index; the host trace only unrolls the
+ * deterministic rejection attempts.
  */
 export const createBchCircleFriQueryFixture = ({
   proof,
@@ -332,6 +493,12 @@ export const createBchCircleFriQueryFixture = ({
   require(verdict.ok, `Circle-FRI proof must verify before BCH lowering: ${verdict.reason ?? 'invalid'}`);
   const parameters = assertCircleFriParameters(expected);
   require(Number.isSafeInteger(queryOrdinal) && queryOrdinal >= 0 && queryOrdinal < parameters.queryCount, 'queryOrdinal is out of range');
+  require(parameters.queryCount === 1 && queryOrdinal === 0, 'transcript-bound BCH component currently supports exactly query 0 of one query');
+  const transcriptTrace = buildHostTranscriptTrace({ proof, parameters, protocolContext });
+  require(transcriptTrace.querySample.value === verdict.queryIndices[0], 'host transcript query trace disagrees with proof verifier');
+  for (let round = 0; round < parameters.logDegreeBound; round += 1) {
+    require(BigInt(transcriptTrace.rounds[round].sample.value) === verdict.betas[round], `host transcript beta trace disagrees at round ${round}`);
+  }
   const topologies = buildTopologies(parameters);
   const query = proof.queries[queryOrdinal];
   let currentIndex = verdict.queryIndices[queryOrdinal];
@@ -347,7 +514,7 @@ export const createBchCircleFriQueryFixture = ({
     rounds.push(Object.freeze({
       round,
       root: proof.roots[round],
-      beta: verdict.betas[round],
+      transcriptSample: transcriptTrace.rounds[round].sample,
       coordinate: pair.coordinate,
       inverseTwoCoordinate: inverse(mul(2n, pair.coordinate)),
       leftIndex: pair.leftIndex,
@@ -358,23 +525,42 @@ export const createBchCircleFriQueryFixture = ({
     currentIndex = pairIndex;
   }
   return Object.freeze({
-    kind: 'circle-fri-authenticated-query-component-v1',
-    transcriptDerivationIncluded: false,
+    kind: 'circle-fri-transcript-bound-query-component-v1',
+    transcriptDerivationIncluded: true,
+    proofCommitmentsRuntimeSupplied: false,
     parameters,
+    protocolContext: new Uint8Array(protocolContext),
+    transcriptTrace,
     queryOrdinal,
     initialQueryIndex: verdict.queryIndices[queryOrdinal],
     finalIndex: currentIndex,
     finalExpected: proof.finalCodeword[currentIndex],
+    finalCodeword: proof.finalCodeword.slice(),
     rounds,
   });
 };
 
 export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
-  require(fixture?.kind === 'circle-fri-authenticated-query-component-v1', 'query fixture is required');
-  const script = [...QUERY_FUNCTION_DEFINITIONS];
+  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v1', 'query fixture is required');
+  const script = [
+    ...QUERY_FUNCTION_DEFINITIONS,
+    ...buildTranscriptInitialization({
+      protocolContext: fixture.protocolContext,
+      parameters: fixture.parameters,
+    }),
+  ];
   for (let round = 0; round < fixture.rounds.length; round += 1) {
     const item = fixture.rounds[round];
     script.push(
+      ...buildTranscriptAbsorbConstant(`fri-layer-root-${round}`, item.root),
+      ...buildTranscriptChallenge({
+        label: `fri-fold-beta-${round}`,
+        upperBound: Number(M31_MODULUS),
+        acceptedAttempt: item.transcriptSample.attempt,
+      }),
+      OP.OP_SWAP,
+      OP.OP_TOALTSTACK, // transcript state
+      OP.OP_TOALTSTACK, // derived beta
       ...buildMerklePairVerification({
         leftIndex: item.leftIndex,
         rightIndex: item.rightIndex,
@@ -382,20 +568,32 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
         rightSiblings: item.opening.rightSiblings,
         root: item.root,
       }),
-      ...buildFoldVerification({
+      ...buildTranscriptBoundFoldVerification({
         coordinate: item.coordinate,
-        beta: item.beta,
         continuitySide: item.continuitySide,
-        finalExpected: fixture.finalExpected,
         isLast: round === fixture.rounds.length - 1,
       }),
     );
   }
+  script.push(
+    OP.OP_FROMALTSTACK, // folded value, transcript state
+    ...buildTranscriptAbsorbConstant('fri-final-codeword', fixture.transcriptTrace.finalCodewordBytes),
+    ...buildTranscriptChallenge({
+      label: 'fri-query-0-candidate-0',
+      upperBound: fixture.parameters.domainLength,
+      acceptedAttempt: fixture.transcriptTrace.querySample.attempt,
+    }),
+    ...pushNumber(fixture.initialQueryIndex),
+    OP.OP_NUMEQUALVERIFY,
+    OP.OP_DROP, // final transcript state
+    ...pushNumber(fixture.finalExpected),
+    OP.OP_NUMEQUAL,
+  );
   return Uint8Array.from(script);
 };
 
 export const buildBchCircleFriQueryOperandUnlockingBytecode = (fixture) => {
-  require(fixture?.kind === 'circle-fri-authenticated-query-component-v1', 'query fixture is required');
+  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v1', 'query fixture is required');
   const operands = [];
   for (let round = fixture.rounds.length - 1; round >= 0; round -= 1) {
     const item = fixture.rounds[round];
