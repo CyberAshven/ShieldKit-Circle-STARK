@@ -9,4 +9,5 @@ export * from './query-multiproof.mjs';
 export * from './query-batch-witness.mjs';
 export * from './bch-j-fold-kernel.mjs';
 export * from './bch-multiproof-kernel.mjs';
+export * from './bch-multiproof4-kernel.mjs';
 export * from './bch-query-kernel.mjs';
