@@ -2,6 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  encodeLockingBytecodeP2sh32,
+  hash256,
+} from '@bitauth/libauth';
+
+import {
   encodeScriptTransactionFixture,
   evaluateScriptFixture,
 } from '../../research-lanes/bch-shielded-pool-design/p2/bch-kernels/m31-kernel.mjs';
@@ -11,7 +16,9 @@ import {
 } from '../../src/circle-fri/commitment.mjs';
 
 import {
+  buildBchM31Multiproof4OperandUnlockingBytecode,
   buildBchM31Multiproof4RedeemBytecode,
+  buildBchM31Multiproof4VerificationBytecode,
   createBchM31Multiproof4Fixture,
   evaluateBchM31Multiproof4P2sh32,
   materializeBchM31Multiproof4P2sh32,
@@ -40,6 +47,65 @@ const encodePush = (value) => {
   if (value.length <= 75) return Uint8Array.from([value.length, ...value]);
   if (value.length <= 0xff) return Uint8Array.from([0x4c, value.length, ...value]);
   return Uint8Array.from([0x4d, value.length & 0xff, value.length >>> 8, ...value]);
+};
+
+const concatBytes = (...parts) => {
+  const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+};
+
+const encodeScriptNumber = (value) => {
+  let remaining = BigInt(value);
+  if (remaining === 0n) return new Uint8Array();
+  const bytes = [];
+  while (remaining > 0n) {
+    bytes.push(Number(remaining & 0xffn));
+    remaining >>= 8n;
+  }
+  if ((bytes.at(-1) & 0x80) !== 0) bytes.push(0);
+  return Uint8Array.from(bytes);
+};
+
+const pushNumber = (value) => {
+  if (value === 0) return Uint8Array.of(0x00);
+  if (value >= 1 && value <= 16) return Uint8Array.of(0x50 + value);
+  return encodePush(encodeScriptNumber(value));
+};
+
+const FUNCTION_ID = 1;
+const OP_DEFINE = 0x89;
+const OP_INVOKE = 0x8a;
+const OP_TOALTSTACK = 0x6b;
+const OP_FROMALTSTACK = 0x6c;
+const OP_BOOLAND = 0x9a;
+
+const defineVerificationFunction = () => concatBytes(
+  encodePush(buildBchM31Multiproof4VerificationBytecode()),
+  pushNumber(FUNCTION_ID),
+  Uint8Array.of(OP_DEFINE),
+);
+
+const invokeVerificationFunction = (width) => concatBytes(
+  pushNumber(width),
+  pushNumber(FUNCTION_ID),
+  Uint8Array.of(OP_INVOKE),
+);
+
+const evaluateDefinedVerificationFunction = (fixture, width = fixture.length) => {
+  const redeemBytecode = concatBytes(
+    defineVerificationFunction(),
+    invokeVerificationFunction(width),
+  );
+  const operandUnlockingBytecode = buildBchM31Multiproof4OperandUnlockingBytecode(fixture);
+  return evaluateScriptFixture({
+    lockingBytecode: encodeLockingBytecodeP2sh32(hash256(redeemBytecode)),
+    unlockingBytecode: concatBytes(operandUnlockingBytecode, encodePush(redeemBytecode)),
+  });
 };
 
 test('BCH-2026 P2SH32 accepts diverse canonical exactly-four-leaf topologies', () => {
@@ -106,6 +172,76 @@ test('the shared lock accepts every ordered four-index set in an eight-leaf tree
     }
   }
   assert.equal(count, 70);
+});
+
+test('runtime-width verification body executes as one BCH-2026 defined function across widths', () => {
+  const cases = [
+    [4, [0, 1, 2, 3]],
+    [8, [0, 2, 5, 7]],
+    [16, [1, 6, 9, 14]],
+    [32, [0, 15, 16, 31]],
+    [128, [7, 31, 63, 126]],
+    [512, [7, 128, 383, 510]],
+  ];
+  const body = buildBchM31Multiproof4VerificationBytecode();
+  assert.equal(body.length, 598);
+  for (const [width, indices] of cases) {
+    const fixture = createBchM31Multiproof4Fixture({ values: codeword(width), indices });
+    const result = evaluateDefinedVerificationFunction(fixture, width);
+    assert.equal(result.accepted, true, `${width}/${indices}: ${result.error ?? 'rejected'}`);
+    assert.equal(result.standard, true);
+  }
+});
+
+test('one OP_DEFINE body is reusable across six runtime-width invocations', () => {
+  const cases = [
+    [512, [7, 128, 383, 510]],
+    [256, [1, 64, 190, 254]],
+    [128, [7, 31, 63, 126]],
+    [64, [0, 15, 32, 63]],
+    [32, [0, 15, 16, 31]],
+    [16, [1, 6, 9, 14]],
+  ];
+  const fixtures = cases.map(([width, indices]) => createBchM31Multiproof4Fixture({
+    values: codeword(width),
+    indices,
+  }));
+  const invocationBytecode = [];
+  for (let ordinal = fixtures.length - 1; ordinal >= 0; ordinal -= 1) {
+    invocationBytecode.push(...invokeVerificationFunction(fixtures[ordinal].length));
+    if (ordinal > 0) invocationBytecode.push(OP_TOALTSTACK);
+  }
+  for (let ordinal = 1; ordinal < fixtures.length; ordinal += 1) {
+    invocationBytecode.push(OP_FROMALTSTACK, OP_BOOLAND);
+  }
+  const redeemBytecode = concatBytes(
+    defineVerificationFunction(),
+    Uint8Array.from(invocationBytecode),
+  );
+  const operandUnlockingBytecode = concatBytes(
+    ...fixtures.map(buildBchM31Multiproof4OperandUnlockingBytecode),
+  );
+  const result = evaluateScriptFixture({
+    lockingBytecode: encodeLockingBytecodeP2sh32(hash256(redeemBytecode)),
+    unlockingBytecode: concatBytes(operandUnlockingBytecode, encodePush(redeemBytecode)),
+  });
+  assert.equal(result.accepted, true, result.error ?? 'rejected');
+  assert.equal(result.standard, true);
+  assert.ok(redeemBytecode.length < buildBchM31Multiproof4VerificationBytecode().length * 2);
+});
+
+test('runtime width rejects wrong depths, odd widths, and rebound extra levels', () => {
+  const fixture = createBchM31Multiproof4Fixture({ values: codeword(32), indices: [0, 1, 2, 3] });
+  for (const wrongWidth of [8, 31, 64]) {
+    const result = evaluateDefinedVerificationFunction(fixture, wrongWidth);
+    assert.equal(result.accepted, false, `wrong width ${wrongWidth}`);
+  }
+
+  const rebound = structuredClone(fixture);
+  const extraSibling = new Uint8Array(32).fill(0x5a);
+  rebound.frontier.push(extraSibling);
+  rebound.root = hashMerkleNode(rebound.root, extraSibling);
+  assert.equal(evaluateDefinedVerificationFunction(rebound, fixture.length).accepted, false);
 });
 
 test('runtime root, all values, and every canonical frontier position are binding', () => {
@@ -235,13 +371,13 @@ test('512-leaf four-leaf multiproof records real standard-VM transaction metrics
   assert.equal(result.accepted, true, result.error ?? 'rejected');
   assert.equal(result.standard, true);
   assert.equal(fixture.frontier.length, 27);
-  assert.equal(materialized.redeemBytecode.length, 596);
+  assert.equal(materialized.redeemBytecode.length, 601);
   assert.equal(materialized.operandUnlockingBytecode.length, 929);
-  assert.equal(materialized.unlockingBytecode.length, 1_528);
-  assert.equal(wires.transactionHex.length / 2, 1_591);
-  assert.equal(result.metrics.operationCost, 536_219);
+  assert.equal(materialized.unlockingBytecode.length, 1_533);
+  assert.equal(wires.transactionHex.length / 2, 1_596);
+  assert.equal(result.metrics.operationCost, 541_574);
   assert.equal(result.metrics.hashDigestIterations, 109);
-  assert.equal(result.metrics.stackMaximums.cumulativeMemoryItems, 14);
+  assert.equal(result.metrics.stackMaximums.cumulativeMemoryItems, 15);
   assert.equal(result.metrics.stackMaximums.elementBytes, 864);
   assert.equal(result.metrics.signatureCheckCount, 0);
   assert.ok(result.metrics.operationCost < result.metrics.limits.maximumOperationCost);

@@ -1,11 +1,12 @@
 /**
  * BCH-2026 P2SH32 kernel for canonical exactly-four-leaf M31 multiproofs.
  *
- * The redeem script is specialized only to the committed power-of-two tree
- * length. Four runtime index/value pairs are converted to sorted 36-byte
- * records (`u32le(index) || hash32`) and reduced through the canonical
- * bottom-up union frontier. No proof-specific positions or merge flags enter
- * the lock.
+ * The reusable verification fragment takes its tree width from the stack.
+ * Four runtime index/value pairs are converted to sorted 36-byte records
+ * (`u32le(index) || hash32`) and reduced through the canonical bottom-up union
+ * frontier. A standalone redeem remains specialized only to the committed
+ * power-of-two tree length by pushing that width before the fragment. No
+ * proof-specific positions or merge flags enter either form.
  */
 
 import {
@@ -144,10 +145,10 @@ const assertHash = (value, name) => {
 };
 
 const compileScript = (script) => {
-  require(Array.isArray(script), 'compiled redeem must be an array');
+  require(Array.isArray(script), 'compiled Script must be an array');
   require(
     script.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 0xff),
-    'compiled redeem contains an invalid or undefined byte',
+    'compiled Script contains an invalid or undefined byte',
   );
   return Uint8Array.from(script);
 };
@@ -333,7 +334,13 @@ const reduceOneCurrentRecord = () => [
   ...appendParentRecord(),
 ];
 
-const validateRuntimeIndices = (length) => [
+const duplicateRuntimeWidth = () => [
+  OP.OP_FROMALTSTACK,
+  OP.OP_DUP,
+  OP.OP_TOALTSTACK,
+];
+
+const validateRuntimeIndices = () => [
   // Initial witness stack: root, i0, i1, i2, i3, v0, v1, v2, v3, frontier.
   ...[8, 7, 6, 5].flatMap((depth) => [
     ...pushNumber(depth),
@@ -343,7 +350,7 @@ const validateRuntimeIndices = (length) => [
     OP.OP_VERIFY,
     ...pushNumber(depth),
     OP.OP_PICK,
-    ...pushNumber(length),
+    ...duplicateRuntimeWidth(),
     OP.OP_LESSTHAN,
     OP.OP_VERIFY,
   ]),
@@ -389,17 +396,27 @@ const buildInitialCurrentBlob = () => [
   OP.OP_ROLL,
 ];
 
-/** Compile one fixed tree length; no proof-specific index enters the redeem. */
-export const buildBchM31Multiproof4RedeemBytecode = (fixture) => {
-  require(fixture?.kind === FIXTURE_KIND, 'four-leaf multiproof fixture is required');
-  require(isPowerOfTwo(fixture.length), 'Merkle length must be a supported positive power of two');
+/**
+ * Compile the reusable exactly-four-leaf verification function body.
+ *
+ * Input suffix, bottom-to-top (any lower caller prefix is preserved):
+ * `root, i0, i1, i2, i3, rawM31v0, rawM31v1, rawM31v2, rawM31v3,
+ * packedCanonicalFrontier, treeWidth`.
+ *
+ * The four indices must be strictly increasing. `treeWidth` is consumed from
+ * the top, must be a power of two by runtime reduction, and independently
+ * determines both the exact number of tree levels and exact frontier
+ * consumption. Output is one boolean replacing the complete suffix.
+ */
+export const buildBchM31Multiproof4VerificationBytecode = () => {
   const script = [
-    ...validateRuntimeIndices(fixture.length),
+    // Keep the runtime width above any pre-existing alternate-stack caller
+    // state. All temporary alternate-stack use in this body remains balanced.
+    OP.OP_TOALTSTACK,
+    ...validateRuntimeIndices(),
     ...buildInitialCurrentBlob(),
 
     // Tree width is independent of caller-supplied frontier length.
-    ...pushNumber(fixture.length),
-    OP.OP_TOALTSTACK,
     OP.OP_BEGIN,
       // Reduce all known nodes in this level, consuming the canonical frontier.
       OP.OP_BEGIN,
@@ -424,6 +441,11 @@ export const buildBchM31Multiproof4RedeemBytecode = (fixture) => {
 
       // Consume exactly one committed tree level.
       OP.OP_FROMALTSTACK,
+      OP.OP_DUP,
+      OP.OP_2,
+      OP.OP_MOD,
+      OP.OP_0,
+      OP.OP_NUMEQUALVERIFY,
       OP.OP_2,
       OP.OP_DIV,
       OP.OP_DUP,
@@ -458,6 +480,16 @@ export const buildBchM31Multiproof4RedeemBytecode = (fixture) => {
     OP.OP_EQUAL,
   ];
   return compileScript(script);
+};
+
+/** Compile one fixed tree length; no proof-specific index enters the redeem. */
+export const buildBchM31Multiproof4RedeemBytecode = (fixture) => {
+  require(fixture?.kind === FIXTURE_KIND, 'four-leaf multiproof fixture is required');
+  require(isPowerOfTwo(fixture.length), 'Merkle length must be a supported positive power of two');
+  return compileScript([
+    ...pushNumber(fixture.length),
+    ...buildBchM31Multiproof4VerificationBytecode(),
+  ]);
 };
 
 export const buildBchM31Multiproof4OperandUnlockingBytecode = (fixture) => {
