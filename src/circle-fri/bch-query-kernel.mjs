@@ -188,8 +188,14 @@ const buildTranscriptInitialization = ({ protocolContext, parameters }) => [
   OP.OP_SHA256,
 ];
 
-const buildTranscriptAbsorbConstant = (label, payload) => [
-  ...encodeMinimalDataPush(frameBytes(label, payload)),
+/** Input: transcript state, runtime payload. Output: updated transcript state. */
+const buildTranscriptAbsorbRuntime = (label, payloadLength) => [
+  OP.OP_SIZE,
+  ...pushNumber(payloadLength),
+  OP.OP_NUMEQUALVERIFY,
+  ...encodeMinimalDataPush(framePrefix(label, payloadLength)),
+  OP.OP_SWAP,
+  OP.OP_CAT,
   OP.OP_CAT,
   OP.OP_SHA256,
 ];
@@ -442,8 +448,7 @@ const buildMerklePartialVerification = ({ leafIndex, siblings }) => {
   return Object.freeze({ script, branchIndex: index });
 };
 
-const buildMerklePairVerification = ({ leftIndex, rightIndex, leftSiblings, rightSiblings, root }) => {
-  assertHash(root, 'root');
+const buildMerklePairVerification = ({ leftIndex, rightIndex, leftSiblings, rightSiblings }) => {
   require(leftSiblings.length === rightSiblings.length && leftSiblings.length >= 1, 'paired Merkle paths must have equal nonzero length');
   const left = buildMerklePartialVerification({
     leafIndex: leftIndex,
@@ -465,7 +470,8 @@ const buildMerklePairVerification = ({ leftIndex, rightIndex, leftSiblings, righ
     OP.OP_ROLL, // rightRaw, leftBranchHash, rightBranchHash
     ...((left.branchIndex & 1) === 0 ? [OP.OP_SWAP] : []),
     ...invokeFunction(FUNCTION.HASH_NODE_LEFT),
-    ...encodeMinimalDataPush(root),
+    ...pushNumber(3),
+    OP.OP_PICK, // runtime root below inverse and right raw value
     OP.OP_EQUALVERIFY,
     OP.OP_TOALTSTACK, // alt: leftRaw, rightRaw
   ];
@@ -503,6 +509,8 @@ const buildTranscriptBoundFoldVerification = ({ coordinate, continuitySide, isLa
     ...pushNumber(coordinate),
     OP.OP_FROMALTSTACK,
     ...invokeFunction(FUNCTION.FOLD_M31),
+    OP.OP_SWAP,
+    OP.OP_DROP, // consume the runtime root retained below the fold operands
   );
   if (!isLast) {
     script.push(
@@ -625,7 +633,8 @@ export const createBchCircleFriQueryFixture = ({
   return Object.freeze({
     kind: 'circle-fri-transcript-bound-query-component-v1',
     transcriptDerivationIncluded: true,
-    proofCommitmentsRuntimeSupplied: false,
+    proofCommitmentsRuntimeSupplied: true,
+    proofSpecificRedeem: true,
     parameters,
     protocolContext: new Uint8Array(protocolContext),
     transcriptTrace,
@@ -633,7 +642,6 @@ export const createBchCircleFriQueryFixture = ({
     queryOrdinal,
     initialQueryIndex: verdict.queryIndices[queryOrdinal],
     finalIndex: currentIndex,
-    finalExpected: proof.finalCodeword[currentIndex],
     finalCodeword: proof.finalCodeword.slice(),
     rounds,
   });
@@ -694,7 +702,9 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
   for (let round = 0; round < fixture.rounds.length; round += 1) {
     const item = fixture.rounds[round];
     script.push(
-      ...buildTranscriptAbsorbConstant(`fri-layer-root-${round}`, item.root),
+      ...pushNumber(6),
+      OP.OP_PICK, // runtime root below this round's five opening operands
+      ...buildTranscriptAbsorbRuntime(`fri-layer-root-${round}`, 32),
       ...buildTranscriptChallenge({
         label: `fri-fold-beta-${round}`,
         upperBound: Number(M31_MODULUS),
@@ -708,7 +718,6 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
         rightIndex: item.rightIndex,
         leftSiblings: item.opening.leftSiblings,
         rightSiblings: item.opening.rightSiblings,
-        root: item.root,
       }),
       ...buildTranscriptBoundFoldVerification({
         coordinate: item.coordinate,
@@ -718,11 +727,23 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
     );
   }
   script.push(
-    OP.OP_FROMALTSTACK, // folded value, transcript state
-    ...buildTranscriptAbsorbConstant('fri-final-codeword', fixture.transcriptTrace.finalCodewordBytes),
+    OP.OP_FROMALTSTACK, // runtime final codeword, folded value, transcript state
+    ...pushNumber(2),
+    OP.OP_PICK,
+    ...buildTranscriptAbsorbRuntime('fri-final-codeword', fixture.finalCodeword.length * 4),
     ...buildCanonicalQueryDerivation(fixture),
     OP.OP_DROP, // final transcript state
-    ...pushNumber(fixture.finalExpected),
+    OP.OP_SWAP, // folded value, runtime final codeword
+    ...(fixture.finalIndex === 0 ? [] : [
+      ...pushNumber(fixture.finalIndex * 4),
+      OP.OP_SPLIT,
+      OP.OP_SWAP,
+      OP.OP_DROP,
+    ]),
+    ...pushNumber(4),
+    OP.OP_SPLIT,
+    OP.OP_DROP,
+    ...invokeFunction(FUNCTION.DECODE_M31),
     OP.OP_NUMEQUAL,
   );
   return Uint8Array.from(script);
@@ -730,11 +751,12 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
 
 export const buildBchCircleFriQueryOperandUnlockingBytecode = (fixture) => {
   require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v1', 'query fixture is required');
-  const operands = [];
+  const operands = [encodeFinalCodeword(fixture.finalCodeword)];
   const packPartialPath = (siblings) => concat(...siblings.slice(0, -1).reverse());
   for (let round = fixture.rounds.length - 1; round >= 0; round -= 1) {
     const item = fixture.rounds[round];
     operands.push(
+      item.root,
       encodeM31(item.inverseTwoCoordinate),
       packPartialPath(item.opening.rightSiblings),
       encodeM31(item.opening.rightValue),

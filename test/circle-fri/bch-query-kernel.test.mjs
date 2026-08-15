@@ -7,6 +7,7 @@ import { utf8 } from '../../src/circle-fri/bytes.mjs';
 
 import {
   BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES,
+  buildBchCircleFriQueryRedeemBytecode,
   createBchCircleFriQueryFixture,
   encodeBchCircleFriMultiQueryTransactionFixture,
   encodeBchCircleFriQueryP2sh32TransactionFixture,
@@ -42,7 +43,8 @@ test('BCH-2026 P2SH32 accepts one complete authenticated Circle-FRI query chain'
   assert.equal(result.accepted, true, result.error ?? 'BCH query component rejected');
   assert.equal(result.standard, true);
   assert.equal(honest.transcriptDerivationIncluded, true);
-  assert.equal(honest.proofCommitmentsRuntimeSupplied, false);
+  assert.equal(honest.proofCommitmentsRuntimeSupplied, true);
+  assert.equal(honest.proofSpecificRedeem, true);
   assert.equal(materialized.lockingBytecode.length, 35);
   assert.ok(materialized.redeemBytecode.length <= 10_000);
   assert.ok(materialized.unlockingBytecode.length <= 10_000);
@@ -54,19 +56,25 @@ test('query component measures real hashes, arithmetic, stack, and transaction b
   const materialized = materializeBchCircleFriQueryP2sh32(honest);
   const result = evaluateBchCircleFriQueryP2sh32(honest);
   const wires = encodeBchCircleFriQueryP2sh32TransactionFixture(honest);
-  assert.equal(materialized.redeemBytecode.length, 2_503);
-  assert.equal(materialized.operandUnlockingBytecode.length, 2_228);
-  assert.equal(materialized.unlockingBytecode.length, 4_734);
-  assert.equal(wires.transactionHex.length / 2, 4_797);
-  assert.equal(result.metrics.hashDigestIterations, 335);
-  assert.equal(result.metrics.operationCost, 411_212);
+  assert.equal(materialized.redeemBytecode.length, 2_166);
+  assert.equal(materialized.operandUnlockingBytecode.length, 2_459);
+  assert.equal(materialized.unlockingBytecode.length, 4_628);
+  assert.equal(wires.transactionHex.length / 2, 4_691);
+  assert.equal(result.metrics.hashDigestIterations, 329);
+  assert.equal(result.metrics.operationCost, 420_548);
   assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 360);
   assert.equal(result.metrics.signatureCheckCount, 0);
   assert.ok(result.metrics.operationCost < result.metrics.limits.maximumOperationCost);
   assert.ok(result.metrics.stackMaximums.cumulativeMemoryItems < 1_000);
 });
 
-test('wrong path, value, inverse, or final value rejects', () => {
+test('wrong root, path, value, inverse, or runtime final codeword rejects', () => {
+  const honestRedeem = buildBchCircleFriQueryRedeemBytecode(honest);
+  const wrongRoot = structuredClone(honest);
+  wrongRoot.rounds[0].root[0] ^= 1;
+  assert.deepEqual(buildBchCircleFriQueryRedeemBytecode(wrongRoot), honestRedeem);
+  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongRoot).accepted, false);
+
   const wrongPath = structuredClone(honest);
   wrongPath.rounds[0].opening.leftSiblings[0][0] ^= 1;
   assert.equal(evaluateBchCircleFriQueryP2sh32(wrongPath).accepted, false);
@@ -80,7 +88,8 @@ test('wrong path, value, inverse, or final value rejects', () => {
   assert.equal(evaluateBchCircleFriQueryP2sh32(wrongInverse).accepted, false);
 
   const wrongFinal = structuredClone(honest);
-  wrongFinal.finalExpected = (wrongFinal.finalExpected + 1n) % M31_MODULUS;
+  wrongFinal.finalCodeword[wrongFinal.finalIndex] = (wrongFinal.finalCodeword[wrongFinal.finalIndex] + 1n) % M31_MODULUS;
+  assert.deepEqual(buildBchCircleFriQueryRedeemBytecode(wrongFinal), honestRedeem);
   assert.equal(evaluateBchCircleFriQueryP2sh32(wrongFinal).accepted, false);
 });
 

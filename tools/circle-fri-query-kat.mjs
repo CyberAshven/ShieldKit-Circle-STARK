@@ -72,6 +72,7 @@ export const queryKatSummary = (kat) => Object.freeze({
   kind: kat.fixture.kind,
   transcriptDerivationIncluded: kat.fixture.transcriptDerivationIncluded,
   proofCommitmentsRuntimeSupplied: kat.fixture.proofCommitmentsRuntimeSupplied,
+  proofSpecificRedeem: kat.fixture.proofSpecificRedeem,
   parameters: kat.parameters,
   initialQueryIndex: kat.fixture.initialQueryIndex,
   proof: Object.freeze({
@@ -129,7 +130,8 @@ export const buildMultiQueryKat = () => {
 export const multiQueryKatSummary = (kat) => Object.freeze({
   kind: 'circle-fri-transcript-bound-multi-query-transaction-v1',
   transcriptDerivationIncluded: true,
-  proofCommitmentsRuntimeSupplied: false,
+  proofCommitmentsRuntimeSupplied: kat.fixtures.every(({ proofCommitmentsRuntimeSupplied }) => proofCommitmentsRuntimeSupplied),
+  proofSpecificRedeem: kat.fixtures.some(({ proofSpecificRedeem }) => proofSpecificRedeem),
   parameters: kat.parameters,
   queryIndices: kat.fixtures.map(({ initialQueryIndex }) => initialQueryIndex),
   proof: Object.freeze({ bytes: kat.proofBytes.length, sha256: sha256(kat.proofBytes) }),
