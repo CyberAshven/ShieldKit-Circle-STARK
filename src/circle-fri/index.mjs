@@ -5,5 +5,6 @@ export * from './bytes.mjs';
 export * from './commitment.mjs';
 export * from './transcript.mjs';
 export * from './query-proof.mjs';
+export * from './query-multiproof.mjs';
 export * from './bch-j-fold-kernel.mjs';
 export * from './bch-query-kernel.mjs';
