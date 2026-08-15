@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import { M31_MODULUS } from '../../research-lanes/bch-shielded-pool-design/p2/reference/m31.mjs';
 
-import { utf8 } from '../../src/circle-fri/bytes.mjs';
+import { sha256, utf8 } from '../../src/circle-fri/bytes.mjs';
+
+import { sampleCircleFriTranscriptState } from '../../src/circle-fri/transcript.mjs';
 
 import {
   BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES,
@@ -11,6 +13,7 @@ import {
   createBchCircleFriQueryFixture,
   encodeBchCircleFriMultiQueryTransactionFixture,
   encodeBchCircleFriQueryP2sh32TransactionFixture,
+  evaluateBchCircleFriTranscriptChallenge,
   evaluateBchCircleFriQueryP2sh32,
   materializeBchCircleFriQueryP2sh32,
 } from '../../src/circle-fri/bch-query-kernel.mjs';
@@ -43,6 +46,7 @@ test('BCH-2026 P2SH32 accepts one complete authenticated Circle-FRI query chain'
   assert.equal(result.accepted, true, result.error ?? 'BCH query component rejected');
   assert.equal(result.standard, true);
   assert.equal(honest.transcriptDerivationIncluded, true);
+  assert.equal(honest.transcriptAttemptsRuntimeDerived, true);
   assert.equal(honest.proofCommitmentsRuntimeSupplied, true);
   assert.equal(honest.topologyOpeningRuntimeSupplied, true);
   assert.equal(honest.topologyPlanRuntimeConsumed, true);
@@ -58,13 +62,13 @@ test('query component measures real hashes, arithmetic, stack, and transaction b
   const materialized = materializeBchCircleFriQueryP2sh32(honest);
   const result = evaluateBchCircleFriQueryP2sh32(honest);
   const wires = encodeBchCircleFriQueryP2sh32TransactionFixture(honest);
-  assert.equal(materialized.redeemBytecode.length, 4_276);
+  assert.equal(materialized.redeemBytecode.length, 4_036);
   assert.equal(materialized.operandUnlockingBytecode.length, 2_892);
-  assert.equal(materialized.unlockingBytecode.length, 7_171);
-  assert.equal(wires.transactionHex.length / 2, 7_234);
-  assert.equal(result.metrics.hashDigestIterations, 393);
-  assert.equal(result.metrics.operationCost, 650_179);
-  assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 358);
+  assert.equal(materialized.unlockingBytecode.length, 6_931);
+  assert.equal(wires.transactionHex.length / 2, 6_994);
+  assert.equal(result.metrics.hashDigestIterations, 390);
+  assert.equal(result.metrics.operationCost, 662_707);
+  assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 408);
   assert.equal(result.metrics.signatureCheckCount, 0);
   assert.ok(result.metrics.operationCost < result.metrics.limits.maximumOperationCost);
   assert.ok(result.metrics.stackMaximums.cumulativeMemoryItems < 1_000);
@@ -102,11 +106,33 @@ test('wrong transcript context, rejection path, or derived query index rejects',
 
   const wrongAttempt = structuredClone(honest);
   wrongAttempt.rounds[0].transcriptSample.attempt += 1;
-  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongAttempt).accepted, false);
+  assert.deepEqual(buildBchCircleFriQueryRedeemBytecode(wrongAttempt), buildBchCircleFriQueryRedeemBytecode(honest));
+  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongAttempt).accepted, true);
 
   const wrongQueryIndex = structuredClone(honest);
   wrongQueryIndex.initialQueryIndex ^= 1;
   assert.equal(evaluateBchCircleFriQueryP2sh32(wrongQueryIndex).accepted, false);
+});
+
+test('BCH Script derives a nonzero rejection attempt rather than trusting a host trace', () => {
+  const state = sha256(utf8('Circle-FRI runtime rejection-loop test state'));
+  const upperBound = 3_000_000_000;
+  let label;
+  let expectedSample;
+  for (let nonce = 0; nonce < 100; nonce += 1) {
+    const candidateLabel = `runtime-rejection-${nonce}`;
+    const sample = sampleCircleFriTranscriptState({ state, label: candidateLabel, upperBound });
+    if (sample.attempt > 0) {
+      label = candidateLabel;
+      expectedSample = sample;
+      break;
+    }
+  }
+  assert.notEqual(label, undefined, 'deterministic test search did not find a rejected first draw');
+  const result = evaluateBchCircleFriTranscriptChallenge({ state, label, upperBound });
+  assert.equal(result.accepted, true, result.error ?? 'runtime rejection loop rejected');
+  assert.equal(result.sample.attempt, expectedSample.attempt);
+  assert.equal(result.sample.value, expectedSample.value);
 });
 
 test('runtime topology record and opening path are bound to the fixed verifier root', () => {

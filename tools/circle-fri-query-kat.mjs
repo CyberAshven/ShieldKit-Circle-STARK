@@ -71,6 +71,7 @@ export const buildQueryKat = ({
 export const queryKatSummary = (kat) => Object.freeze({
   kind: kat.fixture.kind,
   transcriptDerivationIncluded: kat.fixture.transcriptDerivationIncluded,
+  transcriptAttemptsRuntimeDerived: kat.fixture.transcriptAttemptsRuntimeDerived,
   proofCommitmentsRuntimeSupplied: kat.fixture.proofCommitmentsRuntimeSupplied,
   topologyOpeningRuntimeSupplied: kat.fixture.topologyOpeningRuntimeSupplied,
   topologyPlanRuntimeConsumed: kat.fixture.topologyPlanRuntimeConsumed,
@@ -132,6 +133,7 @@ export const buildMultiQueryKat = () => {
 export const multiQueryKatSummary = (kat) => Object.freeze({
   kind: 'circle-fri-transcript-bound-multi-query-transaction-v1',
   transcriptDerivationIncluded: true,
+  transcriptAttemptsRuntimeDerived: kat.fixtures.every(({ transcriptAttemptsRuntimeDerived }) => transcriptAttemptsRuntimeDerived),
   proofCommitmentsRuntimeSupplied: kat.fixtures.every(({ proofCommitmentsRuntimeSupplied }) => proofCommitmentsRuntimeSupplied),
   topologyOpeningRuntimeSupplied: kat.fixtures.every(({ topologyOpeningRuntimeSupplied }) => topologyOpeningRuntimeSupplied),
   topologyPlanRuntimeConsumed: kat.fixtures.every(({ topologyPlanRuntimeConsumed }) => topologyPlanRuntimeConsumed),

@@ -66,6 +66,8 @@ const OP = Object.freeze({
   OP_1: 0x51,
   OP_2: 0x52,
   OP_IF: 0x63,
+  OP_BEGIN: 0x65,
+  OP_UNTIL: 0x66,
   OP_ELSE: 0x67,
   OP_ENDIF: 0x68,
   OP_VERIFY: 0x69,
@@ -76,18 +78,21 @@ const OP = Object.freeze({
   OP_2OVER: 0x70,
   OP_DROP: 0x75,
   OP_DUP: 0x76,
+  OP_OVER: 0x78,
   OP_PICK: 0x79,
   OP_ROLL: 0x7a,
   OP_2SWAP: 0x72,
   OP_SWAP: 0x7c,
   OP_CAT: 0x7e,
   OP_SPLIT: 0x7f,
+  OP_NUM2BIN: 0x80,
   OP_BIN2NUM: 0x81,
   OP_SIZE: 0x82,
   OP_EQUAL: 0x87,
   OP_EQUALVERIFY: 0x88,
   OP_DEFINE: 0x89,
   OP_INVOKE: 0x8a,
+  OP_1ADD: 0x8b,
   OP_ADD: 0x93,
   OP_SUB: 0x94,
   OP_MUL: 0x95,
@@ -225,56 +230,27 @@ const buildTranscriptCandidate = () => [
 
 /**
  * Input: transcript state. Output: updated transcript state, sampled integer.
- * The accepted attempt is derived off-chain only to unroll the deterministic
- * rejection path; every rejected/accepted predicate is re-executed in Script.
+ * OP_BEGIN/OP_UNTIL derives the accepted attempt at runtime, so no proof-specific
+ * rejection trace is embedded in the redeem bytecode.
  */
-const buildTranscriptChallenge = ({ label, upperBound, acceptedAttempt }) => {
+const buildTranscriptChallenge = ({ label, upperBound }) => {
   require(Number.isSafeInteger(upperBound) && upperBound >= 1 && upperBound <= 0xffff_ffff, 'challenge upperBound is out of range');
-  require(Number.isSafeInteger(acceptedAttempt) && acceptedAttempt >= 0, 'accepted challenge attempt is out of range');
   const acceptanceBound = Math.floor(TWO_TO_32 / upperBound) * upperBound;
-  const labelFrame = frameBytes('accepted-challenge-label', utf8(label));
-  const script = [];
-
-  for (let attempt = 0; attempt <= acceptedAttempt; attempt += 1) {
-    const drawSuffix = concat(
+  return [
+    ...encodeMinimalDataPush(concat(
       frameBytes('label', utf8(label)),
-      frameBytes('attempt', u32le(attempt)),
-    );
-    if (attempt === acceptedAttempt) {
-      script.push(
-        ...encodeMinimalDataPush(drawSuffix),
-        ...encodeMinimalDataPush(labelFrame),
-        ...encodeMinimalDataPush(frameBytes('accepted-challenge-attempt', u32le(attempt))),
-        ...(upperBound === Number(M31_MODULUS)
-          ? invokeFunction(FUNCTION.SAMPLE_M31_TRANSCRIPT)
-          : [
-              OP.OP_TOALTSTACK,
-              OP.OP_TOALTSTACK,
-              ...pushNumber(upperBound),
-              ...pushNumber(acceptanceBound),
-              OP.OP_FROMALTSTACK,
-              OP.OP_FROMALTSTACK,
-              ...invokeFunction(FUNCTION.SAMPLE_TRANSCRIPT),
-            ]),
-      );
-      continue;
-    }
-    script.push(
-      OP.OP_DUP,
-      ...encodeMinimalDataPush(CIRCLE_FRI_SQUEEZE_DOMAIN),
-      OP.OP_SWAP,
-      OP.OP_CAT,
-      ...encodeMinimalDataPush(drawSuffix),
-      OP.OP_CAT,
-      OP.OP_SHA256,
-      ...buildTranscriptCandidate(),
-      ...pushNumber(acceptanceBound),
-      OP.OP_GREATERTHANOREQUAL,
-      OP.OP_VERIFY,
-      OP.OP_DROP,
-    );
-  }
-  return script;
+      framePrefix('attempt', 4),
+    )),
+    ...encodeMinimalDataPush(frameBytes('accepted-challenge-label', utf8(label))),
+    ...(upperBound === Number(M31_MODULUS)
+      ? invokeFunction(FUNCTION.SAMPLE_M31_TRANSCRIPT)
+      : [
+          ...pushNumber(upperBound),
+          ...pushNumber(acceptanceBound),
+          OP.OP_0,
+          ...invokeFunction(FUNCTION.SAMPLE_TRANSCRIPT),
+        ]),
+  ];
 };
 
 const HASH_LEAF_PLAIN_FUNCTION = Uint8Array.from([
@@ -360,58 +336,71 @@ const FOLD_M31_FUNCTION = Uint8Array.from([
 ]);
 
 const SAMPLE_TRANSCRIPT_FUNCTION = Uint8Array.from([
-  // Input: state, drawSuffix, upperBound, acceptanceBound, labelFrame, attemptFrame.
-  OP.OP_TOALTSTACK, // attemptFrame
-  OP.OP_TOALTSTACK, // labelFrame
-  OP.OP_SWAP,
-  OP.OP_TOALTSTACK, // upperBound
-  OP.OP_TOALTSTACK, // acceptanceBound
-
-  // Preserve state while hashing SQUEEZE_DOMAIN || state || drawSuffix.
-  OP.OP_SWAP,
-  OP.OP_DUP,
+  // Input: state, drawPrefix, labelFrame, upperBound, acceptanceBound, attempt=0.
+  OP.OP_BEGIN,
+  ...pushNumber(5),
+  OP.OP_PICK,
   ...encodeMinimalDataPush(CIRCLE_FRI_SQUEEZE_DOMAIN),
   OP.OP_SWAP,
   OP.OP_CAT,
-  OP.OP_2,
-  OP.OP_ROLL,
+  ...pushNumber(5),
+  OP.OP_PICK,
+  OP.OP_CAT,
+  OP.OP_OVER,
+  ...pushNumber(4),
+  OP.OP_NUM2BIN,
   OP.OP_CAT,
   OP.OP_SHA256, // state, digest
-
   ...buildTranscriptCandidate(), // state, digest, unsigned candidate
   OP.OP_DUP,
-  OP.OP_FROMALTSTACK, // acceptanceBound
+  ...pushNumber(4),
+  OP.OP_PICK,
   OP.OP_LESSTHAN,
-  OP.OP_VERIFY,
-  OP.OP_FROMALTSTACK, // upperBound
-  OP.OP_MOD, // state, digest, sampled value
-
-  // Hash state || labelFrame || frame(digest) || attemptFrame.
-  OP.OP_2,
+  OP.OP_IF,
+  OP.OP_DUP,
+  ...pushNumber(5),
+  OP.OP_PICK,
+  OP.OP_MOD,
+  OP.OP_TOALTSTACK, // sampled value
+  OP.OP_DROP, // candidate
+  ...pushNumber(6),
   OP.OP_PICK, // state copy
-  OP.OP_FROMALTSTACK, // labelFrame
+  ...pushNumber(5),
+  OP.OP_PICK, // label frame copy
   OP.OP_CAT,
   ...encodeMinimalDataPush(framePrefix('accepted-challenge-digest', 32)),
   OP.OP_CAT,
-  OP.OP_2,
-  OP.OP_PICK, // digest copy
+  OP.OP_OVER, // digest copy
   OP.OP_CAT,
-  OP.OP_FROMALTSTACK, // attemptFrame
+  ...encodeMinimalDataPush(framePrefix('accepted-challenge-attempt', 4)),
   OP.OP_CAT,
-  OP.OP_SHA256, // state, digest, value, nextState
-  OP.OP_2SWAP,
+  ...pushNumber(2),
+  OP.OP_PICK, // attempt copy
+  ...pushNumber(4),
+  OP.OP_NUM2BIN,
+  OP.OP_CAT,
+  OP.OP_SHA256,
+  OP.OP_TOALTSTACK, // next state
   OP.OP_2DROP,
-  OP.OP_SWAP, // nextState, sampled value
+  OP.OP_2DROP,
+  OP.OP_2DROP,
+  OP.OP_DROP,
+  OP.OP_FROMALTSTACK,
+  OP.OP_FROMALTSTACK,
+  OP.OP_1,
+  OP.OP_ELSE,
+  OP.OP_2DROP,
+  OP.OP_1ADD,
+  OP.OP_0,
+  OP.OP_ENDIF,
+  OP.OP_UNTIL,
 ]);
 
 const SAMPLE_M31_TRANSCRIPT_FUNCTION = Uint8Array.from([
-  // Input: state, drawSuffix, labelFrame, attemptFrame.
-  OP.OP_TOALTSTACK,
-  OP.OP_TOALTSTACK,
+  // Input: state, drawPrefix, labelFrame.
   ...pushNumber(M31_MODULUS),
   ...pushNumber(Number(M31_MODULUS) * 2),
-  OP.OP_FROMALTSTACK,
-  OP.OP_FROMALTSTACK,
+  OP.OP_0,
   ...invokeFunction(FUNCTION.SAMPLE_TRANSCRIPT),
 ]);
 
@@ -438,6 +427,27 @@ const QUERY_FUNCTION_DEFINITIONS = concat(
   defineFunction(FUNCTION.SAMPLE_M31_TRANSCRIPT, SAMPLE_M31_TRANSCRIPT_FUNCTION),
   defineFunction(FUNCTION.HASH_LEAF_PLAIN, HASH_LEAF_PLAIN_FUNCTION),
 );
+
+/** Cross-check the runtime rejection loop against the host transcript sampler. */
+export const evaluateBchCircleFriTranscriptChallenge = ({ state, label, upperBound }) => {
+  require(state instanceof Uint8Array && state.length === 32, 'transcript state must be exactly 32 bytes');
+  const sample = sampleCircleFriTranscriptState({ state, label, upperBound });
+  const redeemBytecode = Uint8Array.from([
+    ...QUERY_FUNCTION_DEFINITIONS,
+    ...buildTranscriptChallenge({ label, upperBound }),
+    ...pushNumber(sample.value),
+    OP.OP_NUMEQUALVERIFY,
+    ...encodeMinimalDataPush(sample.state),
+    OP.OP_EQUAL,
+  ]);
+  const operandUnlockingBytecode = encodeMinimalDataPush(state);
+  const unlockingBytecode = concat(operandUnlockingBytecode, encodeMinimalDataPush(redeemBytecode));
+  const lockingBytecode = encodeLockingBytecodeP2sh32(hash256(redeemBytecode));
+  return Object.freeze({
+    sample,
+    ...evaluateScriptFixture({ lockingBytecode, unlockingBytecode }),
+  });
+};
 
 const buildDynamicMerklePartialVerification = (partialPathLength) => {
   require(Number.isSafeInteger(partialPathLength) && partialPathLength >= 0, 'partial Merkle path length is invalid');
@@ -739,6 +749,7 @@ export const createBchCircleFriQueryFixture = ({
   return Object.freeze({
     kind: 'circle-fri-transcript-bound-query-component-v1',
     transcriptDerivationIncluded: true,
+    transcriptAttemptsRuntimeDerived: true,
     proofCommitmentsRuntimeSupplied: true,
     topologyOpeningRuntimeSupplied: true,
     topologyPlanRuntimeConsumed: true,
@@ -768,7 +779,6 @@ const buildCanonicalQueryDerivation = (fixture) => {
         ...buildTranscriptChallenge({
           label: `fri-query-${query}-candidate-${candidate.retry}`,
           upperBound: fixture.parameters.domainLength,
-          acceptedAttempt: candidate.sample.attempt,
         }),
         OP.OP_DUP,
         ...pushNumber(value),
@@ -905,7 +915,6 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
       ...buildTranscriptChallenge({
         label: `fri-fold-beta-${round}`,
         upperBound: Number(M31_MODULUS),
-        acceptedAttempt: item.transcriptSample.attempt,
       }),
       OP.OP_FROMALTSTACK, // left index
       OP.OP_FROMALTSTACK, // right index
