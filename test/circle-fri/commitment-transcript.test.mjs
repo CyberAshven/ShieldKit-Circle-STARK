@@ -9,7 +9,9 @@ import {
 import {
   buildM31MerkleTree,
   openM31Merkle,
+  openM31MerkleMulti,
   verifyM31Merkle,
+  verifyM31MerkleMulti,
 } from '../../src/circle-fri/commitment.mjs';
 
 import {
@@ -70,6 +72,102 @@ test('Merkle verifier rejects malformed tree metadata and hashes', () => {
     value: 1n,
     siblings: malformed,
   }), /exactly 32/);
+});
+
+test('canonical Merkle multiproofs authenticate several leaves with one minimal frontier', () => {
+  const values = Array.from({ length: 32 }, (_, index) => BigInt(index * index + 17));
+  const tree = buildM31MerkleTree(values);
+  const opening = openM31MerkleMulti(tree, [31, 9, 1, 8, 7]);
+  assert.deepEqual(opening.indices, [1, 7, 8, 9, 31]);
+  assert.ok(opening.siblings.length < opening.indices.length * Math.log2(tree.length));
+  const openedValues = opening.indices.map((index) => values[index]);
+  assert.equal(verifyM31MerkleMulti({
+    root: tree.root,
+    length: tree.length,
+    indices: opening.indices,
+    values: openedValues,
+    siblings: opening.siblings,
+  }), true);
+
+  const wrongValues = openedValues.slice();
+  wrongValues[2] += 1n;
+  assert.equal(verifyM31MerkleMulti({
+    root: tree.root,
+    length: tree.length,
+    indices: opening.indices,
+    values: wrongValues,
+    siblings: opening.siblings,
+  }), false);
+
+  const wrongFrontier = opening.siblings.map((hash) => new Uint8Array(hash));
+  wrongFrontier[0][0] ^= 1;
+  assert.equal(verifyM31MerkleMulti({
+    root: tree.root,
+    length: tree.length,
+    indices: opening.indices,
+    values: openedValues,
+    siblings: wrongFrontier,
+  }), false);
+});
+
+test('Merkle multiproof codec rejects ambiguous or non-canonical traversals', () => {
+  const values = Array.from({ length: 8 }, (_, index) => BigInt(index + 1));
+  const tree = buildM31MerkleTree(values);
+  const opening = openM31MerkleMulti(tree, [0, 1, 6]);
+  const openedValues = opening.indices.map((index) => values[index]);
+
+  assert.throws(() => openM31MerkleMulti(tree, []), /nonempty/);
+  assert.throws(() => openM31MerkleMulti(tree, [1, 1]), /unique/);
+  assert.throws(() => openM31MerkleMulti(tree, [8]), /out of range/);
+  assert.throws(() => verifyM31MerkleMulti({
+    root: tree.root,
+    length: tree.length,
+    indices: opening.indices.slice().reverse(),
+    values: openedValues.slice().reverse(),
+    siblings: opening.siblings,
+  }), /strictly increasing/);
+  assert.throws(() => verifyM31MerkleMulti({
+    root: tree.root,
+    length: tree.length,
+    indices: opening.indices,
+    values: openedValues,
+    siblings: [...opening.siblings, new Uint8Array(32)],
+  }), /unused hashes/);
+
+  const complete = openM31MerkleMulti(tree, values.map((_, index) => index));
+  assert.equal(complete.siblings.length, 0);
+  assert.equal(verifyM31MerkleMulti({
+    root: tree.root,
+    length: tree.length,
+    indices: complete.indices,
+    values,
+    siblings: complete.siblings,
+  }), true);
+});
+
+test('Merkle multiproof frontier is complete and minimal for every eight-leaf subset', () => {
+  const values = Array.from({ length: 8 }, (_, index) => BigInt(index * 101 + 7));
+  const tree = buildM31MerkleTree(values);
+  for (let mask = 1; mask < 2 ** values.length; mask += 1) {
+    const indices = values.flatMap((_, index) => ((mask & (1 << index)) === 0 ? [] : [index]));
+    const opening = openM31MerkleMulti(tree, indices);
+    let expectedHashes = 0;
+    let known = new Set(indices);
+    for (let length = tree.length; length > 1; length /= 2) {
+      for (const index of known) {
+        if (!known.has(index ^ 1)) expectedHashes += 1;
+      }
+      known = new Set([...known].map((index) => Math.floor(index / 2)));
+    }
+    assert.equal(opening.siblings.length, expectedHashes, `mask=${mask}`);
+    assert.equal(verifyM31MerkleMulti({
+      root: tree.root,
+      length: tree.length,
+      indices: opening.indices,
+      values: opening.indices.map((index) => values[index]),
+      siblings: opening.siblings,
+    }), true, `mask=${mask}`);
+  }
 });
 
 test('transcript is deterministic and binds labels, order, and context', () => {

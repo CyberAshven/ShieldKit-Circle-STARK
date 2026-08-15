@@ -31,6 +31,28 @@ const isPowerOfTwo = (value) => (
   && (value & (value - 1)) === 0
 );
 
+const canonicalizeMerkleIndices = (indices, length, { requireSorted = false } = {}) => {
+  if (!Array.isArray(indices) || indices.length === 0) {
+    fail('Merkle multiproof indices must be a nonempty array');
+  }
+  const canonical = indices.map((index, ordinal) => {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= length) {
+      fail(`Merkle multiproof indices[${ordinal}] is out of range`);
+    }
+    return index;
+  });
+  if (new Set(canonical).size !== canonical.length) fail('Merkle multiproof indices must be unique');
+  if (requireSorted) {
+    for (let index = 1; index < canonical.length; index += 1) {
+      if (canonical[index - 1] >= canonical[index]) {
+        fail('Merkle multiproof indices must be strictly increasing');
+      }
+    }
+    return canonical;
+  }
+  return canonical.sort((a, b) => a - b);
+};
+
 export const hashM31Leaf = (value) => hash256(concatBytes(
   M31_MERKLE_LEAF_DOMAIN,
   encodeM31(assertElement(value, 'leaf value')),
@@ -79,6 +101,34 @@ export const openM31Merkle = (tree, index) => {
   return Object.freeze({ index, siblings });
 };
 
+/**
+ * Build the unique canonical frontier for several leaves in one M31 Merkle tree.
+ *
+ * Indices are returned in strictly increasing order. Frontier hashes are emitted
+ * bottom-up and, within each level, by increasing known-node index. A verifier
+ * therefore needs no positions, flags, or caller-selected traversal metadata.
+ */
+export const openM31MerkleMulti = (tree, indices) => {
+  if (tree === null || typeof tree !== 'object' || !isPowerOfTwo(tree.length) || !Array.isArray(tree.layers)) {
+    fail('tree must be an M31 Merkle tree');
+  }
+  const canonicalIndices = canonicalizeMerkleIndices(indices, tree.length);
+  const siblings = [];
+  let current = canonicalIndices;
+  for (let level = 0; level < tree.layers.length - 1; level += 1) {
+    const known = new Set(current);
+    for (const index of current) {
+      const siblingIndex = index ^ 1;
+      if (!known.has(siblingIndex)) siblings.push(new Uint8Array(tree.layers[level][siblingIndex]));
+    }
+    current = [...new Set(current.map((index) => Math.floor(index / 2)))].sort((a, b) => a - b);
+  }
+  return Object.freeze({
+    indices: Object.freeze(canonicalIndices),
+    siblings: Object.freeze(siblings),
+  });
+};
+
 export const verifyM31Merkle = ({ root, length, index, value, siblings }) => {
   const expectedRoot = assertBytes(root, 'root');
   if (expectedRoot.length !== 32) fail('Merkle root must be exactly 32 bytes');
@@ -99,4 +149,45 @@ export const verifyM31Merkle = ({ root, length, index, value, siblings }) => {
     currentIndex = Math.floor(currentIndex / 2);
   }
   return equalBytes(current, expectedRoot);
+};
+
+/** Verify a canonical M31 Merkle multiproof without caller-supplied flags. */
+export const verifyM31MerkleMulti = ({ root, length, indices, values, siblings }) => {
+  const expectedRoot = assertBytes(root, 'root');
+  if (expectedRoot.length !== 32) fail('Merkle root must be exactly 32 bytes');
+  if (!isPowerOfTwo(length)) fail('Merkle length must be a positive power of two');
+  const canonicalIndices = canonicalizeMerkleIndices(indices, length, { requireSorted: true });
+  if (!Array.isArray(values) || values.length !== canonicalIndices.length) {
+    fail('Merkle multiproof values must match the index count');
+  }
+  if (!Array.isArray(siblings)) fail('Merkle multiproof siblings must be an array');
+  const frontier = siblings.map((hash, index) => {
+    const bytes = assertBytes(hash, `siblings[${index}]`);
+    if (bytes.length !== 32) fail(`siblings[${index}] must be exactly 32 bytes`);
+    return bytes;
+  });
+
+  let current = new Map(canonicalIndices.map((index, ordinal) => [
+    index,
+    hashM31Leaf(assertElement(values[ordinal], `values[${ordinal}]`)),
+  ]));
+  let siblingCursor = 0;
+  let levelLength = length;
+  while (levelLength > 1) {
+    const parents = new Map();
+    for (const index of [...current.keys()].sort((a, b) => a - b)) {
+      const parentIndex = Math.floor(index / 2);
+      if (parents.has(parentIndex)) continue;
+      const leftIndex = parentIndex * 2;
+      const rightIndex = leftIndex + 1;
+      const left = current.get(leftIndex) ?? frontier[siblingCursor++];
+      const right = current.get(rightIndex) ?? frontier[siblingCursor++];
+      if (left === undefined || right === undefined) fail('Merkle multiproof frontier is truncated');
+      parents.set(parentIndex, hashMerkleNode(left, right));
+    }
+    current = parents;
+    levelLength /= 2;
+  }
+  if (siblingCursor !== frontier.length) fail('Merkle multiproof frontier has unused hashes');
+  return equalBytes(current.get(0), expectedRoot);
 };
