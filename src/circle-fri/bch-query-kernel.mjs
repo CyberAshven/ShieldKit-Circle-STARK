@@ -54,10 +54,20 @@ import {
   sampleCircleFriTranscriptState,
 } from './transcript.mjs';
 
+import {
+  CIRCLE_FRI_TOPOLOGY_LEAF_DOMAIN,
+  buildCircleFriTopologyTable,
+  decodeCircleFriTopologyRecord,
+  openCircleFriTopologyTable,
+} from './topology-table.mjs';
+
 const OP = Object.freeze({
   OP_0: 0x00,
   OP_1: 0x51,
   OP_2: 0x52,
+  OP_IF: 0x63,
+  OP_ELSE: 0x67,
+  OP_ENDIF: 0x68,
   OP_VERIFY: 0x69,
   OP_TOALTSTACK: 0x6b,
   OP_FROMALTSTACK: 0x6c,
@@ -73,12 +83,14 @@ const OP = Object.freeze({
   OP_SPLIT: 0x7f,
   OP_BIN2NUM: 0x81,
   OP_SIZE: 0x82,
+  OP_EQUAL: 0x87,
   OP_EQUALVERIFY: 0x88,
   OP_DEFINE: 0x89,
   OP_INVOKE: 0x8a,
   OP_ADD: 0x93,
   OP_SUB: 0x94,
   OP_MUL: 0x95,
+  OP_DIV: 0x96,
   OP_MOD: 0x97,
   OP_LESSTHAN: 0x9f,
   OP_GREATERTHANOREQUAL: 0xa2,
@@ -630,10 +642,19 @@ export const createBchCircleFriQueryFixture = ({
     }));
     currentIndex = pairIndex;
   }
+  const topologyTable = topologyTableFor(parameters);
+  const topologyOpening = openCircleFriTopologyTable(topologyTable, verdict.queryIndices[queryOrdinal]);
+  const topologyRecord = decodeCircleFriTopologyRecord(topologyOpening.record);
+  for (let round = 0; round < rounds.length; round += 1) {
+    require(topologyRecord.rounds[round].leftIndex === rounds[round].leftIndex, `topology table left index disagrees at round ${round}`);
+    require(topologyRecord.rounds[round].rightIndex === rounds[round].rightIndex, `topology table right index disagrees at round ${round}`);
+    require(topologyRecord.rounds[round].coordinate === rounds[round].coordinate, `topology table coordinate disagrees at round ${round}`);
+  }
   return Object.freeze({
     kind: 'circle-fri-transcript-bound-query-component-v1',
     transcriptDerivationIncluded: true,
     proofCommitmentsRuntimeSupplied: true,
+    topologyOpeningRuntimeSupplied: true,
     proofSpecificRedeem: true,
     parameters,
     protocolContext: new Uint8Array(protocolContext),
@@ -643,6 +664,8 @@ export const createBchCircleFriQueryFixture = ({
     initialQueryIndex: verdict.queryIndices[queryOrdinal],
     finalIndex: currentIndex,
     finalCodeword: proof.finalCodeword.slice(),
+    topologyRoot: new Uint8Array(topologyTable.root),
+    topologyOpening,
     rounds,
   });
 };
@@ -681,13 +704,86 @@ const buildCanonicalQueryDerivation = (fixture) => {
       }
       previousAccepted.push(value);
       if (query === fixture.queryOrdinal) {
-        script.push(...pushNumber(fixture.initialQueryIndex), OP.OP_NUMEQUALVERIFY);
+        script.push(
+          OP.OP_DUP,
+          ...pushNumber(fixture.initialQueryIndex),
+          OP.OP_NUMEQUALVERIFY,
+          OP.OP_TOALTSTACK,
+        );
       } else {
         script.push(OP.OP_DROP);
       }
     }
   }
   return script;
+};
+
+const buildTopologyOpeningVerification = (fixture) => {
+  const script = [
+    OP.OP_FROMALTSTACK, // topology record, packed siblings, derived query index
+    ...pushNumber(2),
+    OP.OP_ROLL, // packed siblings, derived query index, topology record
+    OP.OP_SIZE,
+    ...pushNumber(fixture.topologyOpening.record.length),
+    OP.OP_NUMEQUALVERIFY,
+    OP.OP_DUP,
+    ...pushNumber(10),
+    OP.OP_SPLIT,
+    OP.OP_SWAP,
+    OP.OP_DROP,
+    ...pushNumber(4),
+    OP.OP_SPLIT,
+    OP.OP_DROP,
+    ...encodeMinimalDataPush(ZERO_BYTE),
+    OP.OP_CAT,
+    OP.OP_BIN2NUM,
+    ...pushNumber(2),
+    OP.OP_PICK,
+    OP.OP_NUMEQUALVERIFY,
+    ...encodeMinimalDataPush(CIRCLE_FRI_TOPOLOGY_LEAF_DOMAIN),
+    OP.OP_SWAP,
+    OP.OP_CAT,
+    OP.OP_HASH256,
+    OP.OP_SWAP, // packed siblings, leaf hash, query index
+  ];
+  for (let level = 0; level < fixture.parameters.logDomain; level += 1) {
+    script.push(
+      OP.OP_DUP,
+      ...pushNumber(2),
+      OP.OP_MOD,
+      OP.OP_IF,
+      OP.OP_TOALTSTACK,
+      ...invokeFunction(FUNCTION.HASH_PACKED_NODE_RIGHT),
+      OP.OP_FROMALTSTACK,
+      OP.OP_ELSE,
+      OP.OP_TOALTSTACK,
+      ...invokeFunction(FUNCTION.HASH_PACKED_NODE_LEFT),
+      OP.OP_FROMALTSTACK,
+      OP.OP_ENDIF,
+      ...pushNumber(2),
+      OP.OP_DIV,
+    );
+  }
+  script.push(
+    OP.OP_0,
+    OP.OP_NUMEQUALVERIFY,
+    OP.OP_SWAP,
+    OP.OP_0,
+    OP.OP_EQUALVERIFY,
+    ...encodeMinimalDataPush(fixture.topologyRoot),
+    OP.OP_EQUAL,
+  );
+  return script;
+};
+
+const topologyTableCache = new Map();
+const topologyTableFor = (parameters) => {
+  const key = binToHex(encodeCircleFriParameters(parameters));
+  const cached = topologyTableCache.get(key);
+  if (cached !== undefined) return cached;
+  const table = buildCircleFriTopologyTable(parameters);
+  topologyTableCache.set(key, table);
+  return table;
 };
 
 export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
@@ -744,14 +840,19 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
     OP.OP_SPLIT,
     OP.OP_DROP,
     ...invokeFunction(FUNCTION.DECODE_M31),
-    OP.OP_NUMEQUAL,
+    OP.OP_NUMEQUALVERIFY,
+    ...buildTopologyOpeningVerification(fixture),
   );
   return Uint8Array.from(script);
 };
 
 export const buildBchCircleFriQueryOperandUnlockingBytecode = (fixture) => {
   require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v1', 'query fixture is required');
-  const operands = [encodeFinalCodeword(fixture.finalCodeword)];
+  const operands = [
+    fixture.topologyOpening.record,
+    concat(...fixture.topologyOpening.siblings.slice().reverse()),
+    encodeFinalCodeword(fixture.finalCodeword),
+  ];
   const packPartialPath = (siblings) => concat(...siblings.slice(0, -1).reverse());
   for (let round = fixture.rounds.length - 1; round >= 0; round -= 1) {
     const item = fixture.rounds[round];

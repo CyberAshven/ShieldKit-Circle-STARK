@@ -44,6 +44,7 @@ test('BCH-2026 P2SH32 accepts one complete authenticated Circle-FRI query chain'
   assert.equal(result.standard, true);
   assert.equal(honest.transcriptDerivationIncluded, true);
   assert.equal(honest.proofCommitmentsRuntimeSupplied, true);
+  assert.equal(honest.topologyOpeningRuntimeSupplied, true);
   assert.equal(honest.proofSpecificRedeem, true);
   assert.equal(materialized.lockingBytecode.length, 35);
   assert.ok(materialized.redeemBytecode.length <= 10_000);
@@ -56,12 +57,12 @@ test('query component measures real hashes, arithmetic, stack, and transaction b
   const materialized = materializeBchCircleFriQueryP2sh32(honest);
   const result = evaluateBchCircleFriQueryP2sh32(honest);
   const wires = encodeBchCircleFriQueryP2sh32TransactionFixture(honest);
-  assert.equal(materialized.redeemBytecode.length, 2_166);
-  assert.equal(materialized.operandUnlockingBytecode.length, 2_459);
-  assert.equal(materialized.unlockingBytecode.length, 4_628);
-  assert.equal(wires.transactionHex.length / 2, 4_691);
-  assert.equal(result.metrics.hashDigestIterations, 329);
-  assert.equal(result.metrics.operationCost, 420_548);
+  assert.equal(materialized.redeemBytecode.length, 2_415);
+  assert.equal(materialized.operandUnlockingBytecode.length, 2_892);
+  assert.equal(materialized.unlockingBytecode.length, 5_310);
+  assert.equal(wires.transactionHex.length / 2, 5_373);
+  assert.equal(result.metrics.hashDigestIterations, 364);
+  assert.equal(result.metrics.operationCost, 469_555);
   assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 360);
   assert.equal(result.metrics.signatureCheckCount, 0);
   assert.ok(result.metrics.operationCost < result.metrics.limits.maximumOperationCost);
@@ -105,6 +106,19 @@ test('wrong transcript context, rejection path, or derived query index rejects',
   const wrongQueryIndex = structuredClone(honest);
   wrongQueryIndex.initialQueryIndex ^= 1;
   assert.equal(evaluateBchCircleFriQueryP2sh32(wrongQueryIndex).accepted, false);
+});
+
+test('runtime topology record and opening path are bound to the fixed verifier root', () => {
+  const honestRedeem = buildBchCircleFriQueryRedeemBytecode(honest);
+  const wrongRecord = structuredClone(honest);
+  wrongRecord.topologyOpening.record[10] ^= 1;
+  assert.deepEqual(buildBchCircleFriQueryRedeemBytecode(wrongRecord), honestRedeem);
+  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongRecord).accepted, false);
+
+  const wrongPath = structuredClone(honest);
+  wrongPath.topologyOpening.siblings[0][0] ^= 1;
+  assert.deepEqual(buildBchCircleFriQueryRedeemBytecode(wrongPath), honestRedeem);
+  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongPath).accepted, false);
 });
 
 test('BCH Script derives canonical unique multi-query indices including duplicate retries', () => {
