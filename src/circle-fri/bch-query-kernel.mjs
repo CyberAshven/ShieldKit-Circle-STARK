@@ -7,7 +7,10 @@ import {
 } from '../../research-lanes/bch-shielded-pool-design/p2/bch-kernels/m31-kernel.mjs';
 
 import {
+  binToHex,
   encodeLockingBytecodeP2sh32,
+  encodeTransaction,
+  encodeTransactionOutputs,
   hash256,
 } from '@bitauth/libauth';
 
@@ -37,6 +40,7 @@ import {
 
 import {
   frameBytes,
+  sha256,
   u16le,
   u32le,
   utf8,
@@ -78,6 +82,7 @@ const OP = Object.freeze({
   OP_MOD: 0x97,
   OP_LESSTHAN: 0x9f,
   OP_GREATERTHANOREQUAL: 0xa2,
+  OP_NUMNOTEQUAL: 0x9e,
   OP_NUMEQUAL: 0x9c,
   OP_NUMEQUALVERIFY: 0x9d,
   OP_SHA256: 0xa8,
@@ -541,16 +546,31 @@ const buildHostTranscriptTrace = ({ proof, parameters, protocolContext }) => {
   });
   const finalCodewordBytes = encodeFinalCodeword(proof.finalCodeword);
   state = absorbCircleFriTranscriptState(state, 'fri-final-codeword', finalCodewordBytes);
-  const querySample = sampleCircleFriTranscriptState({
-    state,
-    label: 'fri-query-0-candidate-0',
-    upperBound: parameters.domainLength,
-  });
+  const seen = [];
+  const queries = [];
+  for (let query = 0; query < parameters.queryCount; query += 1) {
+    const candidates = [];
+    for (let retry = 0; ; retry += 1) {
+      const sample = sampleCircleFriTranscriptState({
+        state,
+        label: `fri-query-${query}-candidate-${retry}`,
+        upperBound: parameters.domainLength,
+      });
+      state = sample.state;
+      const duplicateOf = seen.indexOf(sample.value);
+      candidates.push(Object.freeze({ retry, duplicateOf, sample }));
+      if (duplicateOf === -1) {
+        seen.push(sample.value);
+        queries.push(Object.freeze({ query, index: sample.value, candidates }));
+        break;
+      }
+    }
+  }
   return Object.freeze({
     rounds,
     finalCodewordBytes,
-    querySample,
-    finalState: querySample.state,
+    queries,
+    finalState: state,
   });
 };
 
@@ -570,9 +590,10 @@ export const createBchCircleFriQueryFixture = ({
   require(verdict.ok, `Circle-FRI proof must verify before BCH lowering: ${verdict.reason ?? 'invalid'}`);
   const parameters = assertCircleFriParameters(expected);
   require(Number.isSafeInteger(queryOrdinal) && queryOrdinal >= 0 && queryOrdinal < parameters.queryCount, 'queryOrdinal is out of range');
-  require(parameters.queryCount === 1 && queryOrdinal === 0, 'transcript-bound BCH component currently supports exactly query 0 of one query');
   const transcriptTrace = buildHostTranscriptTrace({ proof, parameters, protocolContext });
-  require(transcriptTrace.querySample.value === verdict.queryIndices[0], 'host transcript query trace disagrees with proof verifier');
+  for (let queryIndex = 0; queryIndex < parameters.queryCount; queryIndex += 1) {
+    require(transcriptTrace.queries[queryIndex].index === verdict.queryIndices[queryIndex], `host transcript query trace disagrees at query ${queryIndex}`);
+  }
   for (let round = 0; round < parameters.logDegreeBound; round += 1) {
     require(BigInt(transcriptTrace.rounds[round].sample.value) === verdict.betas[round], `host transcript beta trace disagrees at round ${round}`);
   }
@@ -608,6 +629,7 @@ export const createBchCircleFriQueryFixture = ({
     parameters,
     protocolContext: new Uint8Array(protocolContext),
     transcriptTrace,
+    selectedQueryTrace: transcriptTrace.queries[queryOrdinal],
     queryOrdinal,
     initialQueryIndex: verdict.queryIndices[queryOrdinal],
     finalIndex: currentIndex,
@@ -615,6 +637,49 @@ export const createBchCircleFriQueryFixture = ({
     finalCodeword: proof.finalCodeword.slice(),
     rounds,
   });
+};
+
+const buildCanonicalQueryDerivation = (fixture) => {
+  const script = [];
+  const previousAccepted = [];
+  for (let query = 0; query <= fixture.queryOrdinal; query += 1) {
+    const queryTrace = fixture.transcriptTrace.queries[query];
+    for (const candidate of queryTrace.candidates) {
+      const value = candidate.sample.value;
+      script.push(
+        ...buildTranscriptChallenge({
+          label: `fri-query-${query}-candidate-${candidate.retry}`,
+          upperBound: fixture.parameters.domainLength,
+          acceptedAttempt: candidate.sample.attempt,
+        }),
+        OP.OP_DUP,
+        ...pushNumber(value),
+        OP.OP_NUMEQUALVERIFY,
+      );
+      if (candidate.duplicateOf !== -1) {
+        script.push(
+          ...pushNumber(previousAccepted[candidate.duplicateOf]),
+          OP.OP_NUMEQUALVERIFY,
+        );
+        continue;
+      }
+      for (const prior of previousAccepted) {
+        script.push(
+          OP.OP_DUP,
+          ...pushNumber(prior),
+          OP.OP_NUMNOTEQUAL,
+          OP.OP_VERIFY,
+        );
+      }
+      previousAccepted.push(value);
+      if (query === fixture.queryOrdinal) {
+        script.push(...pushNumber(fixture.initialQueryIndex), OP.OP_NUMEQUALVERIFY);
+      } else {
+        script.push(OP.OP_DROP);
+      }
+    }
+  }
+  return script;
 };
 
 export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
@@ -655,13 +720,7 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
   script.push(
     OP.OP_FROMALTSTACK, // folded value, transcript state
     ...buildTranscriptAbsorbConstant('fri-final-codeword', fixture.transcriptTrace.finalCodewordBytes),
-    ...buildTranscriptChallenge({
-      label: 'fri-query-0-candidate-0',
-      upperBound: fixture.parameters.domainLength,
-      acceptedAttempt: fixture.transcriptTrace.querySample.attempt,
-    }),
-    ...pushNumber(fixture.initialQueryIndex),
-    OP.OP_NUMEQUALVERIFY,
+    ...buildCanonicalQueryDerivation(fixture),
     OP.OP_DROP, // final transcript state
     ...pushNumber(fixture.finalExpected),
     OP.OP_NUMEQUAL,
@@ -707,3 +766,53 @@ export const evaluateBchCircleFriQueryP2sh32 = (fixture) => (
 export const encodeBchCircleFriQueryP2sh32TransactionFixture = (fixture) => (
   encodeScriptTransactionFixture(materializeBchCircleFriQueryP2sh32(fixture))
 );
+
+/**
+ * Serialize one component transaction containing every query input for a proof.
+ * This is a complete BCH transaction fixture for the FRI query layer only; it
+ * does not claim PoolAction AIR or settlement binding.
+ */
+export const encodeBchCircleFriMultiQueryTransactionFixture = (fixtures) => {
+  require(Array.isArray(fixtures) && fixtures.length >= 1, 'multi-query fixtures are required');
+  const expectedCount = fixtures[0].parameters.queryCount;
+  require(fixtures.length === expectedCount, 'multi-query fixture count must equal queryCount');
+  const ordinals = fixtures.map(({ queryOrdinal }) => queryOrdinal);
+  require(ordinals.every((ordinal, index) => ordinal === index), 'multi-query fixtures must be ordered by unique query ordinal');
+  const transcriptIdentity = binToHex(fixtures[0].transcriptTrace.finalState);
+  for (const fixture of fixtures) {
+    require(fixture.kind === 'circle-fri-transcript-bound-query-component-v1', 'invalid multi-query fixture');
+    require(fixture.parameters.queryCount === expectedCount, 'multi-query parameter mismatch');
+    require(binToHex(fixture.transcriptTrace.finalState) === transcriptIdentity, 'multi-query transcript mismatch');
+  }
+
+  const materialized = fixtures.map(materializeBchCircleFriQueryP2sh32);
+  const sourceOutputs = materialized.map(({ lockingBytecode }) => ({
+    lockingBytecode,
+    valueSatoshis: 1_000n,
+  }));
+  const transaction = {
+    version: 2,
+    inputs: materialized.map(({ unlockingBytecode }, inputIndex) => ({
+      outpointTransactionHash: new Uint8Array(32).fill(0x11 + inputIndex),
+      outpointIndex: inputIndex,
+      sequenceNumber: 0xffff_ffff,
+      unlockingBytecode,
+    })),
+    outputs: [{
+      lockingBytecode: Uint8Array.of(OP.OP_1),
+      valueSatoshis: 1_000n * BigInt(materialized.length),
+    }],
+    locktime: 0,
+  };
+  const transactionWire = encodeTransaction(transaction);
+  const sourceOutputsWire = encodeTransactionOutputs(sourceOutputs);
+  return Object.freeze({
+    materialized,
+    transactionHex: binToHex(transactionWire),
+    sourceOutputsHex: binToHex(sourceOutputsWire),
+    transactionBytes: transactionWire.length,
+    sourceOutputsBytes: sourceOutputsWire.length,
+    transactionDigestSha256: binToHex(sha256(transactionWire)),
+    sourceOutputsDigestSha256: binToHex(sha256(sourceOutputsWire)),
+  });
+};

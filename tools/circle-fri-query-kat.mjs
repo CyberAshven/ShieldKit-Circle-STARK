@@ -10,6 +10,7 @@ import { utf8 } from '../src/circle-fri/bytes.mjs';
 import {
   BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES,
   createBchCircleFriQueryFixture,
+  encodeBchCircleFriMultiQueryTransactionFixture,
   encodeBchCircleFriQueryP2sh32TransactionFixture,
   evaluateBchCircleFriQueryP2sh32,
   materializeBchCircleFriQueryP2sh32,
@@ -29,6 +30,12 @@ export const QUERY_KAT_PARAMETERS = Object.freeze({
 });
 
 export const QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH query component v1');
+export const MULTI_QUERY_KAT_PARAMETERS = Object.freeze({
+  logDegreeBound: 6,
+  logBlowup: 3,
+  queryCount: 4,
+});
+export const MULTI_QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH multi-query component v1');
 
 const buildCoefficients = (logDegreeBound) => {
   let state = 0x626368n;
@@ -91,6 +98,57 @@ export const queryKatSummary = (kat) => Object.freeze({
   }),
 });
 
+export const buildMultiQueryKat = () => {
+  const coefficients = buildCoefficients(MULTI_QUERY_KAT_PARAMETERS.logDegreeBound);
+  const proof = proveCircleFriQueries({
+    coefficients,
+    logBlowup: MULTI_QUERY_KAT_PARAMETERS.logBlowup,
+    queryCount: MULTI_QUERY_KAT_PARAMETERS.queryCount,
+    protocolContext: MULTI_QUERY_KAT_CONTEXT,
+  });
+  const fixtures = Array.from({ length: MULTI_QUERY_KAT_PARAMETERS.queryCount }, (_, queryOrdinal) => (
+    createBchCircleFriQueryFixture({
+      proof,
+      expected: MULTI_QUERY_KAT_PARAMETERS,
+      protocolContext: MULTI_QUERY_KAT_CONTEXT,
+      queryOrdinal,
+    })
+  ));
+  const evaluations = fixtures.map(evaluateBchCircleFriQueryP2sh32);
+  const wires = encodeBchCircleFriMultiQueryTransactionFixture(fixtures);
+  return Object.freeze({
+    parameters: MULTI_QUERY_KAT_PARAMETERS,
+    proof,
+    proofBytes: encodeCircleFriQueryProof(proof),
+    fixtures,
+    evaluations,
+    wires,
+  });
+};
+
+export const multiQueryKatSummary = (kat) => Object.freeze({
+  kind: 'circle-fri-transcript-bound-multi-query-transaction-v1',
+  transcriptDerivationIncluded: true,
+  proofCommitmentsRuntimeSupplied: false,
+  parameters: kat.parameters,
+  queryIndices: kat.fixtures.map(({ initialQueryIndex }) => initialQueryIndex),
+  proof: Object.freeze({ bytes: kat.proofBytes.length, sha256: sha256(kat.proofBytes) }),
+  transaction: Object.freeze({
+    inputs: kat.fixtures.length,
+    bytes: kat.wires.transactionBytes,
+    sourceOutputsBytes: kat.wires.sourceOutputsBytes,
+    sha256: kat.wires.transactionDigestSha256,
+    sourceOutputsSha256: kat.wires.sourceOutputsDigestSha256,
+    redeemBytes: kat.wires.materialized.map(({ redeemBytecode }) => redeemBytecode.length),
+    unlockingBytes: kat.wires.materialized.map(({ unlockingBytecode }) => unlockingBytecode.length),
+  }),
+  libauthBch2026Standard: Object.freeze({
+    allAccepted: kat.evaluations.every(({ accepted, standard }) => accepted && standard),
+    operationCosts: kat.evaluations.map(({ metrics }) => metrics.operationCost),
+    hashDigestIterations: kat.evaluations.map(({ metrics }) => metrics.hashDigestIterations),
+  }),
+});
+
 export const buildQueryScalingReport = () => Array.from({ length: 7 }, (_, offset) => {
   const logDegreeBound = 6 + offset;
   const kat = buildQueryKat({
@@ -113,9 +171,29 @@ export const buildQueryScalingReport = () => Array.from({ length: 7 }, (_, offse
 });
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const kat = buildQueryKat();
   const mode = process.argv[2] ?? '--summary';
-  if (mode === '--bchn-vector') {
+  if (mode === '--multi-summary' || mode === '--multi-bchn-vector' || mode === '--multi-lean-vector') {
+    const multi = buildMultiQueryKat();
+    if (mode === '--multi-summary') {
+      process.stdout.write(`${JSON.stringify(multiQueryKatSummary(multi), null, 2)}\n`);
+    } else if (mode === '--multi-bchn-vector') {
+      process.stdout.write(`${JSON.stringify(multi.fixtures.map((fixture) => [
+        `circle-fri-multi-query-${fixture.queryOrdinal}`,
+        `ShieldKit Circle-FRI transcript-bound query ${fixture.queryOrdinal}`,
+        '',
+        '',
+        multi.wires.transactionHex,
+        multi.wires.sourceOutputsHex,
+        fixture.queryOrdinal,
+      ]))}\n`);
+    } else {
+      process.stdout.write(multi.fixtures.map((fixture) => (
+        `1 circle-fri-multi-query-${fixture.queryOrdinal} ${multi.wires.transactionHex} ${multi.wires.sourceOutputsHex} ${fixture.queryOrdinal}`
+      )).join('\n') + '\n');
+    }
+  } else {
+    const kat = buildQueryKat();
+    if (mode === '--bchn-vector') {
     process.stdout.write(`${JSON.stringify([[
       'circle-fri-query-kat-v1',
       'ShieldKit Circle-FRI authenticated query component',
@@ -125,13 +203,14 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
       kat.wires.sourceOutputsHex,
       0,
     ]])}\n`);
-  } else if (mode === '--lean-vector') {
-    process.stdout.write(`1 circle-fri-query-kat-v1 ${kat.wires.transactionHex} ${kat.wires.sourceOutputsHex} 0\n`);
-  } else if (mode === '--summary') {
-    process.stdout.write(`${JSON.stringify(queryKatSummary(kat), null, 2)}\n`);
-  } else if (mode === '--scaling') {
-    process.stdout.write(`${JSON.stringify(buildQueryScalingReport(), null, 2)}\n`);
-  } else {
-    throw new TypeError(`unknown mode: ${mode}`);
+    } else if (mode === '--lean-vector') {
+      process.stdout.write(`1 circle-fri-query-kat-v1 ${kat.wires.transactionHex} ${kat.wires.sourceOutputsHex} 0\n`);
+    } else if (mode === '--summary') {
+      process.stdout.write(`${JSON.stringify(queryKatSummary(kat), null, 2)}\n`);
+    } else if (mode === '--scaling') {
+      process.stdout.write(`${JSON.stringify(buildQueryScalingReport(), null, 2)}\n`);
+    } else {
+      throw new TypeError(`unknown mode: ${mode}`);
+    }
   }
 }
