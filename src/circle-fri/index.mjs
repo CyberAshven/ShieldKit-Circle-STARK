@@ -11,3 +11,4 @@ export * from './bch-j-fold-kernel.mjs';
 export * from './bch-multiproof-kernel.mjs';
 export * from './bch-multiproof4-kernel.mjs';
 export * from './bch-query-kernel.mjs';
+export * from './bch-query-batch-kernel.mjs';
