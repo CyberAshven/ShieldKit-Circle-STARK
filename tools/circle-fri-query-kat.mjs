@@ -12,6 +12,7 @@ import {
   createBchCircleFriQueryFixture,
   encodeBchCircleFriMultiQueryTransactionFixture,
   encodeBchCircleFriQueryP2sh32TransactionFixture,
+  evaluateBchCircleFriMultiQueryTransactionFixture,
   evaluateBchCircleFriQueryP2sh32,
   materializeBchCircleFriQueryP2sh32,
 } from '../src/circle-fri/bch-query-kernel.mjs';
@@ -77,6 +78,7 @@ export const queryKatSummary = (kat) => Object.freeze({
   proofCommitmentsRuntimeSupplied: kat.fixture.proofCommitmentsRuntimeSupplied,
   topologyOpeningRuntimeSupplied: kat.fixture.topologyOpeningRuntimeSupplied,
   topologyPlanRuntimeConsumed: kat.fixture.topologyPlanRuntimeConsumed,
+  activeInputIndexQuerySelection: kat.fixture.activeInputIndexQuerySelection,
   proofSpecificRedeem: kat.fixture.proofSpecificRedeem,
   queryOrdinalSpecificRedeem: kat.fixture.queryOrdinalSpecificRedeem,
   parameters: kat.parameters,
@@ -121,8 +123,8 @@ export const buildMultiQueryKat = () => {
       queryOrdinal,
     })
   ));
-  const evaluations = fixtures.map(evaluateBchCircleFriQueryP2sh32);
   const wires = encodeBchCircleFriMultiQueryTransactionFixture(fixtures);
+  const evaluations = evaluateBchCircleFriMultiQueryTransactionFixture(wires);
   return Object.freeze({
     parameters: MULTI_QUERY_KAT_PARAMETERS,
     proof,
@@ -142,6 +144,7 @@ export const multiQueryKatSummary = (kat) => Object.freeze({
   proofCommitmentsRuntimeSupplied: kat.fixtures.every(({ proofCommitmentsRuntimeSupplied }) => proofCommitmentsRuntimeSupplied),
   topologyOpeningRuntimeSupplied: kat.fixtures.every(({ topologyOpeningRuntimeSupplied }) => topologyOpeningRuntimeSupplied),
   topologyPlanRuntimeConsumed: kat.fixtures.every(({ topologyPlanRuntimeConsumed }) => topologyPlanRuntimeConsumed),
+  activeInputIndexQuerySelection: kat.fixtures.every(({ activeInputIndexQuerySelection }) => activeInputIndexQuerySelection),
   proofSpecificRedeem: kat.fixtures.some(({ proofSpecificRedeem }) => proofSpecificRedeem),
   queryOrdinalSpecificRedeem: kat.fixtures.some(({ queryOrdinalSpecificRedeem }) => queryOrdinalSpecificRedeem),
   parameters: kat.parameters,

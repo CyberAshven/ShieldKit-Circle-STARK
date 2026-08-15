@@ -4,10 +4,12 @@ import {
   encodeM31,
   encodeScriptTransactionFixture,
   evaluateScriptFixture,
+  rawMetricProjection,
 } from '../../research-lanes/bch-shielded-pool-design/p2/bch-kernels/m31-kernel.mjs';
 
 import {
   binToHex,
+  createVirtualMachineBch2026,
   encodeLockingBytecodeP2sh32,
   encodeTransaction,
   encodeTransactionOutputs,
@@ -66,11 +68,13 @@ const OP = Object.freeze({
   OP_0: 0x00,
   OP_1: 0x51,
   OP_2: 0x52,
+  OP_INPUTINDEX: 0xc0,
   OP_IF: 0x63,
   OP_BEGIN: 0x65,
   OP_UNTIL: 0x66,
   OP_ELSE: 0x67,
   OP_ENDIF: 0x68,
+  OP_VERIFY: 0x69,
   OP_TOALTSTACK: 0x6b,
   OP_FROMALTSTACK: 0x6c,
   OP_2DROP: 0x6d,
@@ -102,6 +106,7 @@ const OP = Object.freeze({
   OP_NUMNOTEQUAL: 0x9e,
   OP_NUMEQUAL: 0x9c,
   OP_NUMEQUALVERIFY: 0x9d,
+  OP_WITHIN: 0xa5,
   OP_SHA256: 0xa8,
   OP_HASH256: 0xaa,
 });
@@ -700,11 +705,14 @@ export const createBchCircleFriQueryFixture = ({
   expected,
   protocolContext = new Uint8Array(),
   queryOrdinal = 0,
+  queryInputBaseIndex = 0,
 }) => {
   const verdict = verifyCircleFriQueries({ proof, expected, protocolContext });
   require(verdict.ok, `Circle-FRI proof must verify before BCH lowering: ${verdict.reason ?? 'invalid'}`);
   const parameters = assertCircleFriParameters(expected);
   require(Number.isSafeInteger(queryOrdinal) && queryOrdinal >= 0 && queryOrdinal < parameters.queryCount, 'queryOrdinal is out of range');
+  require(Number.isSafeInteger(queryInputBaseIndex) && queryInputBaseIndex >= 0, 'queryInputBaseIndex is out of range');
+  require(queryInputBaseIndex <= 0xffff_ffff - parameters.queryCount, 'query input segment exceeds the u32 input-index range');
   const transcriptTrace = buildHostTranscriptTrace({ proof, parameters, protocolContext });
   for (let queryIndex = 0; queryIndex < parameters.queryCount; queryIndex += 1) {
     require(transcriptTrace.queries[queryIndex].index === verdict.queryIndices[queryIndex], `host transcript query trace disagrees at query ${queryIndex}`);
@@ -754,13 +762,15 @@ export const createBchCircleFriQueryFixture = ({
     proofCommitmentsRuntimeSupplied: true,
     topologyOpeningRuntimeSupplied: true,
     topologyPlanRuntimeConsumed: true,
+    activeInputIndexQuerySelection: true,
     proofSpecificRedeem: false,
-    queryOrdinalSpecificRedeem: true,
+    queryOrdinalSpecificRedeem: false,
     parameters,
     protocolContext: new Uint8Array(protocolContext),
     transcriptTrace,
     selectedQueryTrace: transcriptTrace.queries[queryOrdinal],
     queryOrdinal,
+    queryInputBaseIndex,
     initialQueryIndex: verdict.queryIndices[queryOrdinal],
     finalIndex: currentIndex,
     finalCodeword: proof.finalCodeword.slice(),
@@ -772,7 +782,7 @@ export const createBchCircleFriQueryFixture = ({
 
 const buildCanonicalQueryDerivation = (fixture) => {
   const script = [];
-  for (let query = 0; query <= fixture.queryOrdinal; query += 1) {
+  for (let query = 0; query < fixture.parameters.queryCount; query += 1) {
     if (query > 0) script.push(OP.OP_BEGIN);
     script.push(
       ...buildTranscriptChallenge({
@@ -801,17 +811,31 @@ const buildCanonicalQueryDerivation = (fixture) => {
         OP.OP_UNTIL,
       );
     }
-    if (query < fixture.queryOrdinal) {
-      script.push(OP.OP_SWAP); // accepted query index below the transcript state
-      continue;
-    }
-    script.push(
-      OP.OP_TOALTSTACK, // selected query index
-      OP.OP_TOALTSTACK, // transcript state
-      ...Array.from({ length: query }, () => OP.OP_DROP),
-      OP.OP_FROMALTSTACK, // transcript state; selected index remains on altstack
-    );
+    script.push(OP.OP_SWAP); // accepted query index below the transcript state
   }
+  script.push(
+    // The query inputs form one consecutive transaction segment. Derive the
+    // segment-local ordinal from the authenticated active input index, then
+    // select that ordinal's unique Fiat-Shamir query. No query ordinal is
+    // embedded in the redeem bytecode, so every input in the segment shares
+    // one P2SH32 locking bytecode.
+    OP.OP_INPUTINDEX,
+    ...pushNumber(fixture.queryInputBaseIndex),
+    OP.OP_SUB,
+    OP.OP_DUP,
+    OP.OP_0,
+    ...pushNumber(fixture.parameters.queryCount),
+    OP.OP_WITHIN,
+    OP.OP_VERIFY,
+    ...pushNumber(fixture.parameters.queryCount),
+    OP.OP_SWAP,
+    OP.OP_SUB, // accepted-query stack depth = queryCount - queryOrdinal
+    OP.OP_PICK,
+    OP.OP_TOALTSTACK, // selected query index
+    OP.OP_TOALTSTACK, // transcript state
+    ...Array.from({ length: fixture.parameters.queryCount }, () => OP.OP_DROP),
+    OP.OP_FROMALTSTACK, // transcript state; selected index remains on altstack
+  );
   return script;
 };
 
@@ -993,13 +1017,20 @@ export const materializeBchCircleFriQueryP2sh32 = (fixture) => {
   });
 };
 
-export const evaluateBchCircleFriQueryP2sh32 = (fixture) => (
-  evaluateScriptFixture(materializeBchCircleFriQueryP2sh32(fixture))
-);
+const requireStandaloneQueryFixture = (fixture) => {
+  require(fixture.parameters.queryCount === 1, 'single-input query fixture requires queryCount 1');
+  require(fixture.queryInputBaseIndex === 0, 'single-input query fixture requires queryInputBaseIndex 0');
+};
 
-export const encodeBchCircleFriQueryP2sh32TransactionFixture = (fixture) => (
-  encodeScriptTransactionFixture(materializeBchCircleFriQueryP2sh32(fixture))
-);
+export const evaluateBchCircleFriQueryP2sh32 = (fixture) => {
+  requireStandaloneQueryFixture(fixture);
+  return evaluateScriptFixture(materializeBchCircleFriQueryP2sh32(fixture));
+};
+
+export const encodeBchCircleFriQueryP2sh32TransactionFixture = (fixture) => {
+  requireStandaloneQueryFixture(fixture);
+  return encodeScriptTransactionFixture(materializeBchCircleFriQueryP2sh32(fixture));
+};
 
 /**
  * Serialize one component transaction containing every query input for a proof.
@@ -1013,13 +1044,21 @@ export const encodeBchCircleFriMultiQueryTransactionFixture = (fixtures) => {
   const ordinals = fixtures.map(({ queryOrdinal }) => queryOrdinal);
   require(ordinals.every((ordinal, index) => ordinal === index), 'multi-query fixtures must be ordered by unique query ordinal');
   const transcriptIdentity = binToHex(fixtures[0].transcriptTrace.finalState);
+  const queryInputBaseIndex = fixtures[0].queryInputBaseIndex;
+  require(queryInputBaseIndex === 0, 'standalone multi-query transaction requires queryInputBaseIndex 0');
   for (const fixture of fixtures) {
     require(fixture.kind === 'circle-fri-transcript-bound-query-component-v2', 'invalid multi-query fixture');
     require(fixture.parameters.queryCount === expectedCount, 'multi-query parameter mismatch');
+    require(fixture.queryInputBaseIndex === queryInputBaseIndex, 'multi-query input-base mismatch');
     require(binToHex(fixture.transcriptTrace.finalState) === transcriptIdentity, 'multi-query transcript mismatch');
   }
 
   const materialized = fixtures.map(materializeBchCircleFriQueryP2sh32);
+  const sharedLockingHex = binToHex(materialized[0].lockingBytecode);
+  require(
+    materialized.every(({ lockingBytecode }) => binToHex(lockingBytecode) === sharedLockingHex),
+    'multi-query fixtures must share one active-input-index-selected locking bytecode',
+  );
   const sourceOutputs = materialized.map(({ lockingBytecode }) => ({
     lockingBytecode,
     valueSatoshis: 1_000n,
@@ -1042,6 +1081,8 @@ export const encodeBchCircleFriMultiQueryTransactionFixture = (fixtures) => {
   const sourceOutputsWire = encodeTransactionOutputs(sourceOutputs);
   return Object.freeze({
     materialized,
+    transaction,
+    sourceOutputs,
     transactionHex: binToHex(transactionWire),
     sourceOutputsHex: binToHex(sourceOutputsWire),
     transactionBytes: transactionWire.length,
@@ -1049,4 +1090,37 @@ export const encodeBchCircleFriMultiQueryTransactionFixture = (fixtures) => {
     transactionDigestSha256: binToHex(sha256(transactionWire)),
     sourceOutputsDigestSha256: binToHex(sha256(sourceOutputsWire)),
   });
+};
+
+const isStrictSuccess = (state) => state.error === undefined
+  && state.stack.length === 1
+  && state.stack[0].length === 1
+  && state.stack[0][0] === 1
+  && state.alternateStack.length === 0
+  && state.controlStack.length === 0;
+
+/** Evaluate every active input of one complete multi-query transaction. */
+export const evaluateBchCircleFriMultiQueryTransactionFixture = ({
+  materialized,
+  transaction,
+  sourceOutputs,
+}) => {
+  require(Array.isArray(materialized) && materialized.length >= 1, 'materialized multi-query inputs are required');
+  require(Array.isArray(transaction?.inputs) && transaction.inputs.length === materialized.length, 'multi-query transaction/input mismatch');
+  require(Array.isArray(sourceOutputs) && sourceOutputs.length === materialized.length, 'multi-query source-output mismatch');
+  const vm = createVirtualMachineBch2026(true);
+  return Object.freeze(materialized.map(({ lockingBytecode, unlockingBytecode }, inputIndex) => {
+    const trace = vm.debug({ inputIndex, sourceOutputs, transaction }, { maskProgramState: true });
+    const state = trace.at(-1);
+    require(state !== undefined, 'Libauth BCH-2026 multi-query debug trace is empty');
+    return Object.freeze({
+      inputIndex,
+      accepted: isStrictSuccess(state),
+      error: state.error ?? null,
+      standard: true,
+      metrics: Object.freeze(rawMetricProjection(state.metrics)),
+      lockingHex: binToHex(lockingBytecode),
+      unlockingHex: binToHex(unlockingBytecode),
+    });
+  }));
 };

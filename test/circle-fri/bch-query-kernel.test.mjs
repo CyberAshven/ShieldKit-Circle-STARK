@@ -13,6 +13,7 @@ import {
   createBchCircleFriQueryFixture,
   encodeBchCircleFriMultiQueryTransactionFixture,
   encodeBchCircleFriQueryP2sh32TransactionFixture,
+  evaluateBchCircleFriMultiQueryTransactionFixture,
   evaluateBchCircleFriTranscriptChallenge,
   evaluateBchCircleFriQueryP2sh32,
   materializeBchCircleFriQueryP2sh32,
@@ -52,8 +53,9 @@ test('BCH-2026 P2SH32 accepts one complete authenticated Circle-FRI query chain'
   assert.equal(honest.proofCommitmentsRuntimeSupplied, true);
   assert.equal(honest.topologyOpeningRuntimeSupplied, true);
   assert.equal(honest.topologyPlanRuntimeConsumed, true);
+  assert.equal(honest.activeInputIndexQuerySelection, true);
   assert.equal(honest.proofSpecificRedeem, false);
-  assert.equal(honest.queryOrdinalSpecificRedeem, true);
+  assert.equal(honest.queryOrdinalSpecificRedeem, false);
   assert.equal(materialized.lockingBytecode.length, 35);
   assert.ok(materialized.redeemBytecode.length <= 10_000);
   assert.ok(materialized.unlockingBytecode.length <= 10_000);
@@ -65,12 +67,12 @@ test('query component measures real hashes, arithmetic, stack, and transaction b
   const materialized = materializeBchCircleFriQueryP2sh32(honest);
   const result = evaluateBchCircleFriQueryP2sh32(honest);
   const wires = encodeBchCircleFriQueryP2sh32TransactionFixture(honest);
-  assert.equal(materialized.redeemBytecode.length, 4_022);
+  assert.equal(materialized.redeemBytecode.length, 4_036);
   assert.equal(materialized.operandUnlockingBytecode.length, 2_892);
-  assert.equal(materialized.unlockingBytecode.length, 6_917);
-  assert.equal(wires.transactionHex.length / 2, 6_980);
-  assert.equal(result.metrics.hashDigestIterations, 388);
-  assert.equal(result.metrics.operationCost, 661_860);
+  assert.equal(materialized.unlockingBytecode.length, 6_931);
+  assert.equal(wires.transactionHex.length / 2, 6_994);
+  assert.equal(result.metrics.hashDigestIterations, 389);
+  assert.equal(result.metrics.operationCost, 663_472);
   assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 408);
   assert.equal(result.metrics.signatureCheckCount, 0);
   assert.ok(result.metrics.operationCost < result.metrics.limits.maximumOperationCost);
@@ -161,7 +163,7 @@ test('runtime topology record and opening path are bound to the fixed verifier r
   assert.equal(evaluateBchCircleFriQueryP2sh32(hostTopologyMetadata).accepted, true);
 });
 
-test('fixed parameters and query ordinal reuse one redeem across different proofs', () => {
+test('fixed parameters and input-index query selection reuse one redeem across different proofs', () => {
   const alternateProof = proveCircleFriQueries({
     coefficients: coefficients.map((value, index) => (value + BigInt(index + 1)) % M31_MODULUS),
     logBlowup: expected.logBlowup,
@@ -195,14 +197,34 @@ test('BCH Script derives canonical unique multi-query indices including duplicat
   }));
   assert.deepEqual(fixtures.map(({ initialQueryIndex }) => initialQueryIndex), [3, 2, 1, 0]);
   assert.deepEqual(fixtures[3].selectedQueryTrace.candidates.map(({ duplicateOf }) => duplicateOf), [1, -1]);
-  for (const fixture of fixtures) {
-    const result = evaluateBchCircleFriQueryP2sh32(fixture);
-    assert.equal(result.accepted, true, result.error ?? `query ${fixture.queryOrdinal} rejected`);
-  }
+  assert.throws(
+    () => evaluateBchCircleFriQueryP2sh32(fixtures[1]),
+    /single-input query fixture requires queryCount 1/,
+  );
   const wires = encodeBchCircleFriMultiQueryTransactionFixture(fixtures);
+  const evaluations = evaluateBchCircleFriMultiQueryTransactionFixture(wires);
+  for (const result of evaluations) {
+    assert.equal(result.accepted, true, result.error ?? `query input ${result.inputIndex} rejected`);
+  }
   assert.equal(wires.materialized.length, 4);
+  for (const materialized of wires.materialized.slice(1)) {
+    assert.deepEqual(materialized.redeemBytecode, wires.materialized[0].redeemBytecode);
+    assert.deepEqual(materialized.lockingBytecode, wires.materialized[0].lockingBytecode);
+  }
   assert.ok(wires.transactionBytes < 100_000);
   assert.equal(wires.sourceOutputsBytes, 177);
+
+  const swappedTransaction = structuredClone(wires.transaction);
+  [swappedTransaction.inputs[0].unlockingBytecode, swappedTransaction.inputs[1].unlockingBytecode] = [
+    swappedTransaction.inputs[1].unlockingBytecode,
+    swappedTransaction.inputs[0].unlockingBytecode,
+  ];
+  const swapped = evaluateBchCircleFriMultiQueryTransactionFixture({
+    ...wires,
+    transaction: swappedTransaction,
+  });
+  assert.equal(swapped[0].accepted, false, 'query 1 witness accepted at active input 0');
+  assert.equal(swapped[1].accepted, false, 'query 0 witness accepted at active input 1');
 
   const wrongDuplicateDisposition = structuredClone(fixtures[3]);
   wrongDuplicateDisposition.transcriptTrace.queries[3].candidates[0].duplicateOf = -1;
@@ -210,5 +232,11 @@ test('BCH Script derives canonical unique multi-query indices including duplicat
     buildBchCircleFriQueryRedeemBytecode(wrongDuplicateDisposition),
     buildBchCircleFriQueryRedeemBytecode(fixtures[3]),
   );
-  assert.equal(evaluateBchCircleFriQueryP2sh32(wrongDuplicateDisposition).accepted, true);
+  const hostTraceMutation = [...fixtures];
+  hostTraceMutation[3] = wrongDuplicateDisposition;
+  const mutatedWires = encodeBchCircleFriMultiQueryTransactionFixture(hostTraceMutation);
+  assert.equal(
+    evaluateBchCircleFriMultiQueryTransactionFixture(mutatedWires).every(({ accepted }) => accepted),
+    true,
+  );
 });
