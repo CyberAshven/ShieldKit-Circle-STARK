@@ -1,0 +1,778 @@
+import {
+  M31_MODULUS,
+  decodeM31,
+  encodeM31,
+  inverse,
+  mul,
+} from '../../research-lanes/bch-shielded-pool-design/p2/reference/m31.mjs';
+
+import {
+  assertBytes,
+  concatBytes,
+  equalBytes,
+  readU32le,
+  u16le,
+  u32le,
+  utf8,
+} from './bytes.mjs';
+
+import {
+  hashM31Leaf,
+  hashMerkleNode,
+  verifyM31MerkleMulti,
+} from './commitment.mjs';
+
+import {
+  foldPair,
+} from './fold.mjs';
+
+import {
+  CIRCLE_FRI_QUERY_CANDIDATE_LABEL,
+  CIRCLE_FRI_QUERY_PROOF_VERSION,
+  DEFAULT_MAXIMUM_LOG_DOMAIN,
+  assertCircleFriParameters,
+  encodeCircleFriParameters,
+  verifyCircleFriQueries,
+} from './query-proof.mjs';
+
+import {
+  CircleFriTranscript,
+} from './transcript.mjs';
+
+import {
+  buildCircleFriTopologyTable,
+  circleFriTopologyRecordBytes,
+  decodeCircleFriTopologyRecord,
+  hashCircleFriTopologyRecord,
+  openCircleFriTopologyTable,
+  verifyCircleFriTopologyOpening,
+} from './topology-table.mjs';
+
+const QUERY_BATCH_WITNESS_MAGIC = utf8('CFBW');
+const QUERY_BATCH_WITNESS_VERSION = 1;
+const QUERY_BATCH_SIZE = 2;
+
+const fail = (message) => {
+  throw new TypeError(message);
+};
+
+const assertElement = (value, name) => {
+  if (typeof value !== 'bigint' || value < 0n || value >= M31_MODULUS) {
+    fail(`${name} must be a canonical M31 element`);
+  }
+  return value;
+};
+
+const assertHash = (value, name) => {
+  const bytes = assertBytes(value, name);
+  if (bytes.length !== 32) fail(`${name} must be exactly 32 bytes`);
+  return bytes;
+};
+
+const equalNumbers = (left, right) => (
+  left.length === right.length && left.every((value, index) => value === right[index])
+);
+
+const isPowerOfTwo = (value) => (
+  Number.isSafeInteger(value)
+  && value > 0
+  && (value & (value - 1)) === 0
+);
+
+const canonicalIndices = (indices, length, name) => {
+  if (!Array.isArray(indices) || indices.length === 0) fail(`${name} must be a nonempty array`);
+  const result = indices.map((index, ordinal) => {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= length) {
+      fail(`${name}[${ordinal}] is out of range`);
+    }
+    return index;
+  }).sort((left, right) => left - right);
+  return [...new Set(result)];
+};
+
+const canonicalFrontierCount = (indices, length) => {
+  if (!isPowerOfTwo(length)) fail('Merkle length must be a positive power of two');
+  let current = canonicalIndices(indices, length, 'Merkle indices');
+  let count = 0;
+  let levelLength = length;
+  while (levelLength > 1) {
+    const known = new Set(current);
+    for (const index of current) {
+      if (!known.has(index ^ 1)) count += 1;
+    }
+    current = [...new Set(current.map((index) => Math.floor(index / 2)))].sort((left, right) => left - right);
+    levelLength /= 2;
+  }
+  return count;
+};
+
+const firstFoldPairIndex = (index, domainLength) => (
+  index < domainLength / 2 ? index : domainLength - 1 - index
+);
+
+const assertQ2Ordinals = (queryOrdinals, queryCount, name = 'queryOrdinals') => {
+  if (!Array.isArray(queryOrdinals) || queryOrdinals.length !== QUERY_BATCH_SIZE) {
+    fail(`${name} must contain exactly two ordinals`);
+  }
+  const ordinals = queryOrdinals.map((ordinal, index) => {
+    if (!Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal >= queryCount) {
+      fail(`${name}[${index}] is out of range`);
+    }
+    return ordinal;
+  });
+  if (ordinals[0] >= ordinals[1]) {
+    fail(`${name} must be strictly increasing and unique`);
+  }
+  return ordinals;
+};
+
+const assertQueryIndices = (queryIndices, parameters) => {
+  if (!Array.isArray(queryIndices) || queryIndices.length !== QUERY_BATCH_SIZE) {
+    fail('queryIndices must contain exactly two indices');
+  }
+  const indices = queryIndices.map((index, ordinal) => {
+    if (!Number.isSafeInteger(index) || index < 0 || index >= parameters.domainLength) {
+      fail(`queryIndices[${ordinal}] is out of range`);
+    }
+    return index;
+  });
+  if (indices[0] === indices[1]) fail('q2 query indices must be distinct');
+  if (firstFoldPairIndex(indices[0], parameters.domainLength)
+      === firstFoldPairIndex(indices[1], parameters.domainLength)) {
+    fail('q2 queries must occupy distinct first-fold pairs');
+  }
+  return indices;
+};
+
+const encodeM31Vector = (values, name) => concatBytes(...values.map(
+  (value, index) => encodeM31(assertElement(value, `${name}[${index}]`)),
+));
+
+const setNode = (nodes, level, index, hash, name) => {
+  const bytes = assertHash(hash, name);
+  const key = `${level}:${index}`;
+  const existing = nodes.get(key);
+  if (existing !== undefined && !equalBytes(existing, bytes)) {
+    fail(`full Merkle paths disagree at node ${key}`);
+  }
+  if (existing === undefined) nodes.set(key, new Uint8Array(bytes));
+};
+
+/** Merge already-authenticated full paths into their unique minimal frontier. */
+const mergeFullMerklePaths = ({ root, length, entries, name }) => {
+  const expectedRoot = assertHash(root, `${name} root`);
+  if (!isPowerOfTwo(length)) fail(`${name} length must be a positive power of two`);
+  if (!Array.isArray(entries) || entries.length === 0) fail(`${name} paths must be nonempty`);
+  const depth = Math.log2(length);
+  const nodes = new Map();
+  const openedIndices = [];
+
+  for (let ordinal = 0; ordinal < entries.length; ordinal += 1) {
+    const entry = entries[ordinal];
+    if (entry === null || typeof entry !== 'object') fail(`${name} paths[${ordinal}] must be an object`);
+    if (!Number.isSafeInteger(entry.index) || entry.index < 0 || entry.index >= length) {
+      fail(`${name} paths[${ordinal}].index is out of range`);
+    }
+    if (!Array.isArray(entry.siblings) || entry.siblings.length !== depth) {
+      fail(`${name} paths[${ordinal}] has the wrong full-path length`);
+    }
+    openedIndices.push(entry.index);
+    let current = assertHash(entry.leafHash, `${name} paths[${ordinal}].leafHash`);
+    let currentIndex = entry.index;
+    setNode(nodes, 0, currentIndex, current, `${name} paths[${ordinal}].leafHash`);
+    for (let level = 0; level < depth; level += 1) {
+      const sibling = assertHash(entry.siblings[level], `${name} paths[${ordinal}].siblings[${level}]`);
+      setNode(nodes, level, currentIndex ^ 1, sibling, `${name} paths[${ordinal}].siblings[${level}]`);
+      current = (currentIndex & 1) === 0
+        ? hashMerkleNode(current, sibling)
+        : hashMerkleNode(sibling, current);
+      currentIndex = Math.floor(currentIndex / 2);
+      setNode(nodes, level + 1, currentIndex, current, `${name} paths[${ordinal}] parent`);
+    }
+    if (!equalBytes(current, expectedRoot)) fail(`${name} paths[${ordinal}] does not authenticate its root`);
+  }
+
+  const indices = canonicalIndices(openedIndices, length, `${name} indices`);
+  const siblings = [];
+  let current = indices;
+  for (let level = 0; level < depth; level += 1) {
+    const known = new Set(current);
+    for (const index of current) {
+      const siblingIndex = index ^ 1;
+      if (!known.has(siblingIndex)) {
+        const sibling = nodes.get(`${level}:${siblingIndex}`);
+        if (sibling === undefined) fail(`${name} full paths do not cover the canonical frontier`);
+        siblings.push(new Uint8Array(sibling));
+      }
+    }
+    current = [...new Set(current.map((index) => Math.floor(index / 2)))].sort((left, right) => left - right);
+  }
+  if (siblings.length !== canonicalFrontierCount(indices, length)) {
+    throw new Error(`internal ${name} frontier count mismatch`);
+  }
+  return Object.freeze({
+    indices: Object.freeze(indices),
+    siblings: Object.freeze(siblings),
+  });
+};
+
+const verifyHashedMerkleMulti = ({ root, length, indices, leafHashes, siblings, name }) => {
+  const expectedRoot = assertHash(root, `${name} root`);
+  if (!isPowerOfTwo(length)) fail(`${name} length must be a positive power of two`);
+  const canonical = canonicalIndices(indices, length, `${name} indices`);
+  if (!equalNumbers(indices, canonical)) fail(`${name} indices must be strictly increasing and unique`);
+  if (!Array.isArray(leafHashes) || leafHashes.length !== canonical.length) {
+    fail(`${name} leaf hashes must match the index count`);
+  }
+  if (!Array.isArray(siblings)) fail(`${name} siblings must be an array`);
+  if (siblings.length !== canonicalFrontierCount(canonical, length)) {
+    fail(`${name} frontier count is noncanonical`);
+  }
+  const frontier = siblings.map((hash, index) => assertHash(hash, `${name} siblings[${index}]`));
+  let current = new Map(canonical.map((index, ordinal) => [
+    index,
+    assertHash(leafHashes[ordinal], `${name} leafHashes[${ordinal}]`),
+  ]));
+  let siblingCursor = 0;
+  let levelLength = length;
+  while (levelLength > 1) {
+    const parents = new Map();
+    for (const index of [...current.keys()].sort((left, right) => left - right)) {
+      const parentIndex = Math.floor(index / 2);
+      if (parents.has(parentIndex)) continue;
+      const leftIndex = parentIndex * 2;
+      const rightIndex = leftIndex + 1;
+      const left = current.get(leftIndex) ?? frontier[siblingCursor++];
+      const right = current.get(rightIndex) ?? frontier[siblingCursor++];
+      if (left === undefined || right === undefined) fail(`${name} frontier is truncated`);
+      parents.set(parentIndex, hashMerkleNode(left, right));
+    }
+    current = parents;
+    levelLength /= 2;
+  }
+  if (siblingCursor !== frontier.length) fail(`${name} frontier has unused hashes`);
+  return equalBytes(current.get(0), expectedRoot);
+};
+
+const derivePublicTranscript = ({ roots, finalCodeword, parameters, protocolContext }) => {
+  const transcript = new CircleFriTranscript(assertBytes(protocolContext, 'protocolContext'));
+  transcript.absorb('fri-parameters', encodeCircleFriParameters(parameters));
+  const betas = roots.map((root, round) => {
+    transcript.absorb(`fri-layer-root-${round}`, root);
+    return transcript.challengeField(`fri-fold-beta-${round}`);
+  });
+  transcript.absorb('fri-final-codeword', encodeM31Vector(finalCodeword, 'finalCodeword'));
+  const queryIndices = [];
+  const seenFirstFoldPairs = new Set();
+  for (let query = 0; query < parameters.queryCount; query += 1) {
+    for (;;) {
+      const index = transcript.challengeIndex(CIRCLE_FRI_QUERY_CANDIDATE_LABEL, parameters.domainLength);
+      const pairIndex = firstFoldPairIndex(index, parameters.domainLength);
+      if (!seenFirstFoldPairs.has(pairIndex)) {
+        seenFirstFoldPairs.add(pairIndex);
+        queryIndices.push(index);
+        break;
+      }
+    }
+  }
+  return Object.freeze({ betas: Object.freeze(betas), queryIndices: Object.freeze(queryIndices) });
+};
+
+const decodeAndCheckTopologyRecords = ({ records, parameters, queryIndices }) => {
+  if (!Array.isArray(records) || records.length !== QUERY_BATCH_SIZE) {
+    fail('topology records must contain exactly two records');
+  }
+  const expectedIndices = [...queryIndices].sort((left, right) => left - right);
+  const recordLength = circleFriTopologyRecordBytes(parameters);
+  const decoded = records.map((record, ordinal) => {
+    const bytes = assertBytes(record, `topology.records[${ordinal}]`);
+    if (bytes.length !== recordLength) fail(`topology.records[${ordinal}] has the wrong length`);
+    const item = decodeCircleFriTopologyRecord(bytes);
+    for (const field of ['logDegreeBound', 'logBlowup', 'queryCount']) {
+      if (item.parameters[field] !== parameters[field]) {
+        fail(`topology.records[${ordinal}] ${field} disagrees with the witness`);
+      }
+    }
+    if (item.queryIndex !== expectedIndices[ordinal]) {
+      fail('topology records are not in canonical query-index order');
+    }
+    return item;
+  });
+  const byQueryIndex = new Map(decoded.map((record) => [record.queryIndex, record]));
+  return Object.freeze({
+    decoded: Object.freeze(decoded),
+    byOrdinal: Object.freeze(queryIndices.map((index) => byQueryIndex.get(index))),
+    expectedIndices: Object.freeze(expectedIndices),
+  });
+};
+
+const assertWitnessShape = (witness, maximumLogDomain = DEFAULT_MAXIMUM_LOG_DOMAIN) => {
+  if (witness === null || typeof witness !== 'object') fail('q2 witness must be an object');
+  if (witness.version !== QUERY_BATCH_WITNESS_VERSION) fail('unsupported q2 witness version');
+  if (witness.proofVersion !== CIRCLE_FRI_QUERY_PROOF_VERSION) fail('q2 witness must bind Circle-FRI query proof v3');
+  const parameters = assertCircleFriParameters({
+    logDegreeBound: witness.logDegreeBound,
+    logBlowup: witness.logBlowup,
+    queryCount: witness.queryCount,
+    maximumLogDomain,
+  });
+  const queryOrdinals = assertQ2Ordinals(witness.queryOrdinals, parameters.queryCount);
+  const queryIndices = assertQueryIndices(witness.queryIndices, parameters);
+
+  if (!Array.isArray(witness.roots) || witness.roots.length !== parameters.logDegreeBound) {
+    fail('q2 witness root count must equal logDegreeBound');
+  }
+  witness.roots.forEach((root, round) => assertHash(root, `roots[${round}]`));
+  if (!Array.isArray(witness.finalCodeword) || witness.finalCodeword.length !== parameters.blowup) {
+    fail('q2 witness finalCodeword length must equal blowup');
+  }
+  witness.finalCodeword.forEach((value, index) => assertElement(value, `finalCodeword[${index}]`));
+
+  if (witness.topology === null || typeof witness.topology !== 'object') fail('q2 witness topology is required');
+  assertHash(witness.topology.root, 'topology.root');
+  const recordPlan = decodeAndCheckTopologyRecords({
+    records: witness.topology.records,
+    parameters,
+    queryIndices,
+  });
+  if (!Array.isArray(witness.topology.indices)
+      || !equalNumbers(witness.topology.indices, recordPlan.expectedIndices)) {
+    fail('topology indices are not the canonical sorted query indices');
+  }
+  if (!Array.isArray(witness.topology.siblings)) fail('topology siblings must be an array');
+  const topologyFrontierCount = canonicalFrontierCount(recordPlan.expectedIndices, parameters.domainLength);
+  if (witness.topology.siblings.length !== topologyFrontierCount) {
+    fail('topology frontier count is noncanonical');
+  }
+  witness.topology.siblings.forEach((hash, index) => assertHash(hash, `topology.siblings[${index}]`));
+
+  if (!Array.isArray(witness.layers) || witness.layers.length !== parameters.logDegreeBound) {
+    fail('q2 witness layer count must equal logDegreeBound');
+  }
+  const layerPlans = witness.layers.map((layer, round) => {
+    if (layer === null || typeof layer !== 'object') fail(`layers[${round}] must be an object`);
+    const layerLength = parameters.domainLength / (2 ** round);
+    const roundRecords = recordPlan.byOrdinal.map((record) => record.rounds[round]);
+    const indices = canonicalIndices(roundRecords.flatMap((record) => [
+      record.leftIndex,
+      record.rightIndex,
+    ]), layerLength, `layers[${round}] derived indices`);
+    if (!Array.isArray(layer.indices) || !equalNumbers(layer.indices, indices)) {
+      fail(`layers[${round}] indices are not canonical for the authenticated topology`);
+    }
+    if (!Array.isArray(layer.values) || layer.values.length !== indices.length) {
+      fail(`layers[${round}] value count is noncanonical`);
+    }
+    layer.values.forEach((value, index) => assertElement(value, `layers[${round}].values[${index}]`));
+    if (!Array.isArray(layer.inverseTwoCoordinates)
+        || layer.inverseTwoCoordinates.length !== QUERY_BATCH_SIZE) {
+      fail(`layers[${round}] must contain two inverse-coordinate hints`);
+    }
+    layer.inverseTwoCoordinates.forEach((value, index) => (
+      assertElement(value, `layers[${round}].inverseTwoCoordinates[${index}]`)
+    ));
+    if (!Array.isArray(layer.siblings)) fail(`layers[${round}].siblings must be an array`);
+    const frontierCount = canonicalFrontierCount(indices, layerLength);
+    if (layer.siblings.length !== frontierCount) {
+      fail(`layers[${round}] frontier count is noncanonical`);
+    }
+    layer.siblings.forEach((hash, index) => assertHash(hash, `layers[${round}].siblings[${index}]`));
+    return Object.freeze({
+      layerLength,
+      indices: Object.freeze(indices),
+      roundRecords: Object.freeze(roundRecords),
+    });
+  });
+
+  return Object.freeze({
+    ...parameters,
+    queryOrdinals: Object.freeze(queryOrdinals),
+    queryIndices: Object.freeze(queryIndices),
+    topology: recordPlan,
+    layerPlans: Object.freeze(layerPlans),
+  });
+};
+
+const freezeWitness = (witness) => Object.freeze({
+  version: witness.version,
+  proofVersion: witness.proofVersion,
+  logDegreeBound: witness.logDegreeBound,
+  logBlowup: witness.logBlowup,
+  queryCount: witness.queryCount,
+  queryOrdinals: Object.freeze([...witness.queryOrdinals]),
+  queryIndices: Object.freeze([...witness.queryIndices]),
+  roots: Object.freeze(witness.roots.map((root) => new Uint8Array(root))),
+  finalCodeword: Object.freeze([...witness.finalCodeword]),
+  topology: Object.freeze({
+    root: new Uint8Array(witness.topology.root),
+    indices: Object.freeze([...witness.topology.indices]),
+    records: Object.freeze(witness.topology.records.map((record) => new Uint8Array(record))),
+    siblings: Object.freeze(witness.topology.siblings.map((hash) => new Uint8Array(hash))),
+  }),
+  layers: Object.freeze(witness.layers.map((layer) => Object.freeze({
+    indices: Object.freeze([...layer.indices]),
+    values: Object.freeze([...layer.values]),
+    inverseTwoCoordinates: Object.freeze([...layer.inverseTwoCoordinates]),
+    siblings: Object.freeze(layer.siblings.map((hash) => new Uint8Array(hash))),
+  }))),
+});
+
+const verifyQ2WitnessOrThrow = ({
+  witness,
+  expected,
+  protocolContext = new Uint8Array(),
+  queryOrdinals,
+  maximumLogDomain = DEFAULT_MAXIMUM_LOG_DOMAIN,
+}) => {
+  const parameters = assertWitnessShape(witness, maximumLogDomain);
+  if (expected === null || typeof expected !== 'object') fail('expected parameters are required');
+  const expectedParameters = assertCircleFriParameters({ ...expected, maximumLogDomain });
+  for (const field of ['logDegreeBound', 'logBlowup', 'queryCount']) {
+    if (parameters[field] !== expectedParameters[field]) fail(`q2 witness ${field} does not match expected parameters`);
+  }
+  const expectedOrdinals = assertQ2Ordinals(queryOrdinals, parameters.queryCount, 'expected queryOrdinals');
+  if (!equalNumbers(parameters.queryOrdinals, expectedOrdinals)) {
+    fail('q2 witness query ordinals do not match the expected batch');
+  }
+
+  const finalValue = witness.finalCodeword[0];
+  if (!witness.finalCodeword.every((value) => value === finalValue)) {
+    fail('q2 witness final codeword is not constant');
+  }
+  const transcript = derivePublicTranscript({
+    roots: witness.roots,
+    finalCodeword: witness.finalCodeword,
+    parameters,
+    protocolContext,
+  });
+  const scheduledIndices = expectedOrdinals.map((ordinal) => transcript.queryIndices[ordinal]);
+  if (!equalNumbers(witness.queryIndices, scheduledIndices)) {
+    fail('q2 witness query indices do not match the public v3 transcript schedule');
+  }
+
+  const topologyTable = buildCircleFriTopologyTable(parameters);
+  if (!equalBytes(witness.topology.root, topologyTable.root)) fail('q2 witness topology root is not canonical');
+  for (let ordinal = 0; ordinal < witness.topology.indices.length; ordinal += 1) {
+    const index = witness.topology.indices[ordinal];
+    if (!equalBytes(witness.topology.records[ordinal], topologyTable.records[index])) {
+      fail(`q2 witness topology record ${ordinal} is not canonical`);
+    }
+  }
+  if (!verifyHashedMerkleMulti({
+    root: witness.topology.root,
+    length: parameters.domainLength,
+    indices: witness.topology.indices,
+    leafHashes: witness.topology.records.map(hashCircleFriTopologyRecord),
+    siblings: witness.topology.siblings,
+    name: 'topology multiproof',
+  })) fail('q2 witness topology multiproof failed');
+
+  const previousFolds = new Array(QUERY_BATCH_SIZE);
+  for (let round = 0; round < parameters.logDegreeBound; round += 1) {
+    const layer = witness.layers[round];
+    const plan = parameters.layerPlans[round];
+    if (!verifyM31MerkleMulti({
+      root: witness.roots[round],
+      length: plan.layerLength,
+      indices: layer.indices,
+      values: layer.values,
+      siblings: layer.siblings,
+    })) fail(`q2 witness round ${round} Merkle multiproof failed`);
+    const valueByIndex = new Map(layer.indices.map((index, ordinal) => [index, layer.values[ordinal]]));
+    for (let query = 0; query < QUERY_BATCH_SIZE; query += 1) {
+      const record = plan.roundRecords[query];
+      const expectedInverse = inverse(mul(2n, record.coordinate));
+      if (layer.inverseTwoCoordinates[query] !== expectedInverse) {
+        fail(`q2 witness query ${query} round ${round} inverse-coordinate hint failed`);
+      }
+      if (previousFolds[query] !== undefined
+          && previousFolds[query] !== valueByIndex.get(record.currentIndex)) {
+        fail(`q2 witness query ${query} round ${round} fold continuity failed`);
+      }
+      previousFolds[query] = foldPair({
+        positive: valueByIndex.get(record.leftIndex),
+        negative: valueByIndex.get(record.rightIndex),
+        coordinate: record.coordinate,
+        beta: transcript.betas[round],
+      }).value;
+    }
+  }
+  for (let query = 0; query < QUERY_BATCH_SIZE; query += 1) {
+    const finalIndex = parameters.topology.byOrdinal[query].rounds.at(-1).nextIndex;
+    if (previousFolds[query] !== witness.finalCodeword[finalIndex]) {
+      fail(`q2 witness query ${query} final low-degree check failed`);
+    }
+  }
+  return Object.freeze({
+    ok: true,
+    queryOrdinals: Object.freeze([...expectedOrdinals]),
+    queryIndices: Object.freeze([...scheduledIndices]),
+    betas: Object.freeze([...transcript.betas]),
+  });
+};
+
+/** Package one exact pair of already-verified public v3 query paths. */
+export const createCircleFriQ2BatchWitness = ({
+  proof,
+  expected,
+  protocolContext = new Uint8Array(),
+  queryOrdinals,
+  maximumLogDomain = DEFAULT_MAXIMUM_LOG_DOMAIN,
+}) => {
+  const sourceVerdict = verifyCircleFriQueries({
+    proof,
+    expected,
+    protocolContext,
+    maximumLogDomain,
+  });
+  if (!sourceVerdict.ok) fail(`source Circle-FRI proof is invalid: ${sourceVerdict.reason ?? 'invalid'}`);
+  const parameters = assertCircleFriParameters({ ...expected, maximumLogDomain });
+  const ordinals = assertQ2Ordinals(queryOrdinals, parameters.queryCount);
+  const queryIndices = ordinals.map((ordinal) => sourceVerdict.queryIndices[ordinal]);
+  assertQueryIndices(queryIndices, parameters);
+
+  const topologyTable = buildCircleFriTopologyTable(parameters);
+  const topologyOpenings = queryIndices.map((queryIndex) => {
+    const opening = openCircleFriTopologyTable(topologyTable, queryIndex);
+    if (!verifyCircleFriTopologyOpening({
+      root: topologyTable.root,
+      parameters,
+      queryIndex,
+      record: opening.record,
+      siblings: opening.siblings,
+    })) fail(`source topology path ${queryIndex} is invalid`);
+    return opening;
+  });
+  const topologyFrontier = mergeFullMerklePaths({
+    root: topologyTable.root,
+    length: topologyTable.length,
+    entries: topologyOpenings.map((opening) => ({
+      index: opening.queryIndex,
+      leafHash: hashCircleFriTopologyRecord(opening.record),
+      siblings: opening.siblings,
+    })),
+    name: 'topology',
+  });
+  const topologyRecords = topologyFrontier.indices.map((index) => (
+    new Uint8Array(topologyOpenings.find((opening) => opening.queryIndex === index).record)
+  ));
+  const topologyByOrdinal = topologyOpenings.map((opening) => decodeCircleFriTopologyRecord(opening.record));
+
+  const layers = Array.from({ length: parameters.logDegreeBound }, (_, round) => {
+    const layerLength = parameters.domainLength / (2 ** round);
+    const valuesByIndex = new Map();
+    const entries = [];
+    const addOpening = (index, value, siblings, name) => {
+      const canonicalValue = assertElement(value, `${name} value`);
+      const existing = valuesByIndex.get(index);
+      if (existing !== undefined && existing !== canonicalValue) {
+        fail(`source query paths disagree on round ${round} leaf ${index}`);
+      }
+      valuesByIndex.set(index, canonicalValue);
+      entries.push(Object.freeze({ index, leafHash: hashM31Leaf(canonicalValue), siblings }));
+    };
+    for (let query = 0; query < QUERY_BATCH_SIZE; query += 1) {
+      const topologyRound = topologyByOrdinal[query].rounds[round];
+      const sourceOpening = proof.queries[ordinals[query]].layers[round];
+      addOpening(
+        topologyRound.leftIndex,
+        sourceOpening.leftValue,
+        sourceOpening.leftSiblings,
+        `query ${ordinals[query]} round ${round} left`,
+      );
+      addOpening(
+        topologyRound.rightIndex,
+        sourceOpening.rightValue,
+        sourceOpening.rightSiblings,
+        `query ${ordinals[query]} round ${round} right`,
+      );
+    }
+    const frontier = mergeFullMerklePaths({
+      root: proof.roots[round],
+      length: layerLength,
+      entries,
+      name: `FRI round ${round}`,
+    });
+    return Object.freeze({
+      indices: frontier.indices,
+      values: Object.freeze(frontier.indices.map((index) => valuesByIndex.get(index))),
+      inverseTwoCoordinates: Object.freeze(topologyByOrdinal.map((record) => (
+        inverse(mul(2n, record.rounds[round].coordinate))
+      ))),
+      siblings: frontier.siblings,
+    });
+  });
+
+  const witness = freezeWitness({
+    version: QUERY_BATCH_WITNESS_VERSION,
+    proofVersion: CIRCLE_FRI_QUERY_PROOF_VERSION,
+    logDegreeBound: parameters.logDegreeBound,
+    logBlowup: parameters.logBlowup,
+    queryCount: parameters.queryCount,
+    queryOrdinals: ordinals,
+    queryIndices,
+    roots: proof.roots,
+    finalCodeword: proof.finalCodeword,
+    topology: {
+      root: topologyTable.root,
+      indices: topologyFrontier.indices,
+      records: topologyRecords,
+      siblings: topologyFrontier.siblings,
+    },
+    layers,
+  });
+  const packagedVerdict = verifyQ2WitnessOrThrow({
+    witness,
+    expected,
+    protocolContext,
+    queryOrdinals: ordinals,
+    maximumLogDomain,
+  });
+  if (!packagedVerdict.ok) throw new Error('internal q2 witness verification failed');
+  return witness;
+};
+
+/** Fail-closed verifier for one self-contained q2 BCH witness package. */
+export const verifyCircleFriQ2BatchWitness = (input) => {
+  try {
+    return verifyQ2WitnessOrThrow(input);
+  } catch (error) {
+    return Object.freeze({ ok: false, reason: error instanceof Error ? error.message : String(error) });
+  }
+};
+
+/** Encode the exact operand package consumed by the forthcoming q2 BCH kernel. */
+export const encodeCircleFriQ2BatchWitness = (
+  witness,
+  { maximumLogDomain = DEFAULT_MAXIMUM_LOG_DOMAIN } = {},
+) => {
+  const parameters = assertWitnessShape(witness, maximumLogDomain);
+  const chunks = [
+    QUERY_BATCH_WITNESS_MAGIC,
+    Uint8Array.of(QUERY_BATCH_WITNESS_VERSION),
+    encodeCircleFriParameters(parameters),
+    u16le(witness.queryOrdinals[0]),
+    u16le(witness.queryOrdinals[1]),
+    u32le(witness.queryIndices[0]),
+    u32le(witness.queryIndices[1]),
+    ...witness.roots,
+    encodeM31Vector(witness.finalCodeword, 'finalCodeword'),
+    witness.topology.root,
+    ...witness.topology.records,
+    u16le(witness.topology.siblings.length),
+    ...witness.topology.siblings,
+  ];
+  for (let round = 0; round < witness.layers.length; round += 1) {
+    const layer = witness.layers[round];
+    chunks.push(
+      u16le(layer.values.length),
+      u16le(layer.siblings.length),
+      encodeM31Vector(layer.inverseTwoCoordinates, `layers[${round}].inverseTwoCoordinates`),
+      encodeM31Vector(layer.values, `layers[${round}].values`),
+      ...layer.siblings,
+    );
+  }
+  return concatBytes(...chunks);
+};
+
+/** Decode one exact q2 operand package with bounded, canonical count parsing. */
+export const decodeCircleFriQ2BatchWitness = (
+  encoded,
+  { maximumLogDomain = DEFAULT_MAXIMUM_LOG_DOMAIN } = {},
+) => {
+  const bytes = assertBytes(encoded, 'encoded q2 witness');
+  let offset = 0;
+  const read = (length, name) => {
+    if (!Number.isSafeInteger(length) || length < 0 || offset + length > bytes.length) fail(`${name} is truncated`);
+    const result = bytes.slice(offset, offset + length);
+    offset += length;
+    return result;
+  };
+  const readU16 = (name) => {
+    const value = read(2, name);
+    return value[0] + value[1] * 0x100;
+  };
+  const readU32 = (name) => readU32le(read(4, name));
+
+  if (!equalBytes(read(4, 'q2 witness magic'), QUERY_BATCH_WITNESS_MAGIC)) {
+    fail('invalid q2 witness magic');
+  }
+  const version = read(1, 'q2 witness version')[0];
+  if (version !== QUERY_BATCH_WITNESS_VERSION) fail('unsupported q2 witness version');
+  const parameterBytes = read(5, 'q2 witness parameters');
+  const proofVersion = parameterBytes[0];
+  if (proofVersion !== CIRCLE_FRI_QUERY_PROOF_VERSION) fail('q2 witness must bind Circle-FRI query proof v3');
+  const parameters = assertCircleFriParameters({
+    logDegreeBound: parameterBytes[1],
+    logBlowup: parameterBytes[2],
+    queryCount: parameterBytes[3] + parameterBytes[4] * 0x100,
+    maximumLogDomain,
+  });
+  if (!equalBytes(parameterBytes, encodeCircleFriParameters(parameters))) fail('q2 witness parameters are noncanonical');
+  const queryOrdinals = [readU16('queryOrdinals[0]'), readU16('queryOrdinals[1]')];
+  assertQ2Ordinals(queryOrdinals, parameters.queryCount);
+  const queryIndices = [readU32('queryIndices[0]'), readU32('queryIndices[1]')];
+  assertQueryIndices(queryIndices, parameters);
+  const roots = Array.from({ length: parameters.logDegreeBound }, (_, round) => read(32, `roots[${round}]`));
+  const finalCodeword = Array.from({ length: parameters.blowup }, (_, index) => (
+    decodeM31(read(4, `finalCodeword[${index}]`))
+  ));
+  const topologyRoot = read(32, 'topology.root');
+  const recordLength = circleFriTopologyRecordBytes(parameters);
+  const topologyRecords = Array.from({ length: QUERY_BATCH_SIZE }, (_, index) => (
+    read(recordLength, `topology.records[${index}]`)
+  ));
+  const topologyPlan = decodeAndCheckTopologyRecords({ records: topologyRecords, parameters, queryIndices });
+  const topologySiblingCount = readU16('topology.siblingCount');
+  const expectedTopologySiblingCount = canonicalFrontierCount(topologyPlan.expectedIndices, parameters.domainLength);
+  if (topologySiblingCount !== expectedTopologySiblingCount) fail('topology frontier count is noncanonical');
+  const topologySiblings = Array.from({ length: topologySiblingCount }, (_, index) => (
+    read(32, `topology.siblings[${index}]`)
+  ));
+
+  const layers = Array.from({ length: parameters.logDegreeBound }, (_, round) => {
+    const layerLength = parameters.domainLength / (2 ** round);
+    const roundRecords = topologyPlan.byOrdinal.map((record) => record.rounds[round]);
+    const indices = canonicalIndices(roundRecords.flatMap((record) => [
+      record.leftIndex,
+      record.rightIndex,
+    ]), layerLength, `layers[${round}] derived indices`);
+    const valueCount = readU16(`layers[${round}].valueCount`);
+    const siblingCount = readU16(`layers[${round}].siblingCount`);
+    if (valueCount !== indices.length) fail(`layers[${round}] value count is noncanonical`);
+    const expectedSiblingCount = canonicalFrontierCount(indices, layerLength);
+    if (siblingCount !== expectedSiblingCount) fail(`layers[${round}] frontier count is noncanonical`);
+    const inverseTwoCoordinates = Array.from({ length: QUERY_BATCH_SIZE }, (_, query) => (
+      decodeM31(read(4, `layers[${round}].inverseTwoCoordinates[${query}]`))
+    ));
+    const values = Array.from({ length: valueCount }, (_, index) => (
+      decodeM31(read(4, `layers[${round}].values[${index}]`))
+    ));
+    const siblings = Array.from({ length: siblingCount }, (_, index) => (
+      read(32, `layers[${round}].siblings[${index}]`)
+    ));
+    return Object.freeze({ indices, values, inverseTwoCoordinates, siblings });
+  });
+  if (offset !== bytes.length) fail('encoded q2 witness has trailing bytes');
+
+  const witness = freezeWitness({
+    version,
+    proofVersion,
+    logDegreeBound: parameters.logDegreeBound,
+    logBlowup: parameters.logBlowup,
+    queryCount: parameters.queryCount,
+    queryOrdinals,
+    queryIndices,
+    roots,
+    finalCodeword,
+    topology: {
+      root: topologyRoot,
+      indices: topologyPlan.expectedIndices,
+      records: topologyRecords,
+      siblings: topologySiblings,
+    },
+    layers,
+  });
+  assertWitnessShape(witness, maximumLogDomain);
+  return witness;
+};
