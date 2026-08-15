@@ -38,7 +38,7 @@ import {
   CircleFriTranscript,
 } from './transcript.mjs';
 
-export const CIRCLE_FRI_QUERY_PROOF_VERSION = 2;
+export const CIRCLE_FRI_QUERY_PROOF_VERSION = 3;
 export const CIRCLE_FRI_QUERY_PROOF_MAGIC = utf8('CFRP');
 export const CIRCLE_FRI_QUERY_CANDIDATE_LABEL = 'fri-query-candidate';
 export const DEFAULT_MAXIMUM_LOG_DOMAIN = 20;
@@ -73,8 +73,9 @@ export const assertCircleFriParameters = ({
   const logDomain = logDegree + logRate;
   if (logDomain > maximum) fail(`log domain ${logDomain} exceeds maximumLogDomain=${maximum}`);
   const domainLength = 2 ** logDomain;
-  if (!Number.isSafeInteger(queryCount) || queryCount < 1 || queryCount > 0xffff || queryCount > domainLength) {
-    fail('queryCount must be in [1, min(65535, domainLength)]');
+  const firstFoldPairCount = domainLength / 2;
+  if (!Number.isSafeInteger(queryCount) || queryCount < 1 || queryCount > 0xffff || queryCount > firstFoldPairCount) {
+    fail('queryCount must be in [1, min(65535, domainLength / 2)]');
   }
   return Object.freeze({
     logDegreeBound: logDegree,
@@ -83,6 +84,7 @@ export const assertCircleFriParameters = ({
     degreeBound: 2 ** logDegree,
     blowup: 2 ** logRate,
     domainLength,
+    firstFoldPairCount,
     queryCount,
   });
 };
@@ -98,14 +100,19 @@ const encodeM31Vector = (values, name) => concatBytes(...values.map(
   (value, index) => encodeM31(assertElement(value, `${name}[${index}]`)),
 ));
 
-const deriveUniqueQueryIndices = (transcript, queryCount, domainLength) => {
+const firstFoldPairIndex = (index, domainLength) => (
+  index < domainLength / 2 ? index : domainLength - 1 - index
+);
+
+const deriveUniqueQueryIndices = (transcript, parameters) => {
   const indices = [];
-  const seen = new Set();
-  for (let query = 0; query < queryCount; query += 1) {
+  const seenFirstFoldPairs = new Set();
+  for (let query = 0; query < parameters.queryCount; query += 1) {
     for (;;) {
-      const index = transcript.challengeIndex(CIRCLE_FRI_QUERY_CANDIDATE_LABEL, domainLength);
-      if (!seen.has(index)) {
-        seen.add(index);
+      const index = transcript.challengeIndex(CIRCLE_FRI_QUERY_CANDIDATE_LABEL, parameters.domainLength);
+      const pairIndex = firstFoldPairIndex(index, parameters.domainLength);
+      if (!seenFirstFoldPairs.has(pairIndex)) {
+        seenFirstFoldPairs.add(pairIndex);
         indices.push(index);
         break;
       }
@@ -200,7 +207,7 @@ export const proveCircleFriQueries = ({
   }
   const finalCodeword = codeword.slice();
   transcript.absorb('fri-final-codeword', encodeM31Vector(finalCodeword, 'finalCodeword'));
-  const queryIndices = deriveUniqueQueryIndices(transcript, parameters.queryCount, parameters.domainLength);
+  const queryIndices = deriveUniqueQueryIndices(transcript, parameters);
 
   const queries = queryIndices.map((initialIndex) => {
     let currentIndex = initialIndex;
@@ -306,7 +313,7 @@ const verifyCircleFriQueriesOrThrow = ({
     betas.push(transcript.challengeField(`fri-fold-beta-${round}`));
   }
   transcript.absorb('fri-final-codeword', encodeM31Vector(proof.finalCodeword, 'finalCodeword'));
-  const queryIndices = deriveUniqueQueryIndices(transcript, parameters.queryCount, parameters.domainLength);
+  const queryIndices = deriveUniqueQueryIndices(transcript, parameters);
   const topologies = buildCircleFriPublicTopologies(parameters);
 
   for (let query = 0; query < queryIndices.length; query += 1) {

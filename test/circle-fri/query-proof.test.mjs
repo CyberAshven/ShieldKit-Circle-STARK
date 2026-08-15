@@ -23,7 +23,7 @@ const deterministicCoefficients = (length, seed = 0x465249n) => {
 };
 
 const PARAMETERS = Object.freeze({ logDegreeBound: 6, logBlowup: 3, queryCount: 4 });
-const CONTEXT = utf8('ShieldKit Circle-FRI executable query KAT v2');
+const CONTEXT = utf8('ShieldKit Circle-FRI executable query KAT v3');
 
 const buildProof = () => proveCircleFriQueries({
   coefficients: deterministicCoefficients(1 << PARAMETERS.logDegreeBound),
@@ -37,6 +37,10 @@ test('one complete Circle-FRI proof verifies through every Merkle and fold layer
   const verdict = verifyCircleFriQueries({ proof, expected: PARAMETERS, protocolContext: CONTEXT });
   assert.equal(verdict.ok, true, verdict.reason);
   assert.equal(new Set(verdict.queryIndices).size, PARAMETERS.queryCount);
+  assert.equal(
+    new Set(verdict.queryIndices.map((index) => Math.min(index, (2 ** (PARAMETERS.logDegreeBound + PARAMETERS.logBlowup)) - 1 - index))).size,
+    PARAMETERS.queryCount,
+  );
   assert.equal(verdict.betas.length, PARAMETERS.logDegreeBound);
   assert.equal(proof.finalCodeword.length, 1 << PARAMETERS.logBlowup);
   assert.equal(new Set(proof.finalCodeword).size, 1);
@@ -49,7 +53,7 @@ test('canonical proof codec round-trips with an exact measured byte length', () 
   assert.equal(encoded.length, estimateCircleFriQueryProofBytes(PARAMETERS));
   assert.equal(
     createHash('sha256').update(encoded).digest('hex'),
-    'e427288788ed9c28992c21b5becaabd4757f744eae9742d5cbca9fed9371ece3',
+    'c836f5d0821da80af9fae0717c9488331dd3aef6b52e04c8e1c19b6e96fc4cf0',
   );
   const decoded = decodeCircleFriQueryProof(encoded);
   assert.deepEqual(encodeCircleFriQueryProof(decoded), encoded);
@@ -119,8 +123,17 @@ test('proof decoder rejects truncation, trailing bytes, bad magic, and noncanoni
   const badMagic = encoded.slice();
   badMagic[0] ^= 1;
   assert.throws(() => decodeCircleFriQueryProof(badMagic), /magic/);
+  const oldVersion = encoded.slice();
+  oldVersion[4] = 2;
+  assert.throws(() => decodeCircleFriQueryProof(oldVersion), /unsupported/);
   const noncanonical = encoded.slice();
   const finalOffset = 9 + PARAMETERS.logDegreeBound * 32;
   noncanonical.set(Uint8Array.of(0xff, 0xff, 0xff, 0x7f), finalOffset);
   assert.throws(() => decodeCircleFriQueryProof(noncanonical), /not canonical/);
+  assert.throws(() => proveCircleFriQueries({
+    coefficients: [1n, 2n, 3n, 4n],
+    logBlowup: 0,
+    queryCount: 3,
+    protocolContext: CONTEXT,
+  }), /domainLength \/ 2/);
 });

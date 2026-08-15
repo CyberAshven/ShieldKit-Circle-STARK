@@ -21,7 +21,7 @@ test('fixed Circle-FRI topology table commits every possible query plan', () => 
   assert.equal(table.length, 512);
   assert.equal(table.recordBytes, circleFriTopologyRecordBytes(table.parameters));
   assert.equal(table.recordBytes, 140);
-  assert.equal(binToHex(table.root), 'a79e75f53356fcbec568fed6e55a7c341a1e63261a2fe289f118ad1b5a57f6d9');
+  assert.equal(binToHex(table.root), 'f39fba6d590dccfe807192b216d31f5505507ea7dbe1f039fb55f238263c0820');
 });
 
 test('topology records canonically round-trip and bind fold indices and coordinates', () => {

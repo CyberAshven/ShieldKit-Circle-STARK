@@ -30,13 +30,13 @@ export const QUERY_KAT_PARAMETERS = Object.freeze({
   queryCount: 1,
 });
 
-export const QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH query component v2');
+export const QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH query component v3');
 export const MULTI_QUERY_KAT_PARAMETERS = Object.freeze({
   logDegreeBound: 6,
   logBlowup: 3,
   queryCount: 4,
 });
-export const MULTI_QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH multi-query component v2');
+export const MULTI_QUERY_KAT_CONTEXT = utf8('ShieldKit Circle-FRI BCH multi-query component v3');
 
 const buildCoefficients = (logDegreeBound) => {
   let state = 0x626368n;
@@ -75,6 +75,7 @@ export const queryKatSummary = (kat) => Object.freeze({
   transcriptAttemptsRuntimeDerived: kat.fixture.transcriptAttemptsRuntimeDerived,
   queryIndicesRuntimeDerived: kat.fixture.queryIndicesRuntimeDerived,
   queryDuplicateRetriesRuntimeDerived: kat.fixture.queryDuplicateRetriesRuntimeDerived,
+  queryFirstFoldPairUniquenessRuntimeDerived: kat.fixture.queryFirstFoldPairUniquenessRuntimeDerived,
   proofCommitmentsRuntimeSupplied: kat.fixture.proofCommitmentsRuntimeSupplied,
   topologyOpeningRuntimeSupplied: kat.fixture.topologyOpeningRuntimeSupplied,
   topologyPlanRuntimeConsumed: kat.fixture.topologyPlanRuntimeConsumed,
@@ -137,11 +138,12 @@ export const buildMultiQueryKat = () => {
 };
 
 export const multiQueryKatSummary = (kat) => Object.freeze({
-  kind: 'circle-fri-transcript-bound-multi-query-transaction-v2',
+  kind: 'circle-fri-transcript-bound-multi-query-transaction-v3',
   transcriptDerivationIncluded: true,
   transcriptAttemptsRuntimeDerived: kat.fixtures.every(({ transcriptAttemptsRuntimeDerived }) => transcriptAttemptsRuntimeDerived),
   queryIndicesRuntimeDerived: kat.fixtures.every(({ queryIndicesRuntimeDerived }) => queryIndicesRuntimeDerived),
   queryDuplicateRetriesRuntimeDerived: kat.fixtures.every(({ queryDuplicateRetriesRuntimeDerived }) => queryDuplicateRetriesRuntimeDerived),
+  queryFirstFoldPairUniquenessRuntimeDerived: kat.fixtures.every(({ queryFirstFoldPairUniquenessRuntimeDerived }) => queryFirstFoldPairUniquenessRuntimeDerived),
   proofCommitmentsRuntimeSupplied: kat.fixtures.every(({ proofCommitmentsRuntimeSupplied }) => proofCommitmentsRuntimeSupplied),
   topologyOpeningRuntimeSupplied: kat.fixtures.every(({ topologyOpeningRuntimeSupplied }) => topologyOpeningRuntimeSupplied),
   topologyPlanRuntimeConsumed: kat.fixtures.every(({ topologyPlanRuntimeConsumed }) => topologyPlanRuntimeConsumed),

@@ -667,7 +667,7 @@ const buildHostTranscriptTrace = ({ proof, parameters, protocolContext }) => {
   });
   const finalCodewordBytes = encodeFinalCodeword(proof.finalCodeword);
   state = absorbCircleFriTranscriptState(state, 'fri-final-codeword', finalCodewordBytes);
-  const seen = [];
+  const seenFirstFoldPairs = [];
   const queries = [];
   for (let query = 0; query < parameters.queryCount; query += 1) {
     const candidates = [];
@@ -678,10 +678,13 @@ const buildHostTranscriptTrace = ({ proof, parameters, protocolContext }) => {
         upperBound: parameters.domainLength,
       });
       state = sample.state;
-      const duplicateOf = seen.indexOf(sample.value);
-      candidates.push(Object.freeze({ retry, duplicateOf, sample }));
+      const firstFoldPairIndex = sample.value < parameters.firstFoldPairCount
+        ? sample.value
+        : parameters.domainLength - 1 - sample.value;
+      const duplicateOf = seenFirstFoldPairs.indexOf(firstFoldPairIndex);
+      candidates.push(Object.freeze({ retry, duplicateOf, firstFoldPairIndex, sample }));
       if (duplicateOf === -1) {
-        seen.push(sample.value);
+        seenFirstFoldPairs.push(firstFoldPairIndex);
         queries.push(Object.freeze({ query, index: sample.value, candidates }));
         break;
       }
@@ -764,11 +767,12 @@ export const createBchCircleFriQueryFixture = ({
     require(topologyRecord.rounds[round].coordinate === rounds[round].coordinate, `topology table coordinate disagrees at round ${round}`);
   }
   return Object.freeze({
-    kind: 'circle-fri-transcript-bound-query-component-v2',
+    kind: 'circle-fri-transcript-bound-query-component-v3',
     transcriptDerivationIncluded: true,
     transcriptAttemptsRuntimeDerived: true,
     queryIndicesRuntimeDerived: true,
     queryDuplicateRetriesRuntimeDerived: true,
+    queryFirstFoldPairUniquenessRuntimeDerived: true,
     proofCommitmentsRuntimeSupplied: true,
     topologyOpeningRuntimeSupplied: true,
     topologyPlanRuntimeConsumed: true,
@@ -813,8 +817,26 @@ const buildCanonicalQueryDerivation = (fixture) => {
       for (let prior = 0; prior < query; prior += 1) {
         script.push(
           OP.OP_OVER,
+          OP.OP_DUP,
+          ...pushNumber(fixture.parameters.firstFoldPairCount),
+          OP.OP_LESSTHAN,
+          OP.OP_IF,
+          OP.OP_ELSE,
+          ...pushNumber(fixture.parameters.domainLength - 1),
+          OP.OP_SWAP,
+          OP.OP_SUB,
+          OP.OP_ENDIF,
           ...pushNumber(query + 3 - prior),
           OP.OP_PICK,
+          OP.OP_DUP,
+          ...pushNumber(fixture.parameters.firstFoldPairCount),
+          OP.OP_LESSTHAN,
+          OP.OP_IF,
+          OP.OP_ELSE,
+          ...pushNumber(fixture.parameters.domainLength - 1),
+          OP.OP_SWAP,
+          OP.OP_SUB,
+          OP.OP_ENDIF,
           OP.OP_NUMNOTEQUAL,
           OP.OP_MUL,
         );
@@ -926,7 +948,7 @@ const topologyTableFor = (parameters) => {
 };
 
 export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
-  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v2', 'query fixture is required');
+  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v3', 'query fixture is required');
   const script = [
     ...QUERY_FUNCTION_DEFINITIONS,
     ...buildTranscriptInitialization({
@@ -1000,7 +1022,7 @@ export const buildBchCircleFriQueryRedeemBytecode = (fixture) => {
 };
 
 export const buildBchCircleFriQueryOperandUnlockingBytecode = (fixture) => {
-  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v2', 'query fixture is required');
+  require(fixture?.kind === 'circle-fri-transcript-bound-query-component-v3', 'query fixture is required');
   const operands = [
     fixture.topologyOpening.record,
     concat(...fixture.topologyOpening.siblings.slice().reverse()),
@@ -1065,7 +1087,7 @@ export const encodeBchCircleFriMultiQueryTransactionFixture = (fixtures) => {
   const queryInputBaseIndex = fixtures[0].queryInputBaseIndex;
   require(queryInputBaseIndex === 0, 'standalone multi-query transaction requires queryInputBaseIndex 0');
   for (const fixture of fixtures) {
-    require(fixture.kind === 'circle-fri-transcript-bound-query-component-v2', 'invalid multi-query fixture');
+    require(fixture.kind === 'circle-fri-transcript-bound-query-component-v3', 'invalid multi-query fixture');
     require(fixture.parameters.queryCount === expectedCount, 'multi-query parameter mismatch');
     require(fixture.queryInputBaseIndex === queryInputBaseIndex, 'multi-query input-base mismatch');
     require(fixture.expectedTransactionInputCount === expectedCount, 'multi-query transaction-input-count mismatch');

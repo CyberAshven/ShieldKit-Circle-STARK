@@ -46,7 +46,7 @@ import {
 } from './query-proof.mjs';
 
 export const CIRCLE_FRI_QUERY_MULTIPROOF_MAGIC = utf8('CFMP');
-export const CIRCLE_FRI_QUERY_MULTIPROOF_VERSION = 1;
+export const CIRCLE_FRI_QUERY_MULTIPROOF_VERSION = 2;
 
 const fail = (message) => {
   throw new TypeError(message);
@@ -92,14 +92,19 @@ const prepareTranscript = (protocolContext, parameters, queryBatchSize) => {
   return transcript;
 };
 
-const deriveUniqueQueryIndices = (transcript, queryCount, domainLength) => {
+const firstFoldPairIndex = (index, domainLength) => (
+  index < domainLength / 2 ? index : domainLength - 1 - index
+);
+
+const deriveUniqueQueryIndices = (transcript, parameters) => {
   const indices = [];
-  const seen = new Set();
-  for (let query = 0; query < queryCount; query += 1) {
+  const seenFirstFoldPairs = new Set();
+  for (let query = 0; query < parameters.queryCount; query += 1) {
     for (;;) {
-      const index = transcript.challengeIndex(CIRCLE_FRI_QUERY_CANDIDATE_LABEL, domainLength);
-      if (!seen.has(index)) {
-        seen.add(index);
+      const index = transcript.challengeIndex(CIRCLE_FRI_QUERY_CANDIDATE_LABEL, parameters.domainLength);
+      const pairIndex = firstFoldPairIndex(index, parameters.domainLength);
+      if (!seenFirstFoldPairs.has(pairIndex)) {
+        seenFirstFoldPairs.add(pairIndex);
         indices.push(index);
         break;
       }
@@ -195,7 +200,7 @@ export const proveCircleFriQueryMultiproof = ({
   }
   const finalCodeword = codeword.slice();
   transcript.absorb('fri-final-codeword', encodeM31Vector(finalCodeword, 'finalCodeword'));
-  const queryIndices = deriveUniqueQueryIndices(transcript, parameters.queryCount, parameters.domainLength);
+  const queryIndices = deriveUniqueQueryIndices(transcript, parameters);
   const plans = buildBatchPlans({ parameters, queryIndices, queryBatchSize: batchSize });
   const batches = plans.map((plan) => Object.freeze({
     layers: Object.freeze(plan.layers.map((layer, round) => {
@@ -288,7 +293,7 @@ const verifyOrThrow = ({
     betas.push(transcript.challengeField(`fri-fold-beta-${round}`));
   }
   transcript.absorb('fri-final-codeword', encodeM31Vector(proof.finalCodeword, 'finalCodeword'));
-  const queryIndices = deriveUniqueQueryIndices(transcript, parameters.queryCount, parameters.domainLength);
+  const queryIndices = deriveUniqueQueryIndices(transcript, parameters);
   const plans = buildBatchPlans({
     parameters,
     queryIndices,

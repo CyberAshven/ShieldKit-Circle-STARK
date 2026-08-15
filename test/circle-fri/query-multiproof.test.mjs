@@ -11,6 +11,8 @@ import {
 } from '../../src/circle-fri/bytes.mjs';
 
 import {
+  assertCircleFriParameters,
+  buildCircleFriPublicTopologies,
   encodeCircleFriQueryProof,
   proveCircleFriQueries,
 } from '../../src/circle-fri/query-proof.mjs';
@@ -36,7 +38,7 @@ const PARAMETERS = Object.freeze({
   queryCount: 4,
   queryBatchSize: 2,
 });
-const CONTEXT = utf8('ShieldKit Circle-FRI canonical query multiproof KAT v1');
+const CONTEXT = utf8('ShieldKit Circle-FRI canonical query multiproof KAT v2');
 
 const buildProof = () => proveCircleFriQueryMultiproof({
   coefficients: deterministicCoefficients(1 << PARAMETERS.logDegreeBound),
@@ -52,6 +54,8 @@ test('batched Circle-FRI multiproof verifies every query, layer, and fold', () =
   assert.equal(verdict.ok, true, verdict.reason);
   assert.equal(verdict.batchCount, 2);
   assert.equal(new Set(verdict.queryIndices).size, PARAMETERS.queryCount);
+  const topology = buildCircleFriPublicTopologies(assertCircleFriParameters(PARAMETERS))[0];
+  assert.equal(new Set(verdict.queryIndices.map((index) => topology.pairByLeaf[index])).size, PARAMETERS.queryCount);
   assert.equal(verdict.betas.length, PARAMETERS.logDegreeBound);
 });
 
@@ -65,12 +69,12 @@ test('canonical multiproof codec round-trips and beats independent query paths',
     queryCount: PARAMETERS.queryCount,
     protocolContext: CONTEXT,
   }));
-  assert.equal(encoded.length, 7_115);
+  assert.equal(encoded.length, 6_923);
   assert.equal(independent.length, 10_409);
   assert.ok(encoded.length < independent.length, `${encoded.length} !< ${independent.length}`);
   assert.equal(
     createHash('sha256').update(encoded).digest('hex'),
-    'ef20e6eb6aae28e4a6a16725019369635eb7c4663a15f960f4306fe6494d4eb1',
+    '0f837823456c01a6c65ce8c4f998a584cc8ebaa2c31da120443e63160bd58765',
   );
   const decoded = decodeCircleFriQueryMultiproof(encoded);
   assert.deepEqual(encodeCircleFriQueryMultiproof(decoded), encoded);
@@ -128,6 +132,9 @@ test('multiproof decoder rejects malformed framing and noncanonical fields', () 
   const badMagic = encoded.slice();
   badMagic[0] ^= 1;
   assert.throws(() => decodeCircleFriQueryMultiproof(badMagic), /magic/);
+  const oldVersion = encoded.slice();
+  oldVersion[4] = 1;
+  assert.throws(() => decodeCircleFriQueryMultiproof(oldVersion), /unsupported/);
   const noncanonical = encoded.slice();
   const finalOffset = 11 + PARAMETERS.logDegreeBound * 32;
   noncanonical.set(Uint8Array.of(0xff, 0xff, 0xff, 0x7f), finalOffset);
@@ -154,9 +161,12 @@ test('two-query batches expose the viable raw-byte frontier for the 128-bit rate
   });
   const encoded = encodeCircleFriQueryMultiproof(proof);
   assert.equal(verifyCircleFriQueryMultiproof({ proof, expected: parameters, protocolContext: CONTEXT }).ok, true);
-  assert.equal(encoded.length, 57_995);
+  assert.equal(encoded.length, 58_507);
   assert.equal(
     createHash('sha256').update(encoded).digest('hex'),
-    'e338267ac1180950121ea78f4fcbb8522c3e2c61426db5da84485d252cb3501a',
+    'c09394b751e2ff53804934583ab6bd1e1934085eda7de0b438b1cc105b710c2c',
   );
+  const verdict = verifyCircleFriQueryMultiproof({ proof, expected: parameters, protocolContext: CONTEXT });
+  const topology = buildCircleFriPublicTopologies(assertCircleFriParameters(parameters))[0];
+  assert.equal(new Set(verdict.queryIndices.map((index) => topology.pairByLeaf[index])).size, parameters.queryCount);
 });

@@ -50,6 +50,7 @@ test('BCH-2026 P2SH32 accepts one complete authenticated Circle-FRI query chain'
   assert.equal(honest.transcriptAttemptsRuntimeDerived, true);
   assert.equal(honest.queryIndicesRuntimeDerived, true);
   assert.equal(honest.queryDuplicateRetriesRuntimeDerived, true);
+  assert.equal(honest.queryFirstFoldPairUniquenessRuntimeDerived, true);
   assert.equal(honest.proofCommitmentsRuntimeSupplied, true);
   assert.equal(honest.topologyOpeningRuntimeSupplied, true);
   assert.equal(honest.topologyPlanRuntimeConsumed, true);
@@ -73,7 +74,7 @@ test('query component measures real hashes, arithmetic, stack, and transaction b
   assert.equal(materialized.unlockingBytecode.length, 6_934);
   assert.equal(wires.transactionHex.length / 2, 6_997);
   assert.equal(result.metrics.hashDigestIterations, 389);
-  assert.equal(result.metrics.operationCost, 663_778);
+  assert.equal(result.metrics.operationCost, 663_796);
   assert.equal(BCH_CIRCLE_FRI_QUERY_FUNCTION_CODE_BYTES, 408);
   assert.equal(result.metrics.signatureCheckCount, 0);
   assert.ok(result.metrics.operationCost < result.metrics.limits.maximumOperationCost);
@@ -182,11 +183,11 @@ test('fixed parameters and input-index query selection reuse one redeem across d
 });
 
 test('BCH Script derives canonical unique multi-query indices including duplicate retries', () => {
-  const multiExpected = Object.freeze({ logDegreeBound: 2, logBlowup: 0, queryCount: 4 });
-  const multiContext = utf8('multi-query-duplicate-kat');
+  const multiExpected = Object.freeze({ logDegreeBound: 2, logBlowup: 1, queryCount: 4 });
+  const multiContext = utf8('multi-query-first-fold-orbit-kat-v3');
   const multiProof = proveCircleFriQueries({
     coefficients: [1n, 2n, 3n, 4n],
-    logBlowup: 0,
+    logBlowup: 1,
     queryCount: 4,
     protocolContext: multiContext,
   });
@@ -196,8 +197,13 @@ test('BCH Script derives canonical unique multi-query indices including duplicat
     protocolContext: multiContext,
     queryOrdinal,
   }));
-  assert.deepEqual(fixtures.map(({ initialQueryIndex }) => initialQueryIndex), [3, 2, 1, 0]);
+  assert.deepEqual(fixtures.map(({ initialQueryIndex }) => initialQueryIndex), [7, 4, 2, 6]);
+  assert.deepEqual(
+    fixtures.map(({ initialQueryIndex }) => Math.min(initialQueryIndex, 7 - initialQueryIndex)).sort((a, b) => a - b),
+    [0, 1, 2, 3],
+  );
   assert.deepEqual(fixtures[3].selectedQueryTrace.candidates.map(({ duplicateOf }) => duplicateOf), [1, -1]);
+  assert.deepEqual(fixtures[3].selectedQueryTrace.candidates.map(({ firstFoldPairIndex }) => firstFoldPairIndex), [3, 1]);
   assert.throws(
     () => evaluateBchCircleFriQueryP2sh32(fixtures[1]),
     /single-input query fixture requires queryCount 1/,
