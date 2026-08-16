@@ -375,12 +375,36 @@ async function main(): Promise<void> {
     const proof = encodeFriProof(proveFri(d.statement, depW));
     const w = applyWithdraw(d.machine, note, d.index, new Uint8Array(32), 3_000n);
     const sizes = measureGenesisAndSuccessor(d.machine.state, w.machine.state, proof);
+    const { compileCovenantSuccessor } = await import("./chain/covenant-spend.ts");
+    const { createLabWallet } = await import("./chain/wallet.ts");
+    const { encodePublicPaa1, STATE_BASE_SATS } = await import("./pool/state.ts");
+    const { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } = await import("./chain/air-cqz.ts");
+    const cons = compileCovenantSuccessor({
+      wallet: createLabWallet(),
+      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 1_000_000 },
+      pool: {
+        tx_hash: "11".repeat(32),
+        tx_pos: 0,
+        value: Number(STATE_BASE_SATS),
+        category: new Uint8Array(32).fill(0x11),
+        commitment: encodePublicPaa1(d.machine.state),
+      },
+      newState: w.machine.state,
+      proof,
+      statement: w.statement,
+      lockKind: "p2sh32",
+      envelope: "consensus",
+    });
     const report = {
       plugin: circleFriPlugin.family,
       sound: circleFriPlugin.sound,
       proofBytes: proofByteLength(proveFri(d.statement, depW)),
       unlockingLimit: 10_000,
       txLimit: 100_000,
+      consensusTxLimit: 1_000_000,
+      slotKernelsStandard: SLOT_KERNEL_COUNT,
+      slotKernelsConsensus: SLOT_KERNEL_COUNT_CONSENSUS,
+      consensusSuccessor: { txBytes: cons.txBytes, unlockingBytes: cons.unlockingBytes },
       genesisP2sh32: {
         txBytes: sizes.genesisP2sh32.txBytes,
         unlockingBytes: sizes.genesisP2sh32.unlockingBytes,

@@ -2,9 +2,9 @@
 
 **Pre-release.** Off-chain TypeScript prover/verifier + a 2026 pool lock that
 **binds** the new 128-byte PAA1 NFT and spends **10 FRI-kernel inputs** that
-Merkle-walk packed openings. Default spend targets **100 KB relay**. A parallel
-**consensus** path (one tx ≤ **1 MB**, unlockings still ≤ 10 KB) can carry all
-36 `C=Q·Z` slots for a Chipnet miner. Chained txs can go larger. This is **not**
+Merkle-walk packed openings. Default spend targets **100 KB relay** with **6**
+distinct `C=Q·Z` slots (measured 95172 B). A parallel **consensus** path (one tx
+≤ **1 MB**, unlockings still ≤ 10 KB) carries all **36** slots. Chained txs can go larger. This is **not**
 a full FRI fold, **not** ZK, **not** Lean, **not** mainnet. Language: TypeScript /
 CashScript / Rust.
 
@@ -12,8 +12,8 @@ CashScript / Rust.
 
 - Soundness worksheet: TRACE=64, blowup=16, FRI_N=1024, queries=36, grind=20, rate 2/B → **128 conjectural bits**. `sound: true`. Old n=32/q=8 fails the build.
 - Prover FRIs \(Q=N/Z\) of the `onChainCells` interpolant (action/digest/roots/seq). Honest \(N\) vanishes on-trace so off-trace \(Q\) is not the zero polynomial. `plugin.verify` / `verifyFri` take **no private witness**: `proof.auth` carries the note preimage, so a fake nullifier + valid membership path is rejected (`nullifier preimage`). Amount conservation is `algebraicC(publicCells)` inside `verifyFri`, not in packed T.
-- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): packed T/N/Q interpolate `onChainCells` (action, digest, roots, seq only). Reserves/delta/note limbs are not in that interpolant; `verifyFri` still checks `publicCells` + `algebraicC` + auth. Successor unlocking is packed AIR + redeem only. Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Input 12 runs slot-0 `C=Q·Z` at a **recomputed** Fiat–Shamir index (spender `idx[0]` ignored) and binds packed stmt `noteRoot`/`seq` to the NFT. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. Remaining 35 FS slots and FRI *fold* stay on `verifyFri` (0zkbrewer #2: this is one bound prefix, not a full on-chain FRI fold).
-- Proof 64278 B, **10 shards**, 252 Merkle openings, unlocking max **5717**, Chipnet successor **66555 B** / pool unlocking **2240 B**.
+- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): packed T/N/Q interpolate `onChainCells` (action, digest, roots, seq only). Reserves/delta/note limbs are not in that interpolant; `verifyFri` still checks `publicCells` + `algebraicC` + auth. Successor unlocking is packed AIR + redeem only. Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Inputs 12..17 run distinct slot `C=Q·Z` (slots 0–5) at recomputed Fiat–Shamir indices. Consensus spends use slots 0–35. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. The 100 KB spend checks slots 0–5 on chain; slots 6–35 compile on the 1 MB path. FRI *fold* stays on `verifyFri` (0zkbrewer #2: this is one bound prefix, not a full on-chain FRI fold).
+- Proof 64278 B, **10 shards**, 252 Merkle openings, slot redeem **5618**, unlocking max **5853**, Chipnet 6-slot successor **95172 B** / pool unlocking **2437 B**. 1-slot successor was 66555 B.
 - Any-amount one set; Pedersen-hidden note amounts. On-chain PAA1 zeros the reserve field; pool UTXO is `STATE_BASE` only. Reserve conservation is `verifyFri` / `algebraicC`, not packed T. `runMixSuccessor` still updates machine reserve, noteRoot, and nullifierRoot.
 - Comparison table in `COMPARISON.md` (checkable axes only).
 
@@ -30,7 +30,16 @@ CashScript / Rust.
 
 Lab address stays in gitignored `.local/lab-wallet.json`.
 
-**This lock** (`onChainCells` interpolant — T cannot recover reserves), Electrum-accepted 2026-08-16:
+**6-slot 100 KB lock** (Velma 10 KB script+input), Electrum-accepted 2026-08-16:
+
+| Step | txid |
+| --- | --- |
+| Self-send vout-0 prep | `9a67bb1caf1f52d67d3529c7223582a45800b23b858c9f363bee6df9dc948567` |
+| Genesis P2SH32 PAA1 | `1234194d719291b31e9bcfec3cf80885954a8946f8e00fdb0a72438c0048e2f6` |
+| 17 verifier-kernel carriers (10 FRI + bind-T + 6 slots) | `5c3d6102eebe58ce8217c1328b2326a24a0b53bc0eabb05293fbe95f614567ca` |
+| Mix successor (95172 B, unlocking 2437, 6× C=Q·Z) | `b6069db772455de4b247bbd50e1dea14244900e7517739157a1a9d53deeb9a7f` |
+
+Previous 1-slot lock, Electrum-accepted 2026-08-16:
 
 | Step | txid |
 | --- | --- |
@@ -39,6 +48,8 @@ Lab address stays in gitignored `.local/lab-wallet.json`.
 | Mix successor (66555 B, unlocking 2240) | `333701976ed045e778a69b8a11c798ed070c773701aec8093714097426c94be2` |
 
 `b4d66312…` / `8ccad3b8…` still interpolated full `publicCells` into Newton T. `52b46dab…` published the spent preimage.
+
+**36-slot 1 MB consensus** compiled 269051 B (unlocking 2437). Public Electrum and Start9 BCHN P2P (`192.168.0.55:48333`) both reject it: `tx-size` / `not standard: size 269051 > max allowed 100000`. Chipnet default is `fRequireStandard = true`. The node must set `acceptnonstdtxn=1` (or mine nonstandard) before this envelope can land. No fake txid.
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 

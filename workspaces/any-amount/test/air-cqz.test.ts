@@ -20,6 +20,9 @@ import {
   compileEvalTLock,
   compileSlot0CqzLock,
   compileSlotCqzLock,
+  compileSlotsKernel,
+  compileSlotsLockP2sh32,
+  SLOT_KERNEL_COUNT,
   fsIndexFromAltSlotAsm,
   compileM31MulLock,
   compileNewtonFromBlobLock,
@@ -390,9 +393,24 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const ok = evalPadded(compileSlotCqzLock(3), pushData(packed));
     assert.equal(ok.accepted, true, ok.error ?? "slot-3 honest");
     const cooked = new Uint8Array(packed);
-    cooked[AIR_OFF_QTABLE + 12] ^= 1;
+    cooked[AIR_OFF_QTABLE + 12] ^= 0xff;
+    cooked[AIR_OFF_QTABLE + 13] ^= 0xff;
+    cooked[AIR_OFF_QTABLE + 14] ^= 0xff;
+    cooked[AIR_OFF_QTABLE + 15] ^= 0xff;
     const bad = evalPadded(compileSlotCqzLock(3), pushData(cooked));
     assert.equal(bad.accepted, false, "cooked qTable[3] must fail slot-3");
+  });
+
+  it("standard path compiles 6 distinct slot locks under Velma 10 KB", () => {
+    assert.equal(SLOT_KERNEL_COUNT, 6);
+    const a = compileSlotsLockP2sh32(0);
+    const b = compileSlotsLockP2sh32(5);
+    assert.notDeepEqual(a, b, "slot 0 and slot 5 must be different P2SH32 locks");
+    const k0 = compileSlotsKernel(0);
+    const k5 = compileSlotsKernel(5);
+    assert.ok(k0.length <= 10_000, `slot0 redeem ${k0.length}`);
+    assert.ok(k5.length <= 10_000, `slot5 redeem ${k5.length}`);
+    assert.notDeepEqual(k0, k5);
   });
 
   it("slot-0 recomputes FS index; cooked spender idx is ignored", () => {

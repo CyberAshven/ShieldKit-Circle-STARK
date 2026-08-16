@@ -1139,8 +1139,8 @@ OP_1
 `;
 
 export const SLOTS_PER_KERNEL = 1;
-/** Default spend stays under 100 KB relay policy. */
-export const SLOT_KERNEL_COUNT = 1;
+/** Distinct FS slots that still fit one standard 100 KB tx (measured 6 → 94975 B). */
+export const SLOT_KERNEL_COUNT = 6;
 /** One consensus-size tx (1 MB) can carry every FS query. */
 export const SLOT_KERNEL_COUNT_CONSENSUS = FRI_QUERIES;
 

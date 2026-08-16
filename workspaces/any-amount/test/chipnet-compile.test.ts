@@ -35,6 +35,7 @@ describe("covenant five-point compile", () => {
     assert.equal(sizes.successorP2sh32.proofSlotBytes, 0);
     assert.ok(sizes.successorP2sh32.txBytes > 10_000, "successor must carry sharded FRI, not a 1 KB stub");
     assert.ok(sizes.successorP2sh32.txBytes <= 100_000);
+    assert.ok(sizes.successorP2sh32.txBytes >= 80_000, "standard successor must carry 6 distinct slot kernels");
     const redeem = compilePoolCovenant();
     assert.ok(redeem.length > 40);
     assert.notEqual(redeem[0], 0x6a, "pool redeem is not an OP_RETURN stub");
@@ -88,7 +89,7 @@ describe("covenant five-point compile", () => {
     const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
     const measured = compileCovenantSuccessor({
       wallet: createLabWallet(),
-      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 250_000 },
+      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 1_000_000 },
       pool: {
         tx_hash: "11".repeat(32),
         tx_pos: 0,

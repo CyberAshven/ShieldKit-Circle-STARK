@@ -124,8 +124,13 @@ export function compileCovenantSpend(args: {
   state: AnyAmountState;
   proof: Uint8Array;
   lockKind?: LockKind;
+  slotKernels?: number;
+  envelope?: TxEnvelope;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
+  const slotKernels =
+    args.slotKernels ??
+    (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const fee = 1_200n;
@@ -154,7 +159,7 @@ export function compileCovenantSpend(args: {
     ],
     outputs: [
       {
-        lockingBytecode: lockOf(lockKind),
+        lockingBytecode: lockOf(lockKind, slotKernels),
         valueSatoshis: value,
         token: {
           amount: 0n,
@@ -200,6 +205,7 @@ export function compileCovenantSuccessor(args: {
   extraKernels?: Array<{ tx_hash: string; tx_pos: number; value: number }>;
   envelope?: TxEnvelope;
   slotKernels?: number;
+  feeSats?: bigint;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -207,7 +213,9 @@ export function compileCovenantSuccessor(args: {
     (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
-  const fee = 100_000n;
+  // Public Chipnet relay is 1 sat/byte. 100k covers the 95 KB standard spend;
+  // consensus (~269 KB) needs a matching fee or electrum returns code 66.
+  const fee = args.feeSats ?? (args.envelope === "consensus" ? 400_000n : 100_000n);
   const value = STATE_BASE_SATS;
   const change = BigInt(args.feeUtxo.value) - fee;
   if (change < 546n) throw new Error("fee utxo too small for successor");
@@ -389,6 +397,7 @@ export function compileFundVerifierKernels(
   wallet: LabWallet,
   utxo: { tx_hash: string; tx_pos: number; value: number },
   kernelSats = 1_000,
+  slotKernels = SLOT_KERNEL_COUNT,
 ): {
   raw: Uint8Array;
   txid: string;
@@ -399,9 +408,10 @@ export function compileFundVerifierKernels(
 } {
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
-  const extraCount = 1 + SLOT_KERNEL_COUNT;
+  const extraCount = 1 + slotKernels;
   const count = FRI_KERNEL_INPUTS + extraCount;
-  const fee = 1_000n;
+  // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
+  const fee = 2_000n + BigInt(count) * 80n;
   const change = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - fee;
   if (change < 546n) throw new Error("utxo too small to fund verifier kernels");
   const friOut = { lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: BigInt(kernelSats) };
@@ -424,7 +434,7 @@ export function compileFundVerifierKernels(
     outputs: [
       ...Array.from({ length: FRI_KERNEL_INPUTS }, () => friOut),
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
-      ...Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) => ({
+      ...Array.from({ length: slotKernels }, (_, i) => ({
         lockingBytecode: compileSlotsLockP2sh32(i),
         valueSatoshis: BigInt(kernelSats),
       })),

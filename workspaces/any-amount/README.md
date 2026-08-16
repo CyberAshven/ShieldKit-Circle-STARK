@@ -14,7 +14,7 @@ size gate. This workspace is the product profile: one set, any amount.
 | CashToken 128-byte `PAA1` state + 5-point successor | Live. Lock binds instance id, noteRoot (equal or append), nfRoot. Rewritten `noteRoot` fails the 2026 VM. |
 | Chipnet genesis / successor | `pool chipnet-covenant` / `pool chipnet-mix` when funded. Not an OP_RETURN digest. |
 | Hidden amounts / confidential assets | Pedersen in the note leaf. PAA1 NFT reserve bytes are 0. Pool UTXO **sats** stay public. |
-| On-chain FRI prefix | Pool lock + **10** kernels walk packed openings + one `C=Q·Z` slot. **Not** full fold / 36 slots / ZK. |
+| On-chain FRI prefix | Pool lock + **10** Merkle kernels + bind-T + **6** `C=Q·Z` slots in the 100 KB spend (all **36** in the 1 MB consensus spend). Unlocking **and** redeem ≤ **10 KB**. **Not** full fold / ZK. |
 | OPTN builtin register | **Not done.** Zero-touch: addon talks to `http://127.0.0.1:17432` if `pool serve` is running. |
 
 ## Why the lock binds the NFT cell

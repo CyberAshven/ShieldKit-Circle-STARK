@@ -56,7 +56,7 @@ export class ElectrumClient {
     });
   }
 
-  async request(method: string, params: unknown[] = []): Promise<unknown> {
+  async request(method: string, params: unknown[] = [], timeoutMs = 20_000): Promise<unknown> {
     if (!this.ws) throw new Error("not connected");
     const id = this.nextId++;
     const body = JSON.stringify({ id, method, params });
@@ -65,7 +65,7 @@ export class ElectrumClient {
       this.ws!.send(body);
       setTimeout(() => {
         if (this.pending.delete(id)) reject(new Error(`electrum ${method} timed out`));
-      }, 20_000);
+      }, timeoutMs);
     });
   }
 
@@ -113,7 +113,8 @@ export async function listUnspent(
 }
 
 export async function broadcast(client: ElectrumClient, rawHex: string): Promise<string> {
-  return (await client.request("blockchain.transaction.broadcast", [rawHex])) as string;
+  const timeoutMs = rawHex.length > 200_000 ? 120_000 : 30_000;
+  return (await client.request("blockchain.transaction.broadcast", [rawHex], timeoutMs)) as string;
 }
 
 export async function getTx(client: ElectrumClient, txid: string): Promise<string> {

@@ -220,7 +220,6 @@ export function evaluatePoolSuccessorVm(args: {
   const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof);
   const cqzLock = compileCqzLockP2sh32();
   const cqzUnlock = cqzKernelUnlocking();
-  const slotsLock = compileSlotsLockP2sh32();
   const slotUnlocks = Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) =>
     slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
   );
@@ -236,7 +235,7 @@ export function evaluatePoolSuccessorVm(args: {
     },
     ...shards.map(() => ({ lockingBytecode: friLock, valueSatoshis: 1000n })),
     { lockingBytecode: cqzLock, valueSatoshis: 1000n },
-    ...slotUnlocks.map(() => ({ lockingBytecode: slotsLock, valueSatoshis: 1000n })),
+    ...slotUnlocks.map((_, i) => ({ lockingBytecode: compileSlotsLockP2sh32(i), valueSatoshis: 1000n })),
   ];
   const decoded = decodeFriProof(args.proof);
   const prefix = args.airPacked
