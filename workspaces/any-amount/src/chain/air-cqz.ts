@@ -555,8 +555,8 @@ OP_EQUALVERIFY
 `;
 }
 
-/** Stack: packed → packed, i. i = first Fiat–Shamir query of this packed transcript. */
-export function fsIndex0Asm(): string {
+/** Stack: packed → packed, seed. seed = SHA256(grind || nonce || "queries"). */
+export function fsQuerySeedAsm(): string {
   return `
 OP_DUP
 <${AIR_OFF_DIGEST}> OP_SPLIT OP_NIP
@@ -576,37 +576,85 @@ OP_OVER
 OP_CAT
 <0x71756572696573> OP_CAT
 OP_SHA256
-<0x71> OP_CAT
-<0x00> OP_CAT
-OP_SHA256
+`;
+}
+
+/**
+ * Stack: packed → packed, i. Altstack top = slot (0..35).
+ * Recomputes FS query index for that slot (spender table ignored).
+ */
+export function fsIndexFromAltSlotAsm(): string {
+  return `
+${fsQuerySeedAsm()}
+<0>
+OP_BEGIN
+  OP_TOALTSTACK
+  <0x71> OP_CAT
+  OP_FROMALTSTACK
+  OP_DUP OP_TOALTSTACK
+  <1> OP_NUM2BIN
+  OP_CAT
+  OP_SHA256
+  OP_FROMALTSTACK
+  <1> OP_ADD
+  OP_DUP
+  OP_FROMALTSTACK
+  OP_DUP OP_TOALTSTACK
+  OP_NIP
+  OP_OVER
+  OP_SWAP
+  OP_GREATERTHAN
+OP_UNTIL
+OP_DROP
 <2> OP_SPLIT OP_DROP
 ${BE16_UNSIGNED}
 <${FRI_N}> OP_MOD
 `;
 }
 
+/** Stack: packed → packed, i. Unrolled FS for a compile-time slot. */
+export function fsIndexSlotAsm(slot: number): string {
+  const rounds: string[] = [];
+  for (let i = 0; i <= slot; i += 1) {
+    const b = i.toString(16).padStart(2, "0");
+    rounds.push(`<0x71> OP_CAT\n<0x${b}> OP_CAT\nOP_SHA256`);
+  }
+  return `
+${fsQuerySeedAsm()}
+${rounds.join("\n")}
+<2> OP_SPLIT OP_DROP
+${BE16_UNSIGNED}
+<${FRI_N}> OP_MOD
+`;
+}
+
+/** Stack: packed → packed, i. i = Fiat–Shamir query 0. */
+export function fsIndex0Asm(): string {
+  return fsIndexSlotAsm(0);
+}
+
 /**
- * Slot-0 C=Q·Z with N recomputed from the public interpolant T.
- * Stack in: packed blob.
- * i is recomputed from the packed transcript (not spender idx).
- * qTable[0]·Z([i]G)=N from T.
+ * One FS slot C=Q·Z. Slot is baked in (Velma redeem ≤ 10 KB).
+ * i and qTable[slot]/nTable[slot] match that slot (spender idx ignored).
  */
-export function slot0CqzAsm(): string {
+export function slotCqzAsm(slot = 0): string {
   const l0 = lagrangeNewtonBlobs(0);
   const l23 = lagrangeNewtonBlobs(23);
   const g64 = `${pushFelt(G64.x)}\n${pushFelt(G64.y)}`;
+  const qOff = AIR_OFF_QTABLE + slot * 4;
+  const nOff = AIR_OFF_NTABLE + slot * 4;
   return `
 ${defineNewtonFn()}
 ${packedMagicAsm()}
-${fsIndex0Asm()}
+${fsIndexSlotAsm(slot)}
 OP_SWAP
 OP_DUP
-<${AIR_OFF_QTABLE}> OP_SPLIT OP_NIP
+<${qOff}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
 OP_BIN2NUM
 OP_TOALTSTACK
 OP_DUP
-<${AIR_OFF_NTABLE}> OP_SPLIT OP_NIP
+<${nOff}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
 OP_BIN2NUM
 OP_TOALTSTACK
@@ -696,9 +744,17 @@ OP_NUMEQUALVERIFY
 `;
 }
 
+export function slot0CqzAsm(): string {
+  return slotCqzAsm(0);
+}
+
 /** Isolated slot-0 C=QZ. Unlocking: packed blob. */
 export function compileSlot0CqzLock(): Uint8Array {
-  return compileOrThrow(`${slot0CqzAsm()}\nOP_1`, "slot0-cqz");
+  return compileOrThrow(`${slotCqzAsm(0)}\nOP_1`, "slot0-cqz");
+}
+
+export function compileSlotCqzLock(slot: number): Uint8Array {
+  return compileOrThrow(`${slotCqzAsm(slot)}\nOP_1`, `slot-${slot}-cqz`);
 }
 
 function conjugatePairs(): { i: number; j: number; x: M31El; y: M31El }[] {
@@ -1083,18 +1139,21 @@ OP_1
 `;
 
 export const SLOTS_PER_KERNEL = 1;
+/** Default spend stays under 100 KB relay policy. */
 export const SLOT_KERNEL_COUNT = 1;
+/** One consensus-size tx (1 MB) can carry every FS query. */
+export const SLOT_KERNEL_COUNT_CONSENSUS = FRI_QUERIES;
 
-/** Unlocking: <dummy> <start> <redeem>. Checks start .. start+SLOTS_PER_KERNEL. */
-export function slotsCqzAsm(): string {
+/** Unlocking: <dummy> <slot> <redeem>. Redeem is compiled for that slot (Velma ≤ 10 KB). */
+export function slotsCqzAsm(slot = 0): string {
   return `
+OP_DROP
 OP_DROP
 <0> OP_INPUTBYTECODE
 <1> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_NIP
-OP_NIP
 ${bindPackedStmtToPaa1Asm()}
-${slot0CqzAsm()}
+${slotCqzAsm(slot)}
 OP_1
 `;
 }
@@ -1106,16 +1165,16 @@ export function compileCqzKernel(): Uint8Array {
   return compileOrThrow(CQZ_KERNEL, "cqz-kernel");
 }
 
-export function compileSlotsKernel(): Uint8Array {
-  return compileOrThrow(slotsCqzAsm(), "slots-kernel");
+export function compileSlotsKernel(slot = 0): Uint8Array {
+  return compileOrThrow(slotsCqzAsm(slot), `slots-kernel-${slot}`);
 }
 
 export function compileCqzLockP2sh32(): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compileCqzKernel()));
 }
 
-export function compileSlotsLockP2sh32(): Uint8Array {
-  return encodeLockingBytecodeP2sh32(hash256(compileSlotsKernel()));
+export function compileSlotsLockP2sh32(slot = 0): Uint8Array {
+  return encodeLockingBytecodeP2sh32(hash256(compileSlotsKernel(slot)));
 }
 
 export function cqzKernelUnlocking(): Uint8Array {
@@ -1123,7 +1182,7 @@ export function cqzKernelUnlocking(): Uint8Array {
 }
 
 export function slotsKernelUnlocking(start: number): Uint8Array {
-  const redeem = compileSlotsKernel();
+  const redeem = compileSlotsKernel(start);
   const startPush = start === 0 ? Uint8Array.of(0x00) : start <= 16 ? Uint8Array.of(0x50 + start) : Uint8Array.of(1, start);
   const dummy = Uint8Array.of(0x00);
   const body = pushRedeem(redeem);

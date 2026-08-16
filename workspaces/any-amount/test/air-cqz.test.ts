@@ -19,6 +19,8 @@ import {
   compileEvalTFromBlobLock,
   compileEvalTLock,
   compileSlot0CqzLock,
+  compileSlotCqzLock,
+  fsIndexFromAltSlotAsm,
   compileM31MulLock,
   compileNewtonFromBlobLock,
   compileNewtonLock,
@@ -349,6 +351,48 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     if (typeof lock === "string") throw new Error(lock);
     const ev = evalPadded(lock, pushData(packed));
     assert.equal(ev.accepted, true, ev.error ?? `fsIndex0 expected ${i0}`);
+  });
+
+  it("fsIndexFromAltSlot matches JS Fiat–Shamir slot 3", () => {
+    const note: Note = {
+      amountSats: 8_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
+    const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
+    const digest = sha256(encodeStatement(d.statement));
+    const i3 = fiatShamirQueryIndices(digest, proof)[3]!;
+    const lock = cashAssemblyToBin(
+      `<3> OP_TOALTSTACK\n${fsIndexFromAltSlotAsm()}\nOP_NIP\n<${i3}>\nOP_NUMEQUAL`,
+    );
+    if (typeof lock === "string") throw new Error(lock);
+    const ev = evalPadded(lock, pushData(packed));
+    assert.equal(ev.accepted, true, ev.error ?? `fsIndex3 expected ${i3}`);
+  });
+
+  it("slot-3 C=QZ accepts honest packed and rejects cooked qTable[3]", () => {
+    const note: Note = {
+      amountSats: 8_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
+    const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
+    const ok = evalPadded(compileSlotCqzLock(3), pushData(packed));
+    assert.equal(ok.accepted, true, ok.error ?? "slot-3 honest");
+    const cooked = new Uint8Array(packed);
+    cooked[AIR_OFF_QTABLE + 12] ^= 1;
+    const bad = evalPadded(compileSlotCqzLock(3), pushData(cooked));
+    assert.equal(bad.accepted, false, "cooked qTable[3] must fail slot-3");
   });
 
   it("slot-0 recomputes FS index; cooked spender idx is ignored", () => {

@@ -2,9 +2,11 @@
 
 **Pre-release.** Off-chain TypeScript prover/verifier + a 2026 pool lock that
 **binds** the new 128-byte PAA1 NFT and spends **10 FRI-kernel inputs** that
-Merkle-walk packed openings. This is **not** a full on-chain FRI fold, **not**
-ZK, **not** a Lean theorem, and **not** a “better than XMR/Zcash/Aztec”
-cryptanalysis. Language: TypeScript / CashScript / Rust.
+Merkle-walk packed openings. Default spend targets **100 KB relay**. A parallel
+**consensus** path (one tx ≤ **1 MB**, unlockings still ≤ 10 KB) can carry all
+36 `C=Q·Z` slots for a Chipnet miner. Chained txs can go larger. This is **not**
+a full FRI fold, **not** ZK, **not** Lean, **not** mainnet. Language: TypeScript /
+CashScript / Rust.
 
 ## Passing
 

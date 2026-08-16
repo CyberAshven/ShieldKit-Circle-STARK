@@ -1,7 +1,18 @@
-const CHIPNET_SERVERS = [
+const CHIPNET_PUBLIC = [
   "wss://chipnet.imaginary.cash:50004",
   "wss://chipnet.bch.ninja:50004",
 ];
+
+/** Prefer CHIPNET_ELECTRUM, then a local BCHN/Start9 Electrum if present, then public. */
+function chipnetServers(): string[] {
+  const extra = process.env.CHIPNET_ELECTRUM?.trim();
+  const local = [
+    "ws://192.168.0.55:50004",
+    "wss://192.168.0.55:50004",
+    "ws://127.0.0.1:50004",
+  ];
+  return [...(extra ? [extra] : []), ...local, ...CHIPNET_PUBLIC];
+}
 
 type Pending = {
   resolve: (value: unknown) => void;
@@ -13,14 +24,14 @@ export class ElectrumClient {
   private nextId = 1;
   private readonly pending = new Map<number, Pending>();
 
-  async connect(url = CHIPNET_SERVERS[0]!): Promise<void> {
+  async connect(url: string, timeoutMs = 15_000): Promise<void> {
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSocket not available; need Node 22+");
     }
     await new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url);
       this.ws = ws;
-      const timer = setTimeout(() => reject(new Error(`electrum timeout ${url}`)), 15_000);
+      const timer = setTimeout(() => reject(new Error(`electrum timeout ${url}`)), timeoutMs);
       ws.addEventListener("open", () => {
         clearTimeout(timer);
         resolve();
@@ -66,13 +77,16 @@ export class ElectrumClient {
 
 export async function connectChipnet(): Promise<ElectrumClient> {
   let last: Error | undefined;
-  for (const url of CHIPNET_SERVERS) {
+  const servers = chipnetServers();
+  for (const url of servers) {
     const c = new ElectrumClient();
+    const local = url.includes("192.168.0.55") || url.includes("127.0.0.1");
     try {
-      await c.connect(url);
+      await c.connect(url, local ? 800 : 15_000);
       return c;
     } catch (e) {
       last = e instanceof Error ? e : new Error(String(e));
+      c.close();
     }
   }
   throw last ?? new Error("no chipnet electrum");

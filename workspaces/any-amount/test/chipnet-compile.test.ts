@@ -73,4 +73,37 @@ describe("covenant five-point compile", () => {
     assert.ok(measured.txBytes <= 100_000);
     assert.ok(measured.unlockingBytes <= 10_000);
   });
+
+  it("consensus envelope: 36 slot kernels stay under 1 MB and each unlocking ≤ 10 KB", () => {
+    const note: Note = {
+      amountSats: 10_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
+    const measured = compileCovenantSuccessor({
+      wallet: createLabWallet(),
+      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 250_000 },
+      pool: {
+        tx_hash: "11".repeat(32),
+        tx_pos: 0,
+        value: Number(STATE_BASE_SATS),
+        category: new Uint8Array(32).fill(0x11),
+        commitment: encodePublicPaa1(w.statement.oldState),
+      },
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+      lockKind: "p2sh32",
+      envelope: "consensus",
+    });
+    assert.ok(measured.txBytes <= 1_000_000, `consensus tx ${measured.txBytes}`);
+    assert.ok(measured.unlockingBytes <= 10_000);
+    assert.ok(measured.txBytes > 10_000);
+  });
 });

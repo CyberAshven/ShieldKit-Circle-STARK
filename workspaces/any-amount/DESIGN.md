@@ -72,7 +72,7 @@ P2PKH is **not** the shielded pool. The pool is the **covenant UTXO**.
 | Binding | **Off-chain** `publicCells`: reserves, delta, action, digest, roots. **On-chain** `onChainCells`: action, digest, roots, seq only (no reserve/delta). |
 | `sound` | Worksheet **128 conjectural bits**. Not a Lean theorem. On-chain is a FRI **prefix**, not the full fold. |
 
-An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserve, false note commitment, or false nullifier is rejected there. The off-chain FRI target is the residual quotient \(Q=C/Z\). The on-chain lock binds the new `PAA1` cell, walks packed Merkle openings, binds Newton `T` to `onChainCells`, and checks **one** slot `C=Q·Z`. It does **not** yet check all 36 slots or the FRI fold. Amount conservation is `verifyFri` / `algebraicC`, not the NFT reserve field (that field is zero).
+An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserve, false note commitment, or false nullifier is rejected there. The off-chain FRI target is the residual quotient \(Q=C/Z\). The on-chain lock binds the new `PAA1` cell, walks packed Merkle openings, binds Newton `T` to `onChainCells`, and checks `C=Q·Z` per slot kernel (default **1** slot so the spend stays under **100 KB** relay). A parallel **consensus** profile compiles **36** slot kernels into **one** tx ≤ **1 MB** (Chipnet miner). Unlocking and redeem are **10 KB** after Velma (the old ~1650-byte input box is gone). It does **not** yet do the full FRI fold. Never mainnet. Amount conservation is `verifyFri` / `algebraicC`, not the NFT reserve field (that field is zero).
 
 ## Confidential amounts
 

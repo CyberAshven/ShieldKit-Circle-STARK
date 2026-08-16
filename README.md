@@ -16,8 +16,8 @@ npx tsx src/cli.ts --help
 | --- | --- |
 | Off-chain Circle FRI prover + verifier | TypeScript `proveFri` / `verifyFri`. False reserve / fake note / fake nullifier fail. |
 | Optional Rust prove worker | `crates/circle-fri-worker` — old n=32 wire; TS is the shipped path. |
-| On-chain 2026 lock | P2SH32 five-point `PAA1` + 10 FRI Merkle kernels + bind-T + **one** `C=Q·Z` slot. |
-| Not in this pre-release | Full FRI fold, all 36 slots, on-chain amount conservation, ZK, Lean, OPTN builtin register. |
+| On-chain 2026 lock | P2SH32 five-point `PAA1` + 10 FRI Merkle kernels + bind-T + slot `C=Q·Z` (default 1 slot / 100 KB; consensus profile 36 slots / 1 MB). |
+| Not in this pre-release | Full FRI fold, ZK, Lean, mainnet, OPTN builtin register. |
 
 Lab notes: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md),
 [`DESIGN.md`](workspaces/any-amount/DESIGN.md).

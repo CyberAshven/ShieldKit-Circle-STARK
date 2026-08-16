@@ -47,11 +47,13 @@ import {
   p2sUnlocking,
   p2sh32Unlocking,
   poolLockP2s,
+  poolLockP2sFor,
   poolLockP2sh32,
 } from "./covenant-p2s.ts";
 import { decodeFriProof } from "../backends/circle/fri.ts";
 import { decodeState } from "../pool/state.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
+import { CONSENSUS_TX_BYTES, RELAY_STANDARD_TX_BYTES, type TxEnvelope } from "./envelope.ts";
 import { friShardUnlockings } from "./fri-openings.ts";
 import {
   compileCqzLockP2sh32,
@@ -59,6 +61,7 @@ import {
   cqzKernelUnlocking,
   encodeAirPacked,
   SLOT_KERNEL_COUNT,
+  SLOT_KERNEL_COUNT_CONSENSUS,
   SLOTS_PER_KERNEL,
   slotsKernelUnlocking,
 } from "./air-cqz.ts";
@@ -87,8 +90,8 @@ function compiler() {
   return walletTemplateToCompilerBCH(walletTemplateP2pkhNonHd);
 }
 
-function lockOf(kind: LockKind): Uint8Array {
-  return kind === "p2s" ? poolLockP2s() : poolLockP2sh32();
+function lockOf(kind: LockKind, slotKernels = SLOT_KERNEL_COUNT): Uint8Array {
+  return kind === "p2s" ? poolLockP2sFor({ slotKernels }) : poolLockP2sh32({ slotKernels });
 }
 
 function measureOf(
@@ -195,8 +198,13 @@ export function compileCovenantSuccessor(args: {
   kernelUtxo?: { tx_hash: string; tx_pos: number; value: number };
   kernelUtxos?: Array<{ tx_hash: string; tx_pos: number; value: number }>;
   extraKernels?: Array<{ tx_hash: string; tx_pos: number; value: number }>;
+  envelope?: TxEnvelope;
+  slotKernels?: number;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
+  const slotKernels =
+    args.slotKernels ??
+    (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const fee = 100_000n;
@@ -219,10 +227,10 @@ export function compileCovenantSuccessor(args: {
   }
   const extras = args.extraKernels ?? [
     { tx_hash: dummy, tx_pos: 10, value: 1000 },
-    ...Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) => ({ tx_hash: dummy, tx_pos: 11 + i, value: 1000 })),
+    ...Array.from({ length: slotKernels }, (_, i) => ({ tx_hash: dummy, tx_pos: 11 + i, value: 1000 })),
   ];
-  if (extras.length !== 1 + SLOT_KERNEL_COUNT) {
-    throw new Error(`need ${1 + SLOT_KERNEL_COUNT} extra kernel UTXOs, got ${extras.length}`);
+  if (extras.length !== 1 + slotKernels) {
+    throw new Error(`need ${1 + slotKernels} extra kernel UTXOs, got ${extras.length}`);
   }
 
   const generated = generateTransaction({
@@ -247,7 +255,7 @@ export function compileCovenantSuccessor(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: cqzKernelUnlocking(),
       },
-      ...Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) => ({
+      ...Array.from({ length: slotKernels }, (_, i) => ({
         outpointIndex: extras[1 + i]!.tx_pos,
         outpointTransactionHash: hexToBin(extras[1 + i]!.tx_hash),
         sequenceNumber: 0xffffffff,
@@ -267,7 +275,7 @@ export function compileCovenantSuccessor(args: {
     ],
     outputs: [
       {
-        lockingBytecode: lockOf(lockKind),
+        lockingBytecode: lockOf(lockKind, slotKernels),
         valueSatoshis: value,
         token: {
           amount: 0n,
@@ -416,8 +424,8 @@ export function compileFundVerifierKernels(
     outputs: [
       ...Array.from({ length: FRI_KERNEL_INPUTS }, () => friOut),
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
-      ...Array.from({ length: SLOT_KERNEL_COUNT }, () => ({
-        lockingBytecode: compileSlotsLockP2sh32(),
+      ...Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) => ({
+        lockingBytecode: compileSlotsLockP2sh32(i),
         valueSatoshis: BigInt(kernelSats),
       })),
       { lockingBytecode: { compiler: c, script: "lock", data }, valueSatoshis: change },

@@ -41,13 +41,12 @@ OP_0 OP_OUTPUTTOKENCOMMITMENT
 <0x50414131> OP_EQUALVERIFY
 `;
 
-function requireFriInputsAsm(): string {
+function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
   const lockHex = binToHex(compileFriQueryLockP2sh32());
   const cqzHex = binToHex(compileCqzLockP2sh32());
-  const slotsHex = binToHex(compileSlotsLockP2sh32());
   const lines = [
     "OP_TXINPUTCOUNT",
-    `<${2 + FRI_KERNEL_INPUTS + SLOT_KERNEL_COUNT}>`,
+    `<${2 + FRI_KERNEL_INPUTS + slotKernels}>`,
     "OP_GREATERTHANOREQUAL",
     "OP_VERIFY",
   ];
@@ -55,7 +54,8 @@ function requireFriInputsAsm(): string {
     lines.push(`<${i}>`, "OP_UTXOBYTECODE", `<0x${lockHex}>`, "OP_EQUALVERIFY");
   }
   lines.push(`<${1 + FRI_KERNEL_INPUTS}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
-  for (let i = 0; i < SLOT_KERNEL_COUNT; i += 1) {
+  for (let i = 0; i < slotKernels; i += 1) {
+    const slotsHex = binToHex(compileSlotsLockP2sh32(i));
     lines.push(
       `<${2 + FRI_KERNEL_INPUTS + i}>`,
       "OP_UTXOBYTECODE",
@@ -109,9 +109,10 @@ OP_DROP
 OP_FROMALTSTACK
 `;
 
-export function compilePoolCovenant(): Uint8Array {
+export function compilePoolCovenant(opts?: { slotKernels?: number }): Uint8Array {
+  const slots = opts?.slotKernels ?? SLOT_KERNEL_COUNT;
   const bin = cashAssemblyToBin(
-    `${FIVE_POINT_PAA1}\n${REQUIRE_FRI_INPUTS}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
+    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots)}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
   );
   if (typeof bin === "string") throw new Error(`covenant compile: ${bin}`);
   return bin;
@@ -121,8 +122,12 @@ export function poolLockP2s(): Uint8Array {
   return compilePoolCovenant();
 }
 
-export function poolLockP2sh32(): Uint8Array {
-  return encodeLockingBytecodeP2sh32(hash256(compilePoolCovenant()));
+export function poolLockP2sh32(opts?: { slotKernels?: number }): Uint8Array {
+  return encodeLockingBytecodeP2sh32(hash256(compilePoolCovenant(opts)));
+}
+
+export function poolLockP2sFor(opts?: { slotKernels?: number }): Uint8Array {
+  return compilePoolCovenant(opts);
 }
 
 /** Bitcoin script push of `data` (redeem / unlocking payload). */
