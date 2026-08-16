@@ -27,15 +27,15 @@ and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 
 Lab address stays in gitignored `.local/lab-wallet.json`.
 
-**This lock** (no spent-note unlocking; packed digest + public PAA1), Electrum-accepted 2026-08-16:
+**This lock** (amount cells omitted from packed AIR), Electrum-accepted 2026-08-16:
 
 | Step | txid |
 | --- | --- |
-| Genesis P2SH32 PAA1 | `397bb22e80e8fdad20a33f9e57526be89a97c9c45519ea26305ff2dda04a34d9` |
-| 12 verifier-kernel carriers | `f9e2b74d882bdb70d9aa2f17f32fecb0f6cafa945ed4c03bfd4943152f9589d1` |
-| Mix successor (66840 B, unlocking 2240, 252 openings) | `8ccad3b816d02156abe5fc4de1b0c574df9b76cc15bf5caf154e0e997c010004` |
+| Genesis P2SH32 PAA1 | `7d7c09f880985fa1a19741d979cce8d7330c12f05aa5a957b52eb5bfc1a423c5` |
+| 12 verifier-kernel carriers | `a9993890888ddd994291e61799e0a5135647b1acbc0bec3868bc0722da6d2709` |
+| Mix successor (66555 B, unlocking 2240) | `b4d663124a1488d4fed12554826481cbf4940e13c17a3cb9c93a9fff174d46cc` |
 
-Prior same-day txs `2001ac68…` / `52b46dab…` used the old unlocking that published the spent preimage.
+`8ccad3b8…` still packed reserve/delta felts; `52b46dab…` published the spent preimage. Neither is this lock.
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 
