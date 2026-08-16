@@ -1,13 +1,20 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { hash256 } from "@bitauth/libauth";
 import { compileCovenantSuccessor, measureGenesisAndSuccessor } from "../src/chain/covenant-spend.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
 import { emptyState, encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
-import { encodeFriProof, proveFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
-import { compilePoolCovenant } from "../src/chain/covenant-p2s.ts";
+import { decodeFriProof, encodeFriProof, proveFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
+import {
+  compilePoolCovenant,
+  p2sh32Unlocking,
+  poolLockP2sh32,
+} from "../src/chain/covenant-p2s.ts";
 import { compileNoteMerkleWalk } from "../src/chain/note-merkle.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
+import { encodeAirPacked, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
+import { evaluateBch2026, evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
 
 describe("covenant five-point compile", () => {
   it("signs P2S and P2SH32 genesis plus a P2SH32 successor under envelope limits", () => {
@@ -106,5 +113,48 @@ describe("covenant five-point compile", () => {
     assert.ok(measured.txBytes <= 1_000_000, `consensus tx ${measured.txBytes}`);
     assert.ok(measured.unlockingBytes <= 10_000);
     assert.ok(measured.txBytes > 10_000);
+
+    const redeem6 = compilePoolCovenant({ slotKernels: 6 });
+    const redeem36 = compilePoolCovenant({ slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
+    assert.notDeepEqual(redeem6, redeem36, "36-slot redeem must differ from the default 6-slot redeem");
+    const lock36 = poolLockP2sh32({ slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
+    assert.deepEqual(lock36.subarray(2, 34), hash256(redeem36), "P2SH32 lock must commit the 36-slot redeem");
+    const packed = encodeAirPacked(w.statement, decodeFriProof(raw));
+    const unlock6 = p2sh32Unlocking(undefined, packed, { slotKernels: 6 });
+    const unlock36 = p2sh32Unlocking(undefined, packed, { slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
+    assert.notDeepEqual(unlock6, unlock36);
+    const hashFail = evaluateBch2026(lock36, unlock6);
+    assert.equal(hashFail.accepted, false, "6-slot redeem must fail HASH256 against the 36-slot lock");
+    const rawHex = Buffer.from(measured.raw).toString("hex");
+    assert.ok(rawHex.includes(Buffer.from(redeem36).toString("hex")), "consensus successor must push the 36-slot redeem");
+    assert.equal(
+      rawHex.includes(Buffer.from(redeem6).toString("hex")),
+      false,
+      "consensus successor must not push the default 6-slot redeem",
+    );
+  });
+
+  it("honest 36-slot consensus successor VM-accepts against the 36-slot lock", () => {
+    const note: Note = {
+      amountSats: 10_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
+    const vm = evaluatePoolSuccessorVm({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+      standard: false,
+    });
+    assert.equal(vm.accepted, true, vm.error ?? "honest 36-slot successor must VM-accept");
+    assert.ok(vm.unlockingBytes <= 10_000);
   });
 });

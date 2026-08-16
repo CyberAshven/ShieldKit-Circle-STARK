@@ -223,7 +223,10 @@ export function compileCovenantSuccessor(args: {
   const oldState = decodeState(args.pool.commitment);
   const decoded = decodeFriProof(args.proof);
   const packed = args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots;
-  const unlocking = lockKind === "p2s" ? p2sUnlocking(undefined, packed) : p2sh32Unlocking(undefined, packed);
+  const unlocking =
+    lockKind === "p2s"
+      ? p2sUnlocking(undefined, packed)
+      : p2sh32Unlocking(undefined, packed, { slotKernels });
   const shards = friShardUnlockings(args.proof);
   const dummy = "44".repeat(32);
   const kernels = args.kernelUtxos ??

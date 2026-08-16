@@ -210,9 +210,14 @@ export function evaluatePoolSuccessorVm(args: {
   statement?: PoolStatement;
   airPacked?: Uint8Array;
   outputValueSats?: bigint;
+  slotKernels?: number;
+  /** false = consensus/nonstandard (tx may exceed 100 KB). Default: standard iff slotKernels is the 100 KB count. */
+  standard?: boolean;
 }): VmEval {
-  const vm = createVirtualMachineBch2026(true);
-  const poolLock = poolLockP2sh32();
+  const slotKernels = args.slotKernels ?? SLOT_KERNEL_COUNT;
+  const standard = args.standard ?? slotKernels <= SLOT_KERNEL_COUNT;
+  const vm = createVirtualMachineBch2026(standard);
+  const poolLock = poolLockP2sh32({ slotKernels });
   const friLock = compileFriQueryLockP2sh32();
   const category = args.category ?? new Uint8Array(32).fill(0x11);
   const poolValue = STATE_BASE_SATS;
@@ -220,7 +225,7 @@ export function evaluatePoolSuccessorVm(args: {
   const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof);
   const cqzLock = compileCqzLockP2sh32();
   const cqzUnlock = cqzKernelUnlocking();
-  const slotUnlocks = Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) =>
+  const slotUnlocks = Array.from({ length: slotKernels }, (_, i) =>
     slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
   );
   const sourceOutputs = [
@@ -240,7 +245,7 @@ export function evaluatePoolSuccessorVm(args: {
   const decoded = decodeFriProof(args.proof);
   const prefix = args.airPacked
     ?? (args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots);
-  const poolUnlock = p2sh32Unlocking(undefined, prefix);
+  const poolUnlock = p2sh32Unlocking(undefined, prefix, { slotKernels });
   const transaction = {
     version: 2,
     locktime: 0,

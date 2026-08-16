@@ -192,8 +192,12 @@ export function poolWitnessPushes(w: PoolUnlockWitness): Uint8Array {
   return out;
 }
 
-export function p2sh32Unlocking(w?: PoolUnlockWitness, layerRoots?: Uint8Array[] | Uint8Array): Uint8Array {
-  const redeem = pushData(compilePoolCovenant());
+export function p2sh32Unlocking(
+  w?: PoolUnlockWitness,
+  layerRoots?: Uint8Array[] | Uint8Array,
+  opts?: { slotKernels?: number },
+): Uint8Array {
+  const redeem = pushData(compilePoolCovenant(opts));
   const prefix =
     layerRoots instanceof Uint8Array && layerRoots.length === AIR_PACKED_SIZE
       ? pushData(layerRoots)
