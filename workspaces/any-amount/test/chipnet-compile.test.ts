@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { measureGenesisAndSuccessor } from "../src/chain/covenant-spend.ts";
+import { compileCovenantSuccessor, measureGenesisAndSuccessor } from "../src/chain/covenant-spend.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
-import { emptyState } from "../src/pool/state.ts";
-import { encodeFriProof, proveFri, wDeposit } from "../src/backends/circle/fri.ts";
+import { emptyState, encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { encodeFriProof, proveFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
 import { compilePoolCovenant } from "../src/chain/covenant-p2s.ts";
 import { compileNoteMerkleWalk } from "../src/chain/note-merkle.ts";
+import { createLabWallet } from "../src/chain/wallet.ts";
 
 describe("covenant five-point compile", () => {
   it("signs P2S and P2SH32 genesis plus a P2SH32 successor under envelope limits", () => {
@@ -38,5 +39,37 @@ describe("covenant five-point compile", () => {
     assert.ok(redeem.length > 40);
     assert.notEqual(redeem[0], 0x6a, "pool redeem is not an OP_RETURN stub");
     assert.ok(compileNoteMerkleWalk().length > 10);
+  });
+
+  it("successor unlocking carries packed PAA1STMT when given the statement", () => {
+    const note: Note = {
+      amountSats: 10_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
+    const measured = compileCovenantSuccessor({
+      wallet: createLabWallet(),
+      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 250_000 },
+      pool: {
+        tx_hash: "11".repeat(32),
+        tx_pos: 0,
+        value: Number(STATE_BASE_SATS),
+        category: new Uint8Array(32).fill(0x11),
+        commitment: encodePublicPaa1(w.statement.oldState),
+      },
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+      lockKind: "p2sh32",
+    });
+    assert.ok(Buffer.from(measured.raw).toString("hex").includes("5041413153544d54"), "successor must embed packed PAA1STMT");
+    assert.ok(measured.txBytes <= 100_000);
+    assert.ok(measured.unlockingBytes <= 10_000);
   });
 });

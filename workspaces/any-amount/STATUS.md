@@ -26,16 +26,16 @@ and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 ## Chipnet
 
 Lab address stays in gitignored `.local/lab-wallet.json`.
-2026-08-16 rebroadcast of **this** lock (path-depth + dummyNoL0): Electrum lists an unconfirmed kernel-change UTXO (vout 10, 39.5M sats) whose spend is rejected `Missing inputs` (orphan/stale mempool ancestry). Faucets are captcha HTML, not an API. VM eval of the same bytecode is the on-chain bar (`vm-onchain.log`).
 
-Older Electrum-accepted txs below are a **previous** lock (not this kernel):
+**This lock** (packed AIR + 10 FRI kernels + bind-T + slot-0 C=QZ + path-depth), Electrum-accepted 2026-08-16:
 
 | Step | txid |
 | --- | --- |
-| Genesis (PAA1 includes reserve+sequence) | `1973c06552a371a595872727d8edbe5a988c362c14c46d3bbee7da0e565f6958` |
-| 10 FRI-kernel carriers | `23ec0c8d2e689e71df52025b5af2d1073999307ddcdc6998c40d706863998f0b` |
-| Withdraw successor (64111 B, 252 openings) | `86bd413fad8606207f26eb69cb6391db27e966f76dd2202f3e4cbd62424792d9` |
+| Prep self-send (vout 0 for CashTokens genesis) | `f4969bcdfbe6887d4e0457d7d480b675ff9f728109cd6c93ac4e3933bb715ce2` |
+| Genesis P2SH32 PAA1 | `2001ac68c61108b5403491e6a229851ec368853c3e317d5ae1ccf7666d113db5` |
+| 12 verifier-kernel carriers (10 FRI + bind-T + slot) | `70b277637535a40a5fa9d6f1bb805d7b841b31e7fc0e09ff8713ac00768dee2d` |
+| Mix successor (69115 B, 252 openings, plugin.verify ok) | `52b46dab18aaac03b15655c6154822f1c330a4513a5dad9f49b7c2084e910147` |
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 
-Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
+Older txs `1973c065…` / `23ec0c8d…` / `86bd413f…` are a previous lock.

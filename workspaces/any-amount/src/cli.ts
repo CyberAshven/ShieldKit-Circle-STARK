@@ -18,7 +18,7 @@ import { mkdir } from "node:fs/promises";
 import {
   broadcastCovenantGenesis,
   compileCovenantSuccessor,
-  compileFundFriKernels,
+  compileFundVerifierKernels,
   measureGenesisAndSuccessor,
 } from "./chain/covenant-spend.ts";
 import { encodePublicPaa1 } from "./pool/state.ts";
@@ -450,9 +450,9 @@ async function main(): Promise<void> {
     const client = await connectChipnet();
     try {
       const funder = { tx_hash: genesis.broadcast, tx_pos: 1, value: genesis.changeValue };
-      const funded = compileFundFriKernels(w, funder, FRI_KERNEL_INPUTS);
+      const funded = compileFundVerifierKernels(w, funder);
       const kernelTxid = await broadcast(client, binToHex(funded.raw));
-      const feeUtxo = { tx_hash: funded.txid, tx_pos: FRI_KERNEL_INPUTS, value: funded.changeValue };
+      const feeUtxo = { tx_hash: funded.txid, tx_pos: funded.changePos, value: funded.changeValue };
       const successor = compileCovenantSuccessor({
         wallet: w,
         feeUtxo,
@@ -465,8 +465,10 @@ async function main(): Promise<void> {
         },
         newState: mix.newState,
         proof: mix.proof,
+        statement: mix.statement,
         lockKind: "p2sh32",
-        kernelUtxos: funded.kernels,
+        kernelUtxos: funded.fri,
+        extraKernels: funded.extra,
       });
       const succTxid = await broadcast(client, binToHex(successor.raw));
       const shards = proofShardReport(mix.proof);

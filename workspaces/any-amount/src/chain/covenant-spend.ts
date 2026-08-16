@@ -54,7 +54,16 @@ import { decodeFriProof } from "../backends/circle/fri.ts";
 import { decodeState } from "../pool/state.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { friShardUnlockings } from "./fri-openings.ts";
-import { cqzKernelUnlocking, SLOT_KERNEL_COUNT, SLOTS_PER_KERNEL, slotsKernelUnlocking } from "./air-cqz.ts";
+import {
+  compileCqzLockP2sh32,
+  compileSlotsLockP2sh32,
+  cqzKernelUnlocking,
+  encodeAirPacked,
+  SLOT_KERNEL_COUNT,
+  SLOTS_PER_KERNEL,
+  slotsKernelUnlocking,
+} from "./air-cqz.ts";
+import type { PoolStatement } from "../pool/statement.ts";
 
 export type LockKind = "p2s" | "p2sh32";
 
@@ -182,9 +191,11 @@ export function compileCovenantSuccessor(args: {
   };
   newState: AnyAmountState;
   proof: Uint8Array;
+  statement?: PoolStatement;
   lockKind?: LockKind;
   kernelUtxo?: { tx_hash: string; tx_pos: number; value: number };
   kernelUtxos?: Array<{ tx_hash: string; tx_pos: number; value: number }>;
+  extraKernels?: Array<{ tx_hash: string; tx_pos: number; value: number }>;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const c = compiler();
@@ -197,10 +208,9 @@ export function compileCovenantSuccessor(args: {
   const oldState = decodeState(args.pool.commitment);
   const decoded = decodeFriProof(args.proof);
   const wit = walkWitnessFromAuth(decoded.auth, oldState.noteRoot, args.newState.noteRoot);
+  const packed = args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots;
   const unlocking =
-    lockKind === "p2s"
-      ? p2sUnlocking(wit, decoded.layerRoots)
-      : p2sh32Unlocking(wit, decoded.layerRoots);
+    lockKind === "p2s" ? p2sUnlocking(wit, packed) : p2sh32Unlocking(wit, packed);
   const shards = friShardUnlockings(args.proof);
   const dummy = "44".repeat(32);
   const kernels = args.kernelUtxos ??
@@ -209,6 +219,13 @@ export function compileCovenantSuccessor(args: {
       : shards.map((_, i) => ({ tx_hash: dummy, tx_pos: i, value: 1000 })));
   if (kernels.length !== FRI_KERNEL_INPUTS) {
     throw new Error(`need ${FRI_KERNEL_INPUTS} FRI kernel UTXOs, got ${kernels.length}`);
+  }
+  const extras = args.extraKernels ?? [
+    { tx_hash: dummy, tx_pos: 10, value: 1000 },
+    ...Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) => ({ tx_hash: dummy, tx_pos: 11 + i, value: 1000 })),
+  ];
+  if (extras.length !== 1 + SLOT_KERNEL_COUNT) {
+    throw new Error(`need ${1 + SLOT_KERNEL_COUNT} extra kernel UTXOs, got ${extras.length}`);
   }
 
   const generated = generateTransaction({
@@ -228,14 +245,14 @@ export function compileCovenantSuccessor(args: {
         unlockingBytecode: friUnlock,
       })),
       {
-        outpointIndex: 10,
-        outpointTransactionHash: hexToBin(dummy),
+        outpointIndex: extras[0]!.tx_pos,
+        outpointTransactionHash: hexToBin(extras[0]!.tx_hash),
         sequenceNumber: 0xffffffff,
         unlockingBytecode: cqzKernelUnlocking(),
       },
       ...Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) => ({
-        outpointIndex: 11 + i,
-        outpointTransactionHash: hexToBin(dummy),
+        outpointIndex: extras[1 + i]!.tx_pos,
+        outpointTransactionHash: hexToBin(extras[1 + i]!.tx_hash),
         sequenceNumber: 0xffffffff,
         unlockingBytecode: slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
       })),
@@ -360,6 +377,72 @@ export function compileSelfSendVout0(
   }
   const raw = encodeTransaction(generated.transaction);
   return { raw, txid: hashTransaction(raw), value: Number(value) };
+}
+
+/** 10 FRI + bind-T + slot C=QZ carriers. */
+export function compileFundVerifierKernels(
+  wallet: LabWallet,
+  utxo: { tx_hash: string; tx_pos: number; value: number },
+  kernelSats = 1_000,
+): {
+  raw: Uint8Array;
+  txid: string;
+  fri: Array<{ tx_hash: string; tx_pos: number; value: number }>;
+  extra: Array<{ tx_hash: string; tx_pos: number; value: number }>;
+  changeValue: number;
+  changePos: number;
+} {
+  const c = compiler();
+  const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
+  const extraCount = 1 + SLOT_KERNEL_COUNT;
+  const count = FRI_KERNEL_INPUTS + extraCount;
+  const fee = 1_000n;
+  const change = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - fee;
+  if (change < 546n) throw new Error("utxo too small to fund verifier kernels");
+  const friOut = { lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: BigInt(kernelSats) };
+  const generated = generateTransaction({
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointIndex: utxo.tx_pos,
+        outpointTransactionHash: hexToBin(utxo.tx_hash),
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: {
+          compiler: c,
+          script: "unlock",
+          data,
+          valueSatoshis: BigInt(utxo.value),
+        },
+      },
+    ],
+    outputs: [
+      ...Array.from({ length: FRI_KERNEL_INPUTS }, () => friOut),
+      { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
+      ...Array.from({ length: SLOT_KERNEL_COUNT }, () => ({
+        lockingBytecode: compileSlotsLockP2sh32(),
+        valueSatoshis: BigInt(kernelSats),
+      })),
+      { lockingBytecode: { compiler: c, script: "lock", data }, valueSatoshis: change },
+    ],
+  });
+  if (!generated.success) {
+    throw new Error(`fund verifier kernels: ${JSON.stringify(generated.errors).slice(0, 400)}`);
+  }
+  const raw = encodeTransaction(generated.transaction);
+  const txid = hashTransaction(raw);
+  return {
+    raw,
+    txid,
+    fri: Array.from({ length: FRI_KERNEL_INPUTS }, (_, i) => ({ tx_hash: txid, tx_pos: i, value: kernelSats })),
+    extra: Array.from({ length: extraCount }, (_, i) => ({
+      tx_hash: txid,
+      tx_pos: FRI_KERNEL_INPUTS + i,
+      value: kernelSats,
+    })),
+    changeValue: Number(change),
+    changePos: count,
+  };
 }
 
 /** Fund FRI-kernel P2SH32 carriers (one per proof shard) so the successor can spend them. */
