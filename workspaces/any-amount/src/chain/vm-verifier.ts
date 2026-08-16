@@ -23,6 +23,7 @@ import {
   SLOTS_PER_KERNEL,
   slotsKernelUnlocking,
 } from "./air-cqz.ts";
+import { compileFoldLockP2sh32, foldKernelUnlocking } from "./fold-kernel.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import {
   collectFriOpenings,
@@ -227,6 +228,9 @@ export function evaluatePoolSuccessorVm(args: {
   const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof);
   const cqzLock = compileCqzLockP2sh32();
   const cqzUnlock = cqzKernelUnlocking();
+  const foldN = Math.min(slotKernels, 1);
+  const foldLock = compileFoldLockP2sh32(foldN);
+  const foldUnlock = foldKernelUnlocking(foldN);
   const slotUnlocks = Array.from({ length: slotKernels }, (_, i) =>
     slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
   );
@@ -242,6 +246,7 @@ export function evaluatePoolSuccessorVm(args: {
     },
     ...shards.map(() => ({ lockingBytecode: friLock, valueSatoshis: 1000n })),
     { lockingBytecode: cqzLock, valueSatoshis: 1000n },
+    { lockingBytecode: foldLock, valueSatoshis: 1000n },
     ...slotUnlocks.map((_, i) => ({ lockingBytecode: compileSlotsLockP2sh32(i), valueSatoshis: 1000n })),
   ];
   const decoded = decodeFriProof(args.proof);
@@ -269,6 +274,12 @@ export function evaluatePoolSuccessorVm(args: {
         outpointIndex: 0,
         sequenceNumber: 0xffffffff,
         unlockingBytecode: cqzUnlock,
+      },
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x87),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: foldUnlock,
       },
       ...slotUnlocks.map((unlocking, i) => ({
         outpointTransactionHash: new Uint8Array(32).fill(0x89 + i),
@@ -699,6 +710,59 @@ export function evaluateSwappedDummyKernels(args: {
     airPacked: swapped,
     statement: args.statement,
   });
+}
+
+/** Packed + first nFold FRI shards + fold kernel only (no pool five-point). */
+export function evaluateFoldKernelOnly(args: {
+  statement: PoolStatement;
+  proof: Uint8Array;
+  nFold?: number;
+}): VmEval {
+  const nFold = args.nFold ?? 1;
+  const vm = createVirtualMachineBch2026(true);
+  const shards = friShardUnlockings(args.proof).slice(0, nFold);
+  const packed = encodeAirPacked(args.statement, args.proof);
+  const foldLock = compileFoldLockP2sh32(nFold);
+  const foldUnlock = foldKernelUnlocking(nFold);
+  const friLock = compileFriQueryLockP2sh32();
+  const carrierLock = Uint8Array.of(0x75, 0x51);
+  const sourceOutputs = [
+    { lockingBytecode: carrierLock, valueSatoshis: 1000n },
+    ...shards.map(() => ({ lockingBytecode: friLock, valueSatoshis: 1000n })),
+    { lockingBytecode: foldLock, valueSatoshis: 1000n },
+  ];
+  const transaction = {
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x22),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: pushData(packed),
+      },
+      ...shards.map((unlocking, i) => ({
+        outpointTransactionHash: new Uint8Array(32).fill(0x44 + i),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: unlocking,
+      })),
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x87),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: foldUnlock,
+      },
+    ],
+    outputs: [{ lockingBytecode: carrierLock, valueSatoshis: 1000n }],
+  };
+  const result = vm.verify({ sourceOutputs, transaction });
+  return {
+    accepted: result === true,
+    error: result === true ? null : String(result),
+    unlockingBytes: foldUnlock.length,
+    lockingBytes: foldLock.length,
+  };
 }
 
 /** Packed FS index flipped so foldPair uses the wrong domain point. */

@@ -168,7 +168,7 @@ OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_DROP
 ${BE16_UNSIGNED}
 <${FRI_FINAL}> OP_MOD
-OP_4 OP_PICK
+OP_5 OP_PICK
 OP_SWAP
 <4> OP_MUL
 <${AIR_OFF_FINAL}> OP_ADD
@@ -205,25 +205,19 @@ ${r + 1 < COMMITTED_LAYERS ? nextPairCheckAsm(r) : finalCheckAsm()}
 `;
 }
 
-/** Stack: packed builtPairs idxBlob → (consumed). Every query is folded. */
-export function foldQueriesAsm(): string {
+/** Stack: packed builtPairs idxBlob → (consumed). Folds `nFold` queries. */
+export function foldQueriesAsm(nFold: number): string {
   const layers = Array.from({ length: COMMITTED_LAYERS }, (_, r) => layerFoldAsm(r)).join("\n");
   return `
-OP_DUP
-OP_SIZE
-OP_NIP
-<2> OP_DIV
-OP_2 OP_PICK
-OP_SIZE
-OP_NIP
 OP_OVER
-<${COMMITTED_LAYERS * 8}>
-OP_MUL
+OP_SIZE
+OP_NIP
+<${nFold * COMMITTED_LAYERS * 8}>
 OP_NUMEQUALVERIFY
 <0>
 OP_BEGIN
   OP_DUP
-  OP_2 OP_PICK
+  <${nFold}>
   OP_LESSTHAN
   OP_IF
     ${layers}
@@ -235,7 +229,7 @@ OP_BEGIN
   OP_ENDIF
 OP_UNTIL
 OP_2DROP
-OP_2DROP
+OP_DROP
 `;
 }
 

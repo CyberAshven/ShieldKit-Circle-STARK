@@ -11,9 +11,10 @@ distinct `C=Q·Z` slots (measured 95172 B before the fold input). A parallel
 `356630bd10c6bf9b3d4bbd6d1835ed3baed430641f168c2ad1e1f534a3080898`
 (270251 B). Details: [`MILESTONE.md`](MILESTONE.md).
 
-This is **not** ZK, **not** Lean, **not** mainnet. On-chain fold is in-tree
-(`src/chain/fold-kernel.ts`); isolated fold tests pass; successor VM land is
-next. Language: TypeScript / CashScript / Rust.
+This is **not** ZK, **not** Lean, **not** mainnet. The shipped lock **requires**
+a Circle fold kernel that foldPairs **1** FS query (2026 VM density: 2+ queries
+in one redeem exceed ~800×script-length). C=QZ stays 6/36. Language: TypeScript /
+CashScript / Rust.
 
 ## Passing
 
@@ -27,7 +28,7 @@ next. Language: TypeScript / CashScript / Rust.
 ## Not done (honest)
 
 - Full DEEP-ALI / 128-bit algebraic note-tree hash inside the AIR (note tree is still SHA-256; AIR binds public reserves/digest).
-- Chipnet land of the dedicated fold kernel (isolated `foldPair` / λ / redeem ≤ 10 KB pass; full successor VM still open).
+- More than one FS query folded per redeem (density). Statistical ZK / viewing keys.
 - On-chain **value** hiding (pool UTXO sats remain public; only note amounts are committed).
 - 100 faucet-funded Chipnet wallets. VM eval of the same bytecode is the on-chain bar.
 - Formal paper proof. Rust worker still speaks the old n=32 wire (optional; TS is shipped).
@@ -76,6 +77,15 @@ Previous 1-slot lock, Electrum-accepted 2026-08-16:
 Block (3+ conf on local BCHN): `000000001abbed79d00f1d2d3e47c16a62114c40da6f559b6d24b438703636b7`
 
 Public miners will not *relay* a 270 KB tx. This one got in because it was submitted to the lab BCHN mempool and mined. ASICSeer solo is pointed at that BCHN (`bitcoincashd.startos:48332`). Stratum for more hash: `start9oslinux.local:3333` (or `192.168.0.55:3333`), user `bchtest:qrzq5f9ltv70u4su7d40agd4nlnp8qlgqcma6x2tvp`.
+
+**Fold-executing standard successor** (1 query fold + 6× C=QZ, 98831 B), Electrum-accepted 2026-08-16:
+
+| Step | txid |
+| --- | --- |
+| Prep vout-0 | `2a1a0c48e1a9128a466ca08e6e83e813b6002b5c2840736a97f3b34fc654a776` |
+| Genesis | `c014f5aeef34774b3bdf17a1defb015a3c125239ff65d41b5874f1e5e1bba777` |
+| Kernels | `5aef6160ef229e5a300e1d3e632544c9c1fe05290ce82c196a26fb5abdfbe5e4` |
+| Successor (98831 B, fold on lock) | `2acb1196589b32fb1179f57dafc402dcb747f2698f364633d90dec180ab446e0` |
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 

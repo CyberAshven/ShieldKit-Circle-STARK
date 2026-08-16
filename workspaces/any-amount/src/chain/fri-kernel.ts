@@ -164,6 +164,10 @@ OP_BEGIN
   OP_ELSE
     OP_DROP
     OP_VERIFY
+    OP_DEPTH
+    OP_IF
+      OP_DROP
+    OP_ENDIF
     OP_1
   OP_ENDIF
 OP_UNTIL

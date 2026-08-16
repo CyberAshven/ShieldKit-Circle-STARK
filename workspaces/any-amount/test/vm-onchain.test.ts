@@ -295,7 +295,13 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
       statement: w.statement,
     });
     assert.equal(cookedT.accepted, false, cookedT.error ?? "cooked T must fail bind");
-    void evaluateWrongFoldIndex;
+    const unfolded = evaluateWrongFoldIndex({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+    });
+    assert.equal(unfolded.accepted, false, "wrong fold index must fail");
     void evaluateCookedLaterSlot;
 
     const redeem = compilePoolCovenant();

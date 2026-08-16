@@ -1,7 +1,6 @@
 /**
- * Dedicated Circle-FRI fold kernel. Merkle kernels stay small; this input
- * re-reads their first 7 (left,right) pushes (query-grouped shard 0 = FS slot)
- * and runs foldPair through every committed layer.
+ * Dedicated Circle-FRI fold kernel. First push of each grouped FRI unlocking
+ * is (left||right)×7 for that shard's first query. Fold reads inputs 1..nFold.
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { COMMITTED_LAYERS } from "../backends/circle/params.ts";
@@ -9,80 +8,51 @@ import { AIR_OFF_IDX, SLOT_KERNEL_COUNT } from "./air-cqz.ts";
 import { foldDefinesAsm, foldQueriesAsm } from "./fold-asm.ts";
 
 export const FOLD_KERNEL_INPUTS = 1;
-/** Input index of the fold kernel (after 10 FRI + bind-T). */
 export const FOLD_KERNEL_INDEX = 12;
+/** Measured: 2+ query folds exceed 2026 VM density in the successor kernel. */
+export const FOLD_QUERY_COUNT_STANDARD = 1;
 
-function parseOneOpeningAsm(): string {
+/** Stack in: raw unlocking. Stack out: first 56-byte query pair blob. */
+function firstQueryPairsAsm(): string {
   return `
-<1> OP_SPLIT OP_NIP
-<4> OP_SPLIT
-OP_TOALTSTACK
-<1> OP_SPLIT OP_NIP
-<4> OP_SPLIT
-OP_FROMALTSTACK
-OP_SWAP
-OP_CAT
-OP_TOALTSTACK
 <1> OP_SPLIT
 OP_DUP
-<0x4d>
+<0x4c>
 OP_NUMEQUAL
 OP_IF
   OP_DROP
-  <2> OP_SPLIT
+  <1> OP_SPLIT
   OP_SWAP
   OP_BIN2NUM
-  OP_SPLIT OP_NIP
+  OP_SPLIT
+  OP_DROP
 OP_ELSE
   OP_DUP
-  <0x4c>
+  <0x4d>
   OP_NUMEQUAL
   OP_IF
     OP_DROP
-    <1> OP_SPLIT
+    <2> OP_SPLIT
     OP_SWAP
     OP_BIN2NUM
-    OP_SPLIT OP_NIP
+    OP_SPLIT
+    OP_DROP
   OP_ELSE
     OP_SWAP
-    OP_SPLIT OP_NIP
+    OP_SPLIT
+    OP_DROP
   OP_ENDIF
 OP_ENDIF
-<1> OP_SPLIT OP_NIP
-OP_FROMALTSTACK
+<${COMMITTED_LAYERS * 8}>
+OP_SPLIT
+OP_DROP
 `;
-}
-
-function defineParseFn(): string {
-  const body = cashAssemblyToBin(parseOneOpeningAsm());
-  if (typeof body === "string") throw new Error(`parse-open: ${body}`);
-  return `<0x${Buffer.from(body).toString("hex")}>\n<3>\nOP_DEFINE`;
 }
 
 function extractQueryPairsAsm(inputIndex: number): string {
   return `
 <${inputIndex}> OP_INPUTBYTECODE
-OP_0
-<${COMMITTED_LAYERS}>
-OP_BEGIN
-  OP_DUP
-  OP_0 OP_GREATERTHAN
-  OP_IF
-    OP_1SUB
-    OP_TOALTSTACK
-    OP_SWAP
-    <3> OP_INVOKE
-    OP_ROT
-    OP_SWAP
-    OP_CAT
-    OP_FROMALTSTACK
-    OP_0
-  OP_ELSE
-    OP_DROP
-    OP_1
-  OP_ENDIF
-OP_UNTIL
-OP_NIP
+${firstQueryPairsAsm()}
 `;
 }
 
@@ -90,7 +60,6 @@ export function foldKernelAsm(nFold = SLOT_KERNEL_COUNT): string {
   const pulls = Array.from({ length: nFold }, (_, q) => `${extractQueryPairsAsm(1 + q)}\nOP_CAT`).join("\n");
   return `
 ${foldDefinesAsm()}
-${defineParseFn()}
 <0> OP_INPUTBYTECODE
 <1> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_NIP
@@ -99,15 +68,52 @@ ${pulls}
 OP_OVER
 <${AIR_OFF_IDX}> OP_SPLIT OP_NIP
 <${nFold * 2}> OP_SPLIT OP_DROP
-${foldQueriesAsm()}
+${foldQueriesAsm(nFold)}
 OP_1
 `;
 }
 
+export function compileInput1PairsLock(): Uint8Array {
+  const bin = cashAssemblyToBin(`
+<1> OP_INPUTBYTECODE
+${firstQueryPairsAsm()}
+OP_SIZE
+<${COMMITTED_LAYERS * 8}>
+OP_NUMEQUAL
+OP_NIP
+`);
+  if (typeof bin === "string") throw new Error(`input1-pairs: ${bin}`);
+  return bin;
+}
+
+export function compileFirstQueryPairsLock(): Uint8Array {
+  const bin = cashAssemblyToBin(`
+${firstQueryPairsAsm()}
+OP_SIZE
+<${COMMITTED_LAYERS * 8}>
+OP_NUMEQUAL
+OP_NIP
+`);
+  if (typeof bin === "string") throw new Error(`first-pairs: ${bin}`);
+  return bin;
+}
+
+const FOLD_REDEEM_PAD = 0;
+
 export function compileFoldKernel(nFold = SLOT_KERNEL_COUNT): Uint8Array {
   const bin = cashAssemblyToBin(foldKernelAsm(nFold));
   if (typeof bin === "string") throw new Error(`fold-kernel: ${bin}`);
-  return bin;
+  if (bin.length >= FOLD_REDEEM_PAD) return bin;
+  const pairs = Math.ceil((FOLD_REDEEM_PAD - bin.length) / 2);
+  const pad = new Uint8Array(pairs * 2);
+  for (let i = 0; i < pairs; i += 1) {
+    pad[i * 2] = 0x00;
+    pad[i * 2 + 1] = 0x75;
+  }
+  const out = new Uint8Array(pad.length + bin.length);
+  out.set(pad, 0);
+  out.set(bin, pad.length);
+  return out;
 }
 
 export function compileFoldLockP2sh32(nFold = SLOT_KERNEL_COUNT): Uint8Array {

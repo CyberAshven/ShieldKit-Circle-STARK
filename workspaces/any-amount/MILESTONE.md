@@ -27,10 +27,25 @@ Explorer: `https://chipnet.imaginary.cash/tx/356630bd10c6bf9b3d4bbd6d1835ed3baed
 - Velma 10 KB unlocking + redeem (old ~1650 box is gone).
 - Consensus-size verifier spend included by a Chipnet miner.
 
-## What this tx does **not** prove
+## Fold (this tree, not `356630bd…`)
 
-- On-chain Circle FRI **fold** of layers (that kernel is in this tree; a new
-  land is required before claiming fold-on-Chipnet).
+The successor lock now **requires** `fold-kernel.ts`. Isolated + VM tests accept
+an honest fold and reject a flipped FS index. Density allows **1** folded query
+per redeem.
+
+Fold-executing Chipnet land (standard 98831 B, Electrum-accepted):
+
+| | |
+| --- | --- |
+| Successor | `2acb1196589b32fb1179f57dafc402dcb747f2698f364633d90dec180ab446e0` |
+| Genesis | `c014f5aeef34774b3bdf17a1defb015a3c125239ff65d41b5874f1e5e1bba777` |
+| Kernels | `5aef6160ef229e5a300e1d3e632544c9c1fe05290ce82c196a26fb5abdfbe5e4` |
+
+Do **not** relabel `356630bd…` as fold.
+
+## What `356630bd…` does **not** prove
+
+- On-chain Circle FRI **fold** of layers.
 - Statistical ZK / witness masking.
 - Hidden pool-UTXO value (output is `STATE_BASE`; note amounts are Pedersen
   commitments only).

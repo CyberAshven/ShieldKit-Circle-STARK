@@ -13,10 +13,12 @@ import { encodeStatement } from "../src/pool/statement.ts";
 import { COMMITTED_LAYERS, FRI_N } from "../src/backends/circle/params.ts";
 import { encodeAirPacked } from "../src/chain/air-cqz.ts";
 import { compileFoldPairLock, compileM31InvLock, lambdaFromPackedAsm } from "../src/chain/fold-asm.ts";
-import { compileFoldKernel, foldKernelAsm } from "../src/chain/fold-kernel.ts";
+import { compileFirstQueryPairsLock, compileFoldKernel, foldKernelAsm } from "../src/chain/fold-kernel.ts";
+import { friShardUnlockings } from "../src/chain/fri-openings.ts";
 import { pushData } from "../src/chain/covenant-p2s.ts";
 import {
   evaluateBch2026,
+  evaluateFoldKernelOnly,
   evaluateOnChainVerify,
   evaluatePoolSuccessorVm,
   evaluateWrongFoldIndex,
@@ -95,6 +97,14 @@ describe("on-chain Circle fold", () => {
     assert.equal(ev.accepted, true, ev.error ?? "lambda");
   });
 
+  it("reads the first query pair blob from a grouped FRI unlocking", () => {
+    const d = deposit();
+    const proof = proveFri(d.statement, d.witness);
+    const shard = friShardUnlockings(proof)[0]!;
+    const ev = evaluateBch2026(compileFirstQueryPairsLock(), pushData(shard));
+    assert.equal(ev.accepted, true, ev.error ?? "first query pairs");
+  });
+
   it("fold kernel redeem stays under 10 KB", () => {
     const redeem = compileFoldKernel(6);
     assert.ok(redeem.length > 200, "fold kernel is not a stub");
@@ -102,8 +112,19 @@ describe("on-chain Circle fold", () => {
     assert.ok(foldKernelAsm(6).includes("OP_INVOKE"));
   });
 
-  // Fold kernel is compiled; successor VM still rejects (pair extract).
-  it.skip("honest successor still VM-accepts after on-chain fold", () => {
+  it("one-query fold kernel accepts honest packed and shard 0", () => {
+    const d = deposit();
+    const proof = proveFri(d.statement, d.witness);
+    const ev = evaluateFoldKernelOnly({
+      statement: d.statement,
+      proof: encodeFriProof(proof),
+      nFold: 1,
+    });
+    assert.equal(ev.accepted, true, ev.error ?? "one-query fold");
+    assert.ok(ev.unlockingBytes <= 10_000);
+  });
+
+  it("honest successor still VM-accepts after on-chain fold", () => {
     const d = deposit();
     const proof = proveFri(d.statement, d.witness);
     const raw = encodeFriProof(proof);
@@ -113,7 +134,7 @@ describe("on-chain Circle fold", () => {
     assert.equal(on.pool.accepted, true, on.pool.error ?? "honest fold successor");
   });
 
-  it.skip("wrong FS index on a folded query is rejected", () => {
+  it("wrong FS index on a folded query is rejected", () => {
     const d = deposit();
     const proof = proveFri(d.statement, d.witness);
     const raw = encodeFriProof(proof);

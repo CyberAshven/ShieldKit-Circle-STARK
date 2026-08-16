@@ -109,9 +109,22 @@ export function shardFriOpenings(openings: FriOpening[]): FriOpening[][] {
   return shards;
 }
 
+/** Concatenate (left||right) for every opening, query-major. */
+export function openingPairsBlob(openings: FriOpening[]): Uint8Array {
+  const out = new Uint8Array(openings.length * 8);
+  for (let i = 0; i < openings.length; i += 1) {
+    out.set(openings[i]!.left, i * 8);
+    out.set(openings[i]!.right, i * 8 + 4);
+  }
+  return out;
+}
+
 export function encodeFriBatchUnlocking(openings: FriOpening[]): Uint8Array {
   if (openings.length === 0) throw new Error("empty FRI shard");
   const parts: Uint8Array[] = [];
+  if (openings.length % COMMITTED_LAYERS === 0) {
+    parts.push(pushData(openingPairsBlob(openings.slice(0, COMMITTED_LAYERS))));
+  }
   for (const o of openings) {
     parts.push(
       pushData(o.left),

@@ -18,7 +18,7 @@ npx tsx src/cli.ts --help
 | Optional Rust prove worker | `crates/circle-fri-worker` — old n=32 wire; TS is the shipped path. |
 | On-chain 2026 lock | P2SH32 five-point `PAA1` + 10 FRI Merkle kernels + bind-T + **6** slot `C=Q·Z` (100 KB) or **36** (1 MB). |
 | Chipnet proof | 36-slot successor **270251 B** `356630bd10c6bf9b3d4bbd6d1835ed3baed430641f168c2ad1e1f534a3080898` — see [`workspaces/any-amount/MILESTONE.md`](workspaces/any-amount/MILESTONE.md). |
-| On-chain fold | Dedicated fold kernel is in-tree (`fold-kernel.ts`). Isolated `foldPair` / λ / redeem-size tests pass. Full successor VM land is the next Chipnet proof. |
+| On-chain fold | Shipped lock requires `fold-kernel.ts`. VM accepts honest fold and rejects a flipped FS index. Density: **1** folded query per redeem (2+ exceed 2026 cost). |
 | Not this pre-release | ZK masking, Lean, mainnet, OPTN builtin register, hidden pool-UTXO value. |
 
 Lab notes: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md),
