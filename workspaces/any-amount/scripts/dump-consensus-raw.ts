@@ -1,5 +1,6 @@
-/** Compile a consensus successor and write raw hex. No keys printed. */
-import { writeFileSync } from "node:fs";
+/** Compile the consensus chain locally and write hex files. No keys. No broadcast. */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { binToHex, hexToBin } from "@bitauth/libauth";
 import { loadLabWallet } from "../src/chain/wallet.ts";
 import { connectChipnet, listUnspent } from "../src/chain/electrum.ts";
@@ -13,9 +14,13 @@ import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "../src/pool/mix-successor.ts";
 import { encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
 import { SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
+import { foldKernelCount } from "../src/chain/fold-kernel.ts";
 
 const out = process.argv[2];
-if (!out) throw new Error("usage: dump-consensus-raw <out.hex>");
+if (!out) throw new Error("usage: dump-consensus-raw <successor.hex>");
+
+const dir = dirname(out);
+mkdirSync(dir, { recursive: true });
 
 const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
 if (!mixChangedRootsAndReserve(mix)) throw new Error("mix did not update roots");
@@ -28,11 +33,17 @@ try {
   let picked =
     utxos.find((u) => u.tx_pos === 0 && u.value > 200_000) ??
     utxos.find((u) => u.value > 200_000);
-  if (!picked) throw new Error("no funded utxo");
+  if (!picked) {
+    throw new Error(`no funded utxo; count=${utxos.length} max=${utxos.reduce((m, u) => Math.max(m, u.value), 0)}`);
+  }
+  const files: Record<string, string> = {};
+  let prepTxid: string | null = null;
   if (picked.tx_pos !== 0) {
     const prep = compileSelfSendVout0(wallet, picked);
-    const { broadcast } = await import("../src/chain/electrum.ts");
-    await broadcast(client, binToHex(prep.raw));
+    const prepPath = join(dir, "prep.hex");
+    writeFileSync(prepPath, binToHex(prep.raw));
+    files.prep = prepPath;
+    prepTxid = prep.txid;
     picked = { tx_hash: prep.txid, tx_pos: 0, value: prep.value, height: 0 };
   }
   const genesis = compileCovenantSpend({
@@ -44,20 +55,26 @@ try {
     envelope: "consensus",
     slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
   });
-  const { broadcast } = await import("../src/chain/electrum.ts");
-  const genesisTxid = await broadcast(client, binToHex(genesis.raw));
+  const genesisPath = join(dir, "genesis.hex");
+  writeFileSync(genesisPath, binToHex(genesis.raw));
+  files.genesis = genesisPath;
+  if (genesis.changeValue === undefined || genesis.changeValue < 200_000) {
+    throw new Error(`change too small ${genesis.changeValue}`);
+  }
   const funded = compileFundVerifierKernels(
     wallet,
-    { tx_hash: genesisTxid, tx_pos: 1, value: genesis.changeValue ?? 0 },
+    { tx_hash: genesis.txid, tx_pos: 1, value: genesis.changeValue },
     1_000,
     SLOT_KERNEL_COUNT_CONSENSUS,
   );
-  const kernelTxid = await broadcast(client, binToHex(funded.raw));
+  const kernelsPath = join(dir, "kernels.hex");
+  writeFileSync(kernelsPath, binToHex(funded.raw));
+  files.kernels = kernelsPath;
   const successor = compileCovenantSuccessor({
     wallet,
     feeUtxo: { tx_hash: funded.txid, tx_pos: funded.changePos, value: funded.changeValue },
     pool: {
-      tx_hash: genesisTxid,
+      tx_hash: genesis.txid,
       tx_pos: 0,
       value: Number(STATE_BASE_SATS),
       category: hexToBin(picked.tx_hash),
@@ -73,19 +90,24 @@ try {
     extraKernels: funded.extra,
   });
   writeFileSync(out, binToHex(successor.raw));
-  process.stdout.write(
-    JSON.stringify(
-      {
-        genesis: genesisTxid,
-        kernels: kernelTxid,
-        successor: successor.txid,
-        txBytes: successor.txBytes,
-        hexPath: out,
-      },
-      null,
-      2,
-    ) + "\n",
-  );
+  files.successor = out;
+  const meta = {
+    network: "chipnet",
+    envelope: "consensus",
+    slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+    foldKernels: foldKernelCount(SLOT_KERNEL_COUNT_CONSENSUS),
+    prep: prepTxid,
+    genesis: genesis.txid,
+    kernels: funded.txid,
+    successor: successor.txid,
+    txBytes: successor.txBytes,
+    unlockingBytes: successor.unlockingBytes,
+    hexPath: out,
+    files,
+    verify: v,
+  };
+  writeFileSync(join(dir, "consensus-meta.json"), `${JSON.stringify(meta, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify(meta, null, 2)}\n`);
 } finally {
   client.close();
 }

@@ -79,7 +79,15 @@ Block (3+ conf on local BCHN): `000000001abbed79d00f1d2d3e47c16a62114c40da6f559b
 
 Public miners will not *relay* a 270 KB tx. This one got in because it was submitted to the lab BCHN mempool and mined. ASICSeer solo is pointed at that BCHN (`bitcoincashd.startos:48332`). Stratum for more hash: `start9oslinux.local:3333` (or `192.168.0.55:3333`), user `bchtest:qrzq5f9ltv70u4su7d40agd4nlnp8qlgqcma6x2tvp`.
 
-**10-fold consensus compile** (36 C=QZ + 10 shard folds) measures **301279 B** and VM-accepts. A 2026-08-16 Chipnet submit of that successor was rejected on P2P `192.168.0.55:48333` as `not standard: size 301279 > 100000` even though `bitcoin.conf` already has `acceptnonstdtxn=1`. Not mined. Next submit is JSON-RPC `sendrawtransaction` (not P2P policy).
+**10-fold consensus successor landed on Chipnet** via BCHN JSON-RPC `sendrawtransaction` (P2P `inv` still rejects 301279 as standard 100000). Local BCHN size **301279**, 59 inputs, 2+ conf:
+
+| Step | txid |
+| --- | --- |
+| Genesis | `2469f87208114473733aee0e02d163901318e760fc8b6973c4cc76b1d475bfab` |
+| Kernels | `ef334c4a8d7309cc898031c61a476d9d9b39a3c9e8b99fd79df1c15f077502f0` |
+| Successor (301279 B, 36× C=Q·Z + **10** folds) | `18c74b49731c1914425ba10804233bb208c524e5af943c8bafc55751b007f3e6` |
+
+Block (2+ conf): `0000000026955667a7e7468d40043e66e0d8890bc21f7162a5d8595d02aaceca` height **319278**. Do not relabel `356630bd…` as this fold land.
 
 **Fold-executing standard successor** (1 query fold + 6× C=QZ, 98831 B), Electrum-accepted 2026-08-16:
 

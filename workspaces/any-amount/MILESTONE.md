@@ -42,7 +42,17 @@ Fold-executing Chipnet land (standard 98831 B, Electrum-accepted):
 | Genesis | `c014f5aeef34774b3bdf17a1defb015a3c125239ff65d41b5874f1e5e1bba777` |
 | Kernels | `5aef6160ef229e5a300e1d3e632544c9c1fe05290ce82c196a26fb5abdfbe5e4` |
 
-Do **not** relabel `356630bd…` as fold.
+**10-fold consensus land** (301279 B, JSON-RPC + local mine, 2+ conf):
+
+| | |
+| --- | --- |
+| Successor | `18c74b49731c1914425ba10804233bb208c524e5af943c8bafc55751b007f3e6` |
+| Genesis | `2469f87208114473733aee0e02d163901318e760fc8b6973c4cc76b1d475bfab` |
+| Kernels | `ef334c4a8d7309cc898031c61a476d9d9b39a3c9e8b99fd79df1c15f077502f0` |
+| Block | `0000000026955667a7e7468d40043e66e0d8890bc21f7162a5d8595d02aaceca` |
+| Height | 319278 |
+
+Do **not** relabel `356630bd…` as fold. `18c74b49…` is 36 C=QZ + 10 shard folds, not 36/36 folds.
 
 ## What `356630bd…` does **not** prove
 
