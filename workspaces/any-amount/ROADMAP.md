@@ -5,11 +5,11 @@ Scoreboard: [`STATUS.md`](STATUS.md). Lands: [`MILESTONE.md`](MILESTONE.md).
 
 ## Now
 
-Chipnet Circle-FRI shielded covenant. Standard 1 fold + 6 C=QZ (`2acb1196…`). Consensus 10 folds + 36 C=QZ (`18c74b49…`). Not ZK. Pedersen amounts (not PQ).
+Chipnet Circle-FRI shielded covenant. Standard 1 fold + 6 C=QZ (`2acb1196…`). Consensus lock compiles **36** folds + 36 C=QZ (**382203 B**). Prior Chipnet 10-fold land `18c74b49…`. Not ZK. Pedersen amounts (not PQ).
 
 ## Next, in order
 
-1. **36 on-chain folds** on the 1 MB consensus tx (extra 1-query fold inputs; ~700 KB free).
+1. **36 on-chain folds** — lock+VM+measure done (382203 B). Chipnet JSON-RPC land of this lock still required (new txid, not `18c74b49…`).
 2. **Conservation on chain** from PAA1 / packed cells only — no rho, owner, or raw reserves on the successor.
 3. **Replace Pedersen** with a hash/PQ amount commit; hide or commit the public P2PKH net.
 4. **Statistical ZK** (mask openings). Viewing keys after that.

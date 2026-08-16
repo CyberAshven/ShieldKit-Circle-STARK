@@ -131,9 +131,21 @@ describe("on-chain Circle fold", () => {
       statement: d.statement,
       proof: encodeFriProof(proof),
       nFold: 1,
-      sourceInput: 2,
+      queryIndex: 1,
     });
     assert.equal(ev.accepted, true, ev.error ?? "shard-1 fold");
+  });
+
+  it("one-query fold kernel accepts query 10 (second pair group on shard 0)", () => {
+    const d = deposit();
+    const proof = proveFri(d.statement, d.witness);
+    const ev = evaluateFoldKernelOnly({
+      statement: d.statement,
+      proof: encodeFriProof(proof),
+      nFold: 1,
+      queryIndex: 10,
+    });
+    assert.equal(ev.accepted, true, ev.error ?? "query-10 fold");
   });
 
   it("honest successor still VM-accepts after on-chain fold", () => {

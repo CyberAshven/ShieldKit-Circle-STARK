@@ -224,11 +224,12 @@ export function compileCovenantSuccessor(args: {
   const oldState = decodeState(args.pool.commitment);
   const decoded = decodeFriProof(args.proof);
   const packed = args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots;
+  const foldN = foldKernelCount(slotKernels);
   const unlocking =
     lockKind === "p2s"
       ? p2sUnlocking(undefined, packed)
       : p2sh32Unlocking(undefined, packed, { slotKernels });
-  const shards = friShardUnlockings(args.proof);
+  const shards = friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
   const dummy = "44".repeat(32);
   const kernels = args.kernelUtxos ??
     (args.kernelUtxo
@@ -237,7 +238,6 @@ export function compileCovenantSuccessor(args: {
   if (kernels.length !== FRI_KERNEL_INPUTS) {
     throw new Error(`need ${FRI_KERNEL_INPUTS} FRI kernel UTXOs, got ${kernels.length}`);
   }
-  const foldN = foldKernelCount(slotKernels);
   const extras = args.extraKernels ?? [
     { tx_hash: dummy, tx_pos: 10, value: 1000 },
     ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 11 + f, value: 1000 })),
@@ -273,7 +273,7 @@ export function compileCovenantSuccessor(args: {
         outpointIndex: extras[1 + f]!.tx_pos,
         outpointTransactionHash: hexToBin(extras[1 + f]!.tx_hash),
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: foldKernelUnlocking(1, 1 + f),
+        unlockingBytecode: foldKernelUnlocking(1, f),
       })),
       ...Array.from({ length: slotKernels }, (_, i) => ({
         outpointIndex: extras[1 + foldN + i]!.tx_pos,
@@ -448,7 +448,7 @@ export function compileFundVerifierKernels(
       ...Array.from({ length: FRI_KERNEL_INPUTS }, () => friOut),
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       ...Array.from({ length: foldN }, (_, f) => ({
-        lockingBytecode: compileFoldLockP2sh32(1, 1 + f),
+        lockingBytecode: compileFoldLockP2sh32(1, f),
         valueSatoshis: BigInt(kernelSats),
       })),
       ...Array.from({ length: slotKernels }, (_, i) => ({

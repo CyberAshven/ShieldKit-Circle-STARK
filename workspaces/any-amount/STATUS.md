@@ -8,21 +8,21 @@ distinct `C=Q·Z` slots (measured 95172 B before the fold input). A parallel
 **36** slots. Chained txs can go larger.
 
 **Milestones (Chipnet):** fold-executing standard `2acb1196…` (98831 B, 1 fold + 6 C=QZ);
-fold-executing consensus `18c74b49…` (301279 B, 10 folds + 36 C=QZ). Earlier 36-slot
+consensus lock now folds **all 36** queries (measured 382203 B). Prior Chipnet 10-fold land `18c74b49…` (301279 B) is not the 36-fold land. Earlier 36-slot
 **no-fold** proof `356630bd…` (270251 B). Details: [`MILESTONE.md`](MILESTONE.md).
 
 This is **not** ZK, **not** Lean, **not** mainnet. The shipped lock **requires**
 Circle fold kernels that foldPair **1** FS query **each** (2026 VM density: 2+
 queries in one redeem exceed ~800×script-length). Standard 100 KB: **1** fold.
-Consensus 1 MB: **10** folds (one first-query per FRI shard). C=QZ stays 6/36.
+Consensus 1 MB: **36** folds (one 1-query kernel per FRI query). C=QZ stays 6/36.
 Language: TypeScript / CashScript / Rust.
 
 ## Passing
 
 - Soundness worksheet: TRACE=64, blowup=16, FRI_N=1024, queries=36, grind=20, rate 2/B → **128 conjectural bits**. `sound: true`. Old n=32/q=8 fails the build.
 - Prover FRIs \(Q=N/Z\) of the `onChainCells` interpolant (action/digest/roots/seq). Honest \(N\) vanishes on-trace so off-trace \(Q\) is not the zero polynomial. `plugin.verify` / `verifyFri` take **no private witness**: `proof.auth` carries the note preimage, so a fake nullifier + valid membership path is rejected (`nullifier preimage`). Amount conservation is `algebraicC(publicCells)` inside `verifyFri`, not in packed T.
-- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): packed T/N/Q interpolate `onChainCells` (action, digest, roots, seq only). Reserves/delta/note limbs are not in that interpolant; `verifyFri` still checks `publicCells` + `algebraicC` + auth + grind + the other query folds. Successor unlocking is packed AIR + redeem only (no rho/owner). Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Next input(s) foldPair **1** query each (standard: 1 fold; consensus: **10** folds, shards 0–9). Remaining inputs run distinct slot `C=Q·Z` (slots 0–5 standard, 0–35 consensus) at recomputed Fiat–Shamir indices. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, wrong-fold-index, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. This is still a **bound prefix** (Merkle + bind-T + 1/10 folds + 6/36 C=QZ), not a full on-chain FRI of all 36 queries. Conservation stays in `verifyFri` — on-chain PAA1 zeros the reserve field.
-- Proof 64278 B, **10 shards**, 252 Merkle openings, slot redeem **5618**, unlocking max **5853**, fold redeem **2955**. Chipnet 6-slot + 1-fold successor **98831 B** / pool unlocking **2485 B**. Consensus compile **301279 B** / pool unlocking **4045 B** (36-slot + **10** folds). 1-slot successor was 66555 B.
+- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): packed T/N/Q interpolate `onChainCells` (action, digest, roots, seq only). Reserves/delta/note limbs are not in that interpolant; `verifyFri` still checks `publicCells` + `algebraicC` + auth + grind + the other query folds. Successor unlocking is packed AIR + redeem only (no rho/owner). Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Next input(s) foldPair **1** query each (standard: 1 fold; consensus: **36** folds, one kernel per FS query). Remaining inputs run distinct slot `C=Q·Z` (slots 0–5 standard, 0–35 consensus) at recomputed Fiat–Shamir indices. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, wrong-fold-index (including query 10), and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. Conservation stays in `verifyFri` — on-chain PAA1 zeros the reserve field. This is still not statistical ZK.
+- Proof 64278 B, **10 shards**, 252 Merkle openings, slot redeem **5618**, unlocking max **5853**, fold redeem **2955**. Chipnet 6-slot + 1-fold successor **98841 B** / pool unlocking **2485 B**. Consensus compile **382203 B** / pool unlocking **5085 B** (36-slot + **36** folds). 1-slot successor was 66555 B. Prior 10-fold consensus land `18c74b49…` was 301279 B.
 - Any-amount one set; Pedersen-hidden note amounts. On-chain PAA1 zeros the reserve field; pool UTXO is `STATE_BASE` only. Reserve conservation is `verifyFri` / `algebraicC`, not packed T. `runMixSuccessor` still updates machine reserve, noteRoot, and nullifierRoot.
 - Comparison table in `COMPARISON.md` (checkable axes only).
 

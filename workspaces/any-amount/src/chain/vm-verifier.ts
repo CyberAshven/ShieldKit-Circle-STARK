@@ -23,7 +23,12 @@ import {
   SLOTS_PER_KERNEL,
   slotsKernelUnlocking,
 } from "./air-cqz.ts";
-import { compileFoldLockP2sh32, foldKernelCount, foldKernelUnlocking } from "./fold-kernel.ts";
+import {
+  compileFoldLockP2sh32,
+  foldKernelCount,
+  foldKernelUnlocking,
+  foldQueryShardInput,
+} from "./fold-kernel.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import {
   collectFriOpenings,
@@ -66,6 +71,13 @@ export function poolLockRedeem(): Uint8Array {
 }
 
 
+
+function dummyPrevout(tag: number, i: number): Uint8Array {
+  const h = new Uint8Array(32).fill(tag);
+  h[30] = (i >> 8) & 0xff;
+  h[31] = i & 0xff;
+  return h;
+}
 
 function concat(parts: Uint8Array[]): Uint8Array {
   const n = parts.reduce((s, p) => s + p.length, 0);
@@ -225,12 +237,12 @@ export function evaluatePoolSuccessorVm(args: {
   const category = args.category ?? new Uint8Array(32).fill(0x11);
   const poolValue = STATE_BASE_SATS;
   const newValue = args.outputValueSats ?? STATE_BASE_SATS;
-  const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof);
+  const foldN = foldKernelCount(slotKernels);
+  const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
   const cqzLock = compileCqzLockP2sh32();
   const cqzUnlock = cqzKernelUnlocking();
-  const foldN = foldKernelCount(slotKernels);
-  const foldLocks = Array.from({ length: foldN }, (_, f) => compileFoldLockP2sh32(1, 1 + f));
-  const foldUnlocks = Array.from({ length: foldN }, (_, f) => foldKernelUnlocking(1, 1 + f));
+  const foldLocks = Array.from({ length: foldN }, (_, f) => compileFoldLockP2sh32(1, f));
+  const foldUnlocks = Array.from({ length: foldN }, (_, f) => foldKernelUnlocking(1, f));
   const slotUnlocks = Array.from({ length: slotKernels }, (_, i) =>
     slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
   );
@@ -276,13 +288,13 @@ export function evaluatePoolSuccessorVm(args: {
         unlockingBytecode: cqzUnlock,
       },
       ...foldUnlocks.map((unlocking, i) => ({
-        outpointTransactionHash: new Uint8Array(32).fill(0xb0 + i),
+        outpointTransactionHash: dummyPrevout(0xb0, i),
         outpointIndex: 0,
         sequenceNumber: 0xffffffff,
         unlockingBytecode: unlocking,
       })),
       ...slotUnlocks.map((unlocking, i) => ({
-        outpointTransactionHash: new Uint8Array(32).fill(0xc0 + i),
+        outpointTransactionHash: dummyPrevout(0xc0, i),
         outpointIndex: 0,
         sequenceNumber: 0xffffffff,
         unlockingBytecode: unlocking,
@@ -718,18 +730,18 @@ export function evaluateFoldKernelOnly(args: {
   proof: Uint8Array;
   nFold?: number;
   sourceInput?: number;
+  queryIndex?: number;
 }): VmEval {
   const nFold = args.nFold ?? 1;
-  const sourceInput = args.sourceInput ?? 1;
+  const queryIndex =
+    args.queryIndex ?? (args.sourceInput !== undefined ? args.sourceInput - 1 : 0);
+  const shardInput = foldQueryShardInput(queryIndex);
   const vm = createVirtualMachineBch2026(true);
-  const allShards = friShardUnlockings(args.proof);
-  const shards = [
-    ...allShards.slice(0, sourceInput - 1),
-    ...allShards.slice(sourceInput - 1, sourceInput - 1 + nFold),
-  ];
+  const allShards = friShardUnlockings(args.proof, { allPairGroups: true });
+  const shards = allShards.slice(0, shardInput);
   const packed = encodeAirPacked(args.statement, args.proof);
-  const foldLock = compileFoldLockP2sh32(nFold, sourceInput);
-  const foldUnlock = foldKernelUnlocking(nFold, sourceInput);
+  const foldLock = compileFoldLockP2sh32(nFold, queryIndex);
+  const foldUnlock = foldKernelUnlocking(nFold, queryIndex);
   const friLock = compileFriQueryLockP2sh32();
   const carrierLock = Uint8Array.of(0x75, 0x51);
   const sourceOutputs = [
@@ -777,9 +789,13 @@ export function evaluateWrongFoldIndex(args: {
   newState: AnyAmountState;
   proof: Uint8Array;
   statement: PoolStatement;
+  queryIndex?: number;
+  slotKernels?: number;
+  standard?: boolean;
 }): VmEval {
   const packed = encodeAirPacked(args.statement, args.proof);
-  packed[AIR_OFF_IDX] ^= 1;
+  const q = args.queryIndex ?? 0;
+  packed[AIR_OFF_IDX + q * 2] ^= 1;
   return evaluatePoolSuccessorVm({
     ...args,
     airPacked: packed,

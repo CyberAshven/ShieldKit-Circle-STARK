@@ -9,8 +9,8 @@ without fold stays recorded so it is not relabeled.
 ## Current: fold-executing lands
 
 The shipped lock **requires** `fold-kernel.ts`. Density allows **1** folded
-query per redeem. Standard pins **1** fold input. Consensus pins **10** (one
-first query per FRI shard). `algebraicC` / auth / grind stay in `verifyFri`.
+query per redeem. Standard pins **1** fold input. Consensus pins **36** (one
+1-query kernel per FRI query). `algebraicC` / auth / grind stay in `verifyFri`.
 
 ### Standard (≤ 100 KB, public Electrum)
 
@@ -42,7 +42,9 @@ Public Electrum and P2P `inv` reject `tx-size` above 100000 even with
 
 Explorer: `https://chipnet.imaginary.cash/tx/18c74b49731c1914425ba10804233bb208c524e5af943c8bafc55751b007f3e6`
 
-`18c74b49…` is 36 C=QZ + 10 shard folds, **not** 36/36 folds.
+`18c74b49…` is 36 C=QZ + **10** shard folds. The lock now compiles **36** fold
+kernels (measured **382203 B**). A new Chipnet 36-fold land is recorded below
+when JSON-RPC + mine succeed; until then do not treat `18c74b49…` as 36-fold.
 
 ## Earlier: 36-slot no-fold proof
 

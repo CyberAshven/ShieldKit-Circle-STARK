@@ -119,11 +119,15 @@ export function openingPairsBlob(openings: FriOpening[]): Uint8Array {
   return out;
 }
 
-export function encodeFriBatchUnlocking(openings: FriOpening[]): Uint8Array {
+export function encodeFriBatchUnlocking(
+  openings: FriOpening[],
+  opts?: { allPairGroups?: boolean },
+): Uint8Array {
   if (openings.length === 0) throw new Error("empty FRI shard");
   const parts: Uint8Array[] = [];
   if (openings.length % COMMITTED_LAYERS === 0) {
-    parts.push(pushData(openingPairsBlob(openings.slice(0, COMMITTED_LAYERS))));
+    const n = opts?.allPairGroups ? openings.length : COMMITTED_LAYERS;
+    parts.push(pushData(openingPairsBlob(openings.slice(0, n))));
   }
   for (const o of openings) {
     parts.push(
@@ -145,12 +149,15 @@ export function encodeFriBatchUnlocking(openings: FriOpening[]): Uint8Array {
   return out;
 }
 
-export function shardUnlockingBytes(openings: FriOpening[]): number {
-  return encodeFriBatchUnlocking(openings).length;
+export function shardUnlockingBytes(openings: FriOpening[], opts?: { allPairGroups?: boolean }): number {
+  return encodeFriBatchUnlocking(openings, opts).length;
 }
 
-export function friShardUnlockings(proof: Uint8Array | FriProof): Uint8Array[] {
-  return shardFriOpenings(collectFriOpenings(proof)).map(encodeFriBatchUnlocking);
+export function friShardUnlockings(
+  proof: Uint8Array | FriProof,
+  opts?: { allPairGroups?: boolean },
+): Uint8Array[] {
+  return shardFriOpenings(collectFriOpenings(proof)).map((s) => encodeFriBatchUnlocking(s, opts));
 }
 
 /**

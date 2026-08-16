@@ -57,7 +57,7 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
   }
   lines.push(`<${1 + FRI_KERNEL_INPUTS}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
   for (let f = 0; f < foldN; f += 1) {
-    const foldHex = binToHex(compileFoldLockP2sh32(1, 1 + f));
+    const foldHex = binToHex(compileFoldLockP2sh32(1, f));
     lines.push(
       `<${2 + FRI_KERNEL_INPUTS + f}>`,
       "OP_UTXOBYTECODE",

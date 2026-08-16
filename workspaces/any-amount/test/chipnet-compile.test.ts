@@ -15,7 +15,7 @@ import { compileNoteMerkleWalk } from "../src/chain/note-merkle.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
 import { encodeAirPacked, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
 import { FOLD_KERNEL_COUNT_CONSENSUS, foldKernelCount } from "../src/chain/fold-kernel.ts";
-import { evaluateBch2026, evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
+import { evaluateBch2026, evaluatePoolSuccessorVm, evaluateWrongFoldIndex } from "../src/chain/vm-verifier.ts";
 
 describe("covenant five-point compile", () => {
   it("signs P2S and P2SH32 genesis plus a P2SH32 successor under envelope limits", () => {
@@ -165,6 +165,30 @@ describe("covenant five-point compile", () => {
     assert.equal(vm.accepted, true, vm.error ?? "honest 36-slot successor must VM-accept");
     assert.ok(vm.unlockingBytes <= 10_000);
     assert.equal(foldKernelCount(SLOT_KERNEL_COUNT_CONSENSUS), FOLD_KERNEL_COUNT_CONSENSUS);
-    assert.equal(FOLD_KERNEL_COUNT_CONSENSUS, 10);
+    assert.equal(FOLD_KERNEL_COUNT_CONSENSUS, 36);
+  });
+
+  it("wrong FS index on folded query 10 is rejected on the 36-fold lock", () => {
+    const note: Note = {
+      amountSats: 10_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
+    const bad = evaluateWrongFoldIndex({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+      queryIndex: 10,
+      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+      standard: false,
+    });
+    assert.equal(bad.accepted, false, "query-10 wrong index must fail on 36-fold lock");
   });
 });

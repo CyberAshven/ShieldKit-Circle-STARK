@@ -23,6 +23,7 @@ import {
 } from "./chain/covenant-spend.ts";
 import { encodePublicPaa1 } from "./pool/state.ts";
 import { FRI_KERNEL_INPUTS } from "./chain/fri-kernel.ts";
+import { foldKernelCount } from "./chain/fold-kernel.ts";
 import { proofShardReport } from "./chain/fri-openings.ts";
 import { broadcast, connectChipnet, listUnspent } from "./chain/electrum.ts";
 import { binToHex, hexToBin } from "@bitauth/libauth";
@@ -404,6 +405,8 @@ async function main(): Promise<void> {
       consensusTxLimit: 1_000_000,
       slotKernelsStandard: SLOT_KERNEL_COUNT,
       slotKernelsConsensus: SLOT_KERNEL_COUNT_CONSENSUS,
+      foldKernelsStandard: foldKernelCount(SLOT_KERNEL_COUNT),
+      foldKernelsConsensus: foldKernelCount(SLOT_KERNEL_COUNT_CONSENSUS),
       consensusSuccessor: { txBytes: cons.txBytes, unlockingBytes: cons.unlockingBytes },
       genesisP2sh32: {
         txBytes: sizes.genesisP2sh32.txBytes,

@@ -37,8 +37,8 @@ The continuing lock is five-point **plus** required kernel inputs. Standard
 6-slot path: inputs 1..10 SHA-256 paired-Merkle FRI at FRI_N path depth,
 input 11 bind-T, input 12 Circle fold (1 query), inputs 13..18 slot `C=Q·Z`
 (plus a fee input). Consensus 36-slot path: same 10 Merkle + bind-T, then
-**10** fold kernels (shards 0–9) and **36** slot kernels (59 inputs including
-fee on the landed 301279 B tx). Unlocking of the pool input is the packed AIR
+**36** fold kernels (one per FS query) and **36** slot kernels (measured
+382203 B compile). Prior Chipnet 10-fold land was 59 inputs / 301279 B. Unlocking of the pool input is the packed AIR
 (FS digest + public PAA1) plus redeem — not spent-leaf/rho/owner/`publicAmountSats`.
 A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Recursion
 is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount output.
