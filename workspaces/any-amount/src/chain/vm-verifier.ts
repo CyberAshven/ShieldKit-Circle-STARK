@@ -52,7 +52,6 @@ import {
   p2sh32Unlocking,
   poolLockP2sh32,
   pushData,
-  walkWitnessFromAuth,
 } from "./covenant-p2s.ts";
 import { encodePublicPaa1, STATE_BASE_SATS, type AnyAmountState } from "../pool/state.ts";
 import type { PoolStatement } from "../pool/statement.ts";
@@ -242,10 +241,7 @@ export function evaluatePoolSuccessorVm(args: {
   const decoded = decodeFriProof(args.proof);
   const prefix = args.airPacked
     ?? (args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots);
-  const poolUnlock = p2sh32Unlocking(
-    walkWitnessFromAuth(decoded.auth, args.oldState.noteRoot, args.newState.noteRoot),
-    prefix,
-  );
+  const poolUnlock = p2sh32Unlocking(undefined, prefix);
   const transaction = {
     version: 2,
     locktime: 0,

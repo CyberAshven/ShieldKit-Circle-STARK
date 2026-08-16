@@ -68,7 +68,8 @@ describe("covenant five-point compile", () => {
       statement: w.statement,
       lockKind: "p2sh32",
     });
-    assert.ok(Buffer.from(measured.raw).toString("hex").includes("5041413153544d54"), "successor must embed packed PAA1STMT");
+    assert.ok(Buffer.from(measured.raw).toString("hex").includes("50414131"), "successor must embed public PAA1");
+    assert.equal(Buffer.from(measured.raw).toString("hex").includes("5041413153544d54"), false, "full PAA1STMT preimage stays off the unlocking");
     assert.ok(measured.txBytes <= 100_000);
     assert.ok(measured.unlockingBytes <= 10_000);
   });

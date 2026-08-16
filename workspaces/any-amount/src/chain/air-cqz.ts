@@ -11,6 +11,7 @@
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { encodeStatement, type PoolStatement } from "../pool/statement.ts";
+import { encodePublicPaa1 } from "../pool/state.ts";
 import { concatBytes, sha256, writeU32BE } from "../pool/bytes.ts";
 import { airQuotientLde, publicCells } from "../backends/circle/air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
@@ -29,6 +30,10 @@ export const AIR_OFF_EVEN = 260;
 export const AIR_OFF_ODD = 392;
 export const AIR_OFF_STMT = 524;
 export const AIR_STMT_LEN = 433;
+/** sha256(encodeStatement) — FS digest, not the statement preimage. */
+export const AIR_OFF_DIGEST = AIR_OFF_STMT;
+export const AIR_OFF_PUB_OLD = AIR_OFF_STMT + 32;
+export const AIR_OFF_PUB_NEW = AIR_OFF_STMT + 32 + 128;
 export const AIR_OFF_QTABLE = 957;
 export const AIR_OFF_IDX = 1101;
 export const AIR_OFF_CELLS = 1173;
@@ -263,9 +268,9 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
   while (odd.length < AIR_NEWTON_FELTS) odd.push(0n);
   packed.set(encodeFeltBlob(even.slice(0, AIR_NEWTON_FELTS)), AIR_OFF_EVEN);
   packed.set(encodeFeltBlob(odd.slice(0, AIR_NEWTON_FELTS)), AIR_OFF_ODD);
-  const stmt = encodeStatement(statement);
-  if (stmt.length !== AIR_STMT_LEN) throw new Error(`statement ${stmt.length} != ${AIR_STMT_LEN}`);
-  packed.set(stmt, AIR_OFF_STMT);
+  packed.set(digest, AIR_OFF_DIGEST);
+  packed.set(encodePublicPaa1(statement.oldState), AIR_OFF_PUB_OLD);
+  packed.set(encodePublicPaa1(statement.newState), AIR_OFF_PUB_NEW);
   const qIdx = fiatShamirQueryIndices(digest, p);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     packed.set(encodeLe(qLde[qIdx[s]!]!), AIR_OFF_QTABLE + s * 4);
@@ -446,13 +451,9 @@ export function compileCheckAirLock(): Uint8Array {
 export function packedMagicAsm(): string {
   return `
 OP_DUP
-<${AIR_OFF_STMT}> OP_SPLIT OP_NIP
-<4> OP_SPLIT
-OP_SWAP
+<${AIR_OFF_PUB_OLD}> OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
 <0x50414131> OP_EQUALVERIFY
-<4> OP_SPLIT
-OP_DROP
-<0x53544d54> OP_EQUALVERIFY
 `;
 }
 
@@ -520,32 +521,32 @@ ${M31_ADD}
 `;
 }
 
-/** Packed new/old noteRoot+seq must match pool NFT (input 0 / output 0). */
+/** Packed public PAA1 noteRoot+seq must match pool NFT (input 0 / output 0). */
 export function bindPackedStmtToPaa1Asm(): string {
   return `
 OP_DUP
-<${AIR_OFF_STMT + 145 + 64}> OP_SPLIT OP_NIP
+<${AIR_OFF_PUB_NEW + 64}> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP
 <0> OP_OUTPUTTOKENCOMMITMENT
 <64> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP
 OP_EQUALVERIFY
 OP_DUP
-<${AIR_OFF_STMT + 17 + 64}> OP_SPLIT OP_NIP
+<${AIR_OFF_PUB_OLD + 64}> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP
 <0> OP_UTXOTOKENCOMMITMENT
 <64> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP
 OP_EQUALVERIFY
 OP_DUP
-<${AIR_OFF_STMT + 145 + 8}> OP_SPLIT OP_NIP
+<${AIR_OFF_PUB_NEW + 8}> OP_SPLIT OP_NIP
 <8> OP_SPLIT OP_DROP
 <0> OP_OUTPUTTOKENCOMMITMENT
 <8> OP_SPLIT OP_NIP
 <8> OP_SPLIT OP_DROP
 OP_EQUALVERIFY
 OP_DUP
-<${AIR_OFF_STMT + 17 + 8}> OP_SPLIT OP_NIP
+<${AIR_OFF_PUB_OLD + 8}> OP_SPLIT OP_NIP
 <8> OP_SPLIT OP_DROP
 <0> OP_UTXOTOKENCOMMITMENT
 <8> OP_SPLIT OP_NIP
@@ -558,9 +559,8 @@ OP_EQUALVERIFY
 export function fsIndex0Asm(): string {
   return `
 OP_DUP
-<${AIR_OFF_STMT}> OP_SPLIT OP_NIP
-<${AIR_STMT_LEN}> OP_SPLIT OP_DROP
-OP_SHA256
+<${AIR_OFF_DIGEST}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
 OP_OVER
 <${AIR_OFF_TRACE}> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP
@@ -611,9 +611,7 @@ OP_DUP
 OP_BIN2NUM
 OP_TOALTSTACK
 OP_DUP
-<${AIR_OFF_STMT + 8}> OP_SPLIT OP_NIP
-<1> OP_SPLIT OP_DROP
-OP_BIN2NUM
+${extractCellAsm(3)}
 OP_TOALTSTACK
 OP_DUP
 <${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
@@ -815,57 +813,11 @@ OP_NUMEQUALVERIFY
 `;
 }
 
-/** Stack: packed → packed. AIR cells match statement fields. */
+/** Stack: packed → packed. Sequence cells match public PAA1 (amounts stay in verifyFri). */
 export function bindCellsToStatementAsm(): string {
-  const stmtOld = AIR_OFF_STMT + 17;
-  const stmtNew = AIR_OFF_STMT + 145;
   return `
-OP_DUP
-${extractCellAsm(3)}
-OP_OVER
-<${AIR_OFF_STMT + 8}> OP_SPLIT OP_NIP
-<1> OP_SPLIT OP_DROP
-OP_BIN2NUM
-OP_NUMEQUALVERIFY
-${eqCellToStmtU64Asm(0, stmtOld + 16)}
-${eqCellToStmtU64Asm(1, stmtNew + 16)}
-${eqCellToStmtU64Asm(23, stmtOld + 8)}
-${eqCellToStmtU64Asm(24, stmtNew + 8)}
-OP_DUP
-${extractCellAsm(2)}
-OP_OVER
-<${AIR_OFF_STMT + 8}> OP_SPLIT OP_NIP
-<1> OP_SPLIT OP_DROP
-OP_BIN2NUM
-OP_2 OP_PICK
-<${AIR_OFF_STMT + 9}> OP_SPLIT OP_NIP
-<8> OP_SPLIT OP_DROP
-OP_TOALTSTACK
-OP_1
-OP_NUMEQUAL
-OP_IF
-  OP_FROMALTSTACK
-  ${be8ModPAsm()}
-OP_ELSE
-  OP_FROMALTSTACK
-  ${be8UnsignedAsm()}
-  <18446744073709551616>
-  OP_SWAP
-  OP_SUB
-  <2147483647> OP_MOD
-OP_ENDIF
-OP_NUMEQUALVERIFY
-OP_DUP
-${extractCellAsm(18)}
-OP_OVER
-<${AIR_OFF_STMT}> OP_SPLIT OP_NIP
-<${AIR_STMT_LEN}> OP_SPLIT OP_DROP
-OP_SHA256
-<4> OP_SPLIT OP_DROP
-<0x00> OP_CAT
-OP_BIN2NUM
-<2147483647> OP_MOD
-OP_NUMEQUALVERIFY
+${eqCellToStmtU64Asm(23, AIR_OFF_PUB_OLD + 8)}
+${eqCellToStmtU64Asm(24, AIR_OFF_PUB_NEW + 8)}
 `;
 }
 
@@ -1032,9 +984,7 @@ ${bindCellsToStatementAsm()}
 OP_FROMALTSTACK
 OP_FROMALTSTACK
 OP_OVER
-<${AIR_OFF_STMT + 8}> OP_SPLIT OP_NIP
-<1> OP_SPLIT OP_DROP
-OP_BIN2NUM
+${extractCellAsm(3)}
 <0>
 OP_BEGIN
   OP_DUP

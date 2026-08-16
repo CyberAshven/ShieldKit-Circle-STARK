@@ -1,11 +1,64 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { decodeTransaction } from "@bitauth/libauth";
 import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
-import { wDeposit } from "../src/backends/circle/fri.ts";
+import { decodeFriProof, wDeposit } from "../src/backends/circle/fri.ts";
 import { applyAggregate, applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "../src/pool/mix-successor.ts";
 import { IncrementalMerkle, NullifierSet, commitNote, type Note } from "../src/pool/notes.ts";
 import { emptyState } from "../src/pool/state.ts";
+import { writeI64BE, writeU64BE } from "../src/pool/bytes.ts";
+import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
+import { createLabWallet } from "../src/chain/wallet.ts";
+import { encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { AIR_PACKED_SIZE } from "../src/chain/air-cqz.ts";
+
+function parsePushes(script: Uint8Array): Uint8Array[] {
+  const out: Uint8Array[] = [];
+  let i = 0;
+  while (i < script.length) {
+    const op = script[i]!;
+    if (op === 0) {
+      out.push(new Uint8Array());
+      i += 1;
+      continue;
+    }
+    if (op >= 1 && op <= 75) {
+      out.push(script.slice(i + 1, i + 1 + op));
+      i += 1 + op;
+      continue;
+    }
+    if (op === 0x4c) {
+      const n = script[i + 1]!;
+      out.push(script.slice(i + 2, i + 2 + n));
+      i += 2 + n;
+      continue;
+    }
+    if (op === 0x4d) {
+      const n = script[i + 1]! + (script[i + 2]! << 8);
+      out.push(script.slice(i + 3, i + 3 + n));
+      i += 3 + n;
+      continue;
+    }
+    if (op >= 0x4f && op <= 0x60) {
+      i += 1;
+      continue;
+    }
+    i += 1;
+  }
+  return out;
+}
+
+function containsBytes(hay: Uint8Array, needle: Uint8Array): boolean {
+  if (needle.length === 0) return false;
+  outer: for (let i = 0; i + needle.length <= hay.length; i += 1) {
+    for (let j = 0; j < needle.length; j += 1) {
+      if (hay[i + j] !== needle[j]) continue outer;
+    }
+    return true;
+  }
+  return false;
+}
 
 function rnd32(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(32));
@@ -65,5 +118,50 @@ describe("pool e2e mix", () => {
     const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
     assert.ok(mixChangedRootsAndReserve(mix));
     assert.equal(circleFriPlugin.verify(mix.statement, mix.proof).ok, true);
+
+    const spent = decodeFriProof(mix.proof).auth;
+    const measured = compileCovenantSuccessor({
+      wallet: createLabWallet(),
+      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 250_000 },
+      pool: {
+        tx_hash: "11".repeat(32),
+        tx_pos: 0,
+        value: Number(STATE_BASE_SATS),
+        category: new Uint8Array(32).fill(0x11),
+        commitment: encodePublicPaa1(mix.statement.oldState),
+      },
+      newState: mix.statement.newState,
+      proof: mix.proof,
+      statement: mix.statement,
+      lockKind: "p2sh32",
+    });
+    const tx = decodeTransaction(measured.raw);
+    if (typeof tx === "string") throw new Error(tx);
+    const unlocking = tx.inputs[0]!.unlockingBytecode;
+    const pushes = parsePushes(unlocking);
+    assert.equal(pushes.length, 2, "unlocking is packed AIR + redeem only");
+    assert.equal(pushes[0]!.length, AIR_PACKED_SIZE);
+    assert.equal(containsBytes(unlocking, spent.leaf), false, "spent leaf must not appear");
+    assert.equal(containsBytes(unlocking, spent.rho), false, "rho must not appear");
+    assert.equal(containsBytes(unlocking, spent.owner), false, "owner must not appear");
+    assert.equal(containsBytes(unlocking, spent.nullifier), false, "nullifier stays in verifyFri");
+    for (const sib of spent.path) {
+      assert.equal(containsBytes(unlocking, sib), false, "spent merkle path must not appear");
+    }
+    assert.equal(
+      containsBytes(unlocking, writeI64BE(mix.statement.publicAmountSats)),
+      false,
+      "publicAmountSats must not appear",
+    );
+    assert.equal(
+      containsBytes(unlocking, writeU64BE(mix.statement.oldState.reserveSats)),
+      false,
+      "old reserve u64 must not appear",
+    );
+    assert.equal(
+      containsBytes(unlocking, writeU64BE(mix.statement.newState.reserveSats)),
+      false,
+      "new reserve u64 must not appear",
+    );
   });
 });

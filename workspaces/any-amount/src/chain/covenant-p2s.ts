@@ -4,13 +4,8 @@ import { encodeLayerRootsPrefix } from "./fri-openings.ts";
 import { AIR_PACKED_SIZE, compileCqzLockP2sh32, compileSlotsLockP2sh32, SLOT_KERNEL_COUNT } from "./air-cqz.ts";
 import {
   EXTRACT_INSTANCE,
-  EXTRACT_NF_ROOT,
-  EXTRACT_NOTE_ROOT,
   EXTRACT_RESERVE_NUM,
   EXTRACT_SEQ_NUM,
-  NOTE_MERKLE_WALK,
-  SPENT_NOTE_PREIMAGE,
-  ZERO32_ASM,
   encodeWalkSteps,
 } from "./note-merkle.ts";
 import { STATE_BASE_SATS } from "../pool/state.ts";
@@ -25,10 +20,8 @@ import { STATE_BASE_SATS } from "../pool/state.ts";
  *
  * Output-0's 128-byte PAA1 is bound: instance id, noteRoot (equal or
  * incremental append), nullifierRoot (equal or SHA-256(old||nf)).
- * Unlocking: <layerRoot>×7 <walkLeaf> <walkSteps> <nf> <amount> <rho> <owner>
- * <amountCommit> <spentLeaf> <spentSteps> [<redeem>].
- * Kernels read those 7 roots from input-0 unlocking; they are not spender-pushed
- * on the kernel itself. The lock drops them after BIND so the stack is clean.
+ * Unlocking: <packed AIR 1600> [<redeem>]. Membership, nullifier, and note
+ * preimage stay inside verifyFri — they are not published on the successor.
  */
 export const FIVE_POINT_PAA1 = `
 OP_0 OP_OUTPUTBYTECODE
@@ -76,14 +69,8 @@ function requireFriInputsAsm(): string {
 /** Inputs 1..FRI_KERNEL_INPUTS must be the batch FRI kernel. Extra fee inputs may follow. */
 export const REQUIRE_FRI_INPUTS = requireFriInputsAsm();
 
-/** Bind new PAA1 fields to old cell + unlocking membership/nullifier preimage. */
+/** Bind new PAA1 cell. Membership/nullifier are verifyFri, not unlocking preimages. */
 export const BIND_PAA1 = `
-OP_TOALTSTACK
-OP_TOALTSTACK
-OP_TOALTSTACK
-OP_TOALTSTACK
-OP_TOALTSTACK
-OP_TOALTSTACK
 OP_INPUTINDEX OP_UTXOTOKENCOMMITMENT
 OP_SIZE <128> OP_EQUALVERIFY
 OP_DROP
@@ -92,62 +79,6 @@ ${EXTRACT_INSTANCE}
 OP_0 OP_OUTPUTTOKENCOMMITMENT
 ${EXTRACT_INSTANCE}
 OP_EQUALVERIFY
-OP_TOALTSTACK
-OP_INPUTINDEX OP_UTXOTOKENCOMMITMENT
-${EXTRACT_NOTE_ROOT}
-OP_0 OP_OUTPUTTOKENCOMMITMENT
-${EXTRACT_NOTE_ROOT}
-OP_2DUP
-OP_EQUAL
-OP_IF
-  OP_DROP
-  OP_TOALTSTACK
-  ${NOTE_MERKLE_WALK}
-  OP_FROMALTSTACK
-  OP_EQUALVERIFY
-OP_ELSE
-  OP_TOALTSTACK
-  OP_TOALTSTACK
-  OP_2DUP
-  ${NOTE_MERKLE_WALK}
-  OP_FROMALTSTACK
-  OP_FROMALTSTACK
-  OP_ROT
-  OP_EQUALVERIFY
-  OP_TOALTSTACK
-  OP_NIP
-  ${ZERO32_ASM}
-  OP_SWAP
-  ${NOTE_MERKLE_WALK}
-  OP_FROMALTSTACK
-  OP_EQUALVERIFY
-OP_ENDIF
-OP_FROMALTSTACK
-OP_DUP
-OP_TOALTSTACK
-OP_INPUTINDEX OP_UTXOTOKENCOMMITMENT
-${EXTRACT_NF_ROOT}
-OP_0 OP_OUTPUTTOKENCOMMITMENT
-${EXTRACT_NF_ROOT}
-OP_2DUP
-OP_EQUAL
-OP_IF
-  OP_2DROP
-  ${ZERO32_ASM}
-  OP_EQUALVERIFY
-OP_ELSE
-  OP_TOALTSTACK
-  OP_SWAP
-  OP_CAT
-  OP_SHA256
-  OP_FROMALTSTACK
-  OP_EQUALVERIFY
-OP_ENDIF
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_SWAP
-OP_TOALTSTACK
-OP_TOALTSTACK
 OP_INPUTINDEX OP_UTXOTOKENCOMMITMENT
 ${EXTRACT_SEQ_NUM}
 <1> OP_ADD
@@ -168,33 +99,6 @@ OP_NUMEQUALVERIFY
 OP_0 OP_OUTPUTVALUE
 <${Number(STATE_BASE_SATS)}>
 OP_NUMEQUALVERIFY
-OP_FROMALTSTACK
-OP_DROP
-OP_FROMALTSTACK
-OP_DUP
-${ZERO32_ASM}
-OP_EQUAL
-OP_IF
-  OP_DROP
-  OP_FROMALTSTACK OP_DROP
-  OP_FROMALTSTACK OP_DROP
-  OP_FROMALTSTACK OP_DROP
-  OP_FROMALTSTACK OP_DROP
-  OP_FROMALTSTACK OP_DROP
-OP_ELSE
-  OP_FROMALTSTACK
-  OP_INPUTINDEX OP_UTXOTOKENCOMMITMENT
-  ${EXTRACT_INSTANCE}
-  OP_SWAP
-  OP_FROMALTSTACK
-  OP_SWAP
-  OP_FROMALTSTACK
-  OP_FROMALTSTACK
-  OP_FROMALTSTACK
-  OP_INPUTINDEX OP_UTXOTOKENCOMMITMENT
-  ${EXTRACT_NOTE_ROOT}
-  ${SPENT_NOTE_PREIMAGE}
-OP_ENDIF
 OP_1
 `;
 

@@ -48,7 +48,6 @@ import {
   p2sh32Unlocking,
   poolLockP2s,
   poolLockP2sh32,
-  walkWitnessFromAuth,
 } from "./covenant-p2s.ts";
 import { decodeFriProof } from "../backends/circle/fri.ts";
 import { decodeState } from "../pool/state.ts";
@@ -207,10 +206,8 @@ export function compileCovenantSuccessor(args: {
   const commitment = encodePublicPaa1(args.newState);
   const oldState = decodeState(args.pool.commitment);
   const decoded = decodeFriProof(args.proof);
-  const wit = walkWitnessFromAuth(decoded.auth, oldState.noteRoot, args.newState.noteRoot);
   const packed = args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots;
-  const unlocking =
-    lockKind === "p2s" ? p2sUnlocking(wit, packed) : p2sh32Unlocking(wit, packed);
+  const unlocking = lockKind === "p2s" ? p2sUnlocking(undefined, packed) : p2sh32Unlocking(undefined, packed);
   const shards = friShardUnlockings(args.proof);
   const dummy = "44".repeat(32);
   const kernels = args.kernelUtxos ??
