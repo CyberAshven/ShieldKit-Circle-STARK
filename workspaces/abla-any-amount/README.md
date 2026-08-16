@@ -10,7 +10,7 @@ size gate. This workspace is the product profile: one set, any amount.
 | --- | --- |
 | Plugin ABI `Verify(family, vk, statement, proof)` | Live (TypeScript) |
 | `hash-lab-v0` backend | Live. Merkle notes **off-chain**; covenant is a **lab-gated conservation cell**. **Not private.** |
-| `circle-fri-m31` backend | Live math: M31 + circle group + one FRI fold. **`verify` refuses.** Not a sound STARK. |
+| `circle-fri-m31` backend | Live prove/verify: M31 + circle domain + fold + Merkle + 8 queries. **`sound: false`** (n=32). Not a 128-bit STARK. |
 | CashToken 128-byte `PAA1` state + 5-point successor | Live in libauth 2026 VM tests |
 | Chipnet genesis / deposit | Attempted by `pool create` / `pool deposit` when a faucet-funded lab wallet exists |
 | Hidden amounts / confidential assets | **Not built.** `public_amount` is visible. |
@@ -45,4 +45,4 @@ Wallet files stay under `.local/` (gitignored). Never pass a seed on the command
 ## Plugins
 
 - `hash-lab-v0` — SHA-256 note commitments + incremental Merkle. Lab only.
-- `circle-fri-m31` — group + fold. Prove/verify throw `CIRCLE_FRI_NOT_SOUND_YET`.
+- `circle-fri-m31` — M31 Circle FRI. Prove/verify run; `sound` stays false until parameters justify more.

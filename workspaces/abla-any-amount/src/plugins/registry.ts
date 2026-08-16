@@ -1,0 +1,50 @@
+import { circleFriPlugin } from "../backends/circle/plugin.ts";
+import { hashLabPlugin } from "../backends/hash-lab.ts";
+import type { ZkpPlugin } from "../pool/plugin.ts";
+
+/** Separate from ZKP. See DESIGN.md. */
+export type SidePlugin = {
+  family: string;
+  layer: "amount-hiding" | "delivery" | "key-path" | "bus";
+  requiredForPool: false;
+  status: "slot" | "lab";
+};
+
+export const pedersenAmountPlugin: SidePlugin = {
+  family: "pedersen-secp-profile",
+  layer: "amount-hiding",
+  requiredForPool: false,
+  status: "lab",
+};
+
+export const mlkemDeliveryPlugin: SidePlugin = {
+  family: "ml-kem-768",
+  layer: "delivery",
+  requiredForPool: false,
+  status: "slot",
+};
+
+export const quantumrootKeyPath: SidePlugin = {
+  family: "quantumroot-lmots",
+  layer: "key-path",
+  requiredForPool: false,
+  status: "slot",
+};
+
+export const nostrBusPlugin: SidePlugin = {
+  family: "nostr-nip44-59-17",
+  layer: "bus",
+  requiredForPool: false,
+  status: "lab",
+};
+
+export const zkpPlugins: ZkpPlugin[] = [circleFriPlugin, hashLabPlugin];
+
+export function describePlugins(): unknown {
+  return {
+    covenant: "P2S (2026) / P2SH32 (P1 shells) — not P2PKH",
+    userLock: "P2PKH today; Quantumroot later",
+    zkp: zkpPlugins.map((p) => ({ family: p.family, sound: p.sound, vkId: p.vkId })),
+    side: [pedersenAmountPlugin, mlkemDeliveryPlugin, quantumrootKeyPath, nostrBusPlugin],
+  };
+}

@@ -7,7 +7,10 @@
   "scripts": {
     "test": "tsx --test test/*.test.ts",
     "cli": "tsx src/cli.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "rust:test": "cargo test --manifest-path crates/circle-fri-worker/Cargo.toml",
+    "rust:prove": "cargo run --quiet --manifest-path crates/circle-fri-worker/Cargo.toml",
+    "rust:xcheck": "tsx scripts/rust-xcheck.ts"
   },
   "engines": {
     "node": ">=20.10"

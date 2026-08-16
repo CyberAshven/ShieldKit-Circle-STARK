@@ -65,3 +65,25 @@ export function sha256(data: Uint8Array): Uint8Array {
 }
 
 export const ZERO32 = new Uint8Array(32);
+
+export function writeU256BE(value: bigint): Uint8Array {
+  if (value < 0n) throw new Error("u256 negative");
+  const out = new Uint8Array(32);
+  let n = value;
+  for (let i = 31; i >= 0; i -= 1) {
+    out[i] = Number(n & 0xffn);
+    n >>= 8n;
+  }
+  return out;
+}
+
+export function readU256BE(bytes: Uint8Array): bigint {
+  if (bytes.length !== 32) throw new Error("u256 width");
+  let n = 0n;
+  for (const b of bytes) n = (n << 8n) | BigInt(b);
+  return n;
+}
+
+export function isZero32(bytes: Uint8Array): boolean {
+  return bytes.length === 32 && bytes.every((b) => b === 0);
+}

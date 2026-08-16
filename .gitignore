@@ -23,3 +23,4 @@ research-lanes/bch-shielded-pool-design/sources/telegram-2026-07-29/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+**/target/

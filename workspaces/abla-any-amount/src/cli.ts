@@ -11,6 +11,11 @@ import { emptyState } from "./pool/state.ts";
 import { applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition.ts";
 import { announceEvent, newRoundKey } from "./nostr/bus.ts";
 import { torStatus } from "./nostr/tor.ts";
+import { describePlugins } from "./plugins/registry.ts";
+import { sendMany } from "./chain/send.ts";
+import { mkdir } from "node:fs/promises";
+import { broadcastCovenantGenesis, measureGenesisAndSuccessor } from "./chain/covenant-spend.ts";
+import { encodeFriProof, proveFri, proofByteLength } from "./backends/circle/fri.ts";
 
 const help = `abla-pool — Chipnet any-amount lab (ZKP-agnostic)
 
@@ -22,8 +27,12 @@ const help = `abla-pool — Chipnet any-amount lab (ZKP-agnostic)
   pool deposit --sats N   any-amount deposit (off-chain machine + plugin)
   pool withdraw --sats N  partial withdraw
   pool chipnet-marker     broadcast PAA1 OP_RETURN (needs faucet coins)
+  pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
+  pool measure-tx         compile genesis+successor, print byte counts
   serve                   localhost:17432 for the OPTN addon
-  lab demo --wallets K    sequential rehearsal (no seeds on argv)
+  lab demo --wallets K    sequential rehearsal + Circle FRI prove/verify
+  bench                   time prove/verify, print proof bytes
+  fund-wallets --count N  Chipnet fan-out from the funded lab UTXO
   status                  honest capability dump
 
 Seeds: never pass a mnemonic here. Import stays a future hidden prompt.
@@ -48,12 +57,14 @@ function machinePath(): string {
   return join(process.cwd(), ".local", "machine.json");
 }
 
-async function loadMachine(): Promise<{ machine: PoolMachine; notes: Note[] }> {
+type HeldNote = { note: Note; index: number };
+
+async function loadMachine(): Promise<{ machine: PoolMachine; notes: HeldNote[] }> {
   const { readFile } = await import("node:fs/promises");
   const raw = JSON.parse(await readFile(machinePath(), "utf8")) as {
     state: ReturnType<typeof emptyState>;
     leaves: string[];
-    notebook: Array<{ amountSats: string; rho: string; ownerSecret: string }>;
+    notebook: Array<{ amountSats: string; rho: string; ownerSecret: string; index?: number }>;
     nullifiers: string[];
     instance: string;
   };
@@ -61,10 +72,13 @@ async function loadMachine(): Promise<{ machine: PoolMachine; notes: Note[] }> {
   for (const leaf of raw.leaves) notes.leaves.push(Buffer.from(leaf, "hex"));
   const nullifiers = new NullifierSet();
   for (const n of raw.nullifiers) nullifiers.items.push(Buffer.from(n, "hex"));
-  const notebook: Note[] = raw.notebook.map((n) => ({
-    amountSats: BigInt(n.amountSats),
-    rho: Buffer.from(n.rho, "hex"),
-    ownerSecret: Buffer.from(n.ownerSecret, "hex"),
+  const notebook: HeldNote[] = raw.notebook.map((n, i) => ({
+    note: {
+      amountSats: BigInt(n.amountSats),
+      rho: Buffer.from(n.rho, "hex"),
+      ownerSecret: Buffer.from(n.ownerSecret, "hex"),
+    },
+    index: n.index ?? i,
   }));
   return {
     machine: {
@@ -85,7 +99,7 @@ async function loadMachine(): Promise<{ machine: PoolMachine; notes: Note[] }> {
   };
 }
 
-async function saveMachine(machine: PoolMachine, notebook: Note[]): Promise<void> {
+async function saveMachine(machine: PoolMachine, notebook: HeldNote[]): Promise<void> {
   const body = {
     instance: Buffer.from(machine.state.poolInstanceId).toString("hex"),
     state: {
@@ -100,10 +114,11 @@ async function saveMachine(machine: PoolMachine, notebook: Note[]): Promise<void
     },
     leaves: machine.notes.leaves.map((l) => Buffer.from(l).toString("hex")),
     nullifiers: machine.nullifiers.items.map((n) => Buffer.from(n).toString("hex")),
-    notebook: notebook.map((n) => ({
-      amountSats: n.amountSats.toString(),
-      rho: Buffer.from(n.rho).toString("hex"),
-      ownerSecret: Buffer.from(n.ownerSecret).toString("hex"),
+    notebook: notebook.map((h) => ({
+      amountSats: h.note.amountSats.toString(),
+      rho: Buffer.from(h.note.rho).toString("hex"),
+      ownerSecret: Buffer.from(h.note.ownerSecret).toString("hex"),
+      index: h.index,
     })),
   };
   await writeFile(machinePath(), JSON.stringify(body, null, 2));
@@ -120,14 +135,14 @@ async function main(): Promise<void> {
       JSON.stringify(
         {
           profile: "any-amount-v0",
-          plugins: [
-            { family: hashLabPlugin.family, sound: hashLabPlugin.sound },
-            { family: circleFriPlugin.family, sound: circleFriPlugin.sound },
-          ],
+          pluginFamily: circleFriPlugin.family,
+          vkId: circleFriPlugin.vkId,
+          sound: circleFriPlugin.sound,
+          proveVerify: "circle-fri-m31 prove/verify shipped (bench n=32 q=8)",
+          covenant: "P2S (2026) / P2SH32 (P1 shells) — not P2PKH",
+          design: describePlugins(),
           tor: torStatus("optional"),
           chipnet: "wss://chipnet.imaginary.cash:50004",
-          honest:
-            "Circle FRI verify refuses. On-chain spend is a lab conservation cell, not a sound shielded withdraw.",
         },
         null,
         2,
@@ -186,30 +201,26 @@ async function main(): Promise<void> {
       ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
     };
     const d = applyDeposit(loaded.machine, note);
-    const proof = await hashLabPlugin.prove(d.statement, {});
-    const v = hashLabPlugin.verify(d.statement, proof);
+    const proof = await circleFriPlugin.prove(d.statement, {});
+    const v = circleFriPlugin.verify(d.statement, proof);
     if (!v.ok) throw new Error(v.reason);
-    loaded.notes.push(note);
+    loaded.notes.push({ note, index: d.index });
     await saveMachine(d.machine, loaded.notes);
-    console.log(`deposit ${sats} reserve=${d.machine.state.reserveSats} plugin=${hashLabPlugin.family}`);
+    console.log(`deposit ${sats} reserve=${d.machine.state.reserveSats} plugin=${circleFriPlugin.family} proofBytes=${proof.length}`);
     return;
   }
   if (cmd === "pool" && process.argv[3] === "withdraw") {
     const sats = BigInt(arg("--sats"));
     const loaded = await loadMachine();
-    const note = loaded.notes.find((n) => n.amountSats >= sats);
-    if (!note) throw new Error("no note covers that amount");
-    const index = loaded.notes.indexOf(note);
-    const w = applyWithdraw(loaded.machine, note, index, new Uint8Array(32), sats);
-    const proof = await hashLabPlugin.prove(w.statement, {
-      index,
-      leaf: (await import("./pool/notes.ts")).commitNote(note),
-      path: loaded.machine.notes.authPath(index),
-    });
-    const v = hashLabPlugin.verify(w.statement, proof);
+    const held = loaded.notes.find((n) => n.note.amountSats >= sats);
+    if (!held) throw new Error("no note covers that amount");
+    const w = applyWithdraw(loaded.machine, held.note, held.index, new Uint8Array(32), sats);
+    const proof = await circleFriPlugin.prove(w.statement, {});
+    const v = circleFriPlugin.verify(w.statement, proof);
     if (!v.ok) throw new Error(v.reason);
-    loaded.notes[index] = w.change ?? { ...note, amountSats: 0n };
-    await saveMachine(w.machine, loaded.notes.filter((n) => n.amountSats > 0n));
+    const next = loaded.notes.filter((n) => n.index !== held.index);
+    if (w.change && w.changeIndex !== undefined) next.push({ note: w.change, index: w.changeIndex });
+    await saveMachine(w.machine, next);
     console.log(`withdraw ${sats} reserve=${w.machine.state.reserveSats}`);
     return;
   }
@@ -229,14 +240,152 @@ async function main(): Promise<void> {
         ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
       };
       const d = applyDeposit(machine, note);
+      const proof = await circleFriPlugin.prove(d.statement, {});
+      const v = circleFriPlugin.verify(d.statement, proof);
+      if (!v.ok) throw new Error(`deposit proof: ${v.reason}`);
       machine = d.machine;
       held.push({ note, index: d.index });
     }
-    for (const h of held.reverse()) {
+    const afterPartial: Array<{ note: Note; index: number }> = [];
+    for (const h of held) {
+      const half = h.note.amountSats / 2n;
+      if (half > 0n && h.note.amountSats - half > 0n) {
+        const w = applyWithdraw(machine, h.note, h.index, new Uint8Array(32), half);
+        const proof = await circleFriPlugin.prove(w.statement, {});
+        const v = circleFriPlugin.verify(w.statement, proof);
+        if (!v.ok) throw new Error(`partial proof: ${v.reason}`);
+        if (!w.change || w.changeIndex === undefined) throw new Error("partial withdraw produced no change");
+        machine = w.machine;
+        afterPartial.push({ note: w.change, index: w.changeIndex });
+      } else {
+        afterPartial.push(h);
+      }
+    }
+    for (const h of afterPartial.reverse()) {
       const w = applyWithdraw(machine, h.note, h.index, new Uint8Array(32), h.note.amountSats);
+      const proof = await circleFriPlugin.prove(w.statement, {});
+      const v = circleFriPlugin.verify(w.statement, proof);
+      if (!v.ok) throw new Error(`withdraw proof: ${v.reason}`);
       machine = w.machine;
     }
-    console.log(`lab demo wallets=${k} finalReserve=${machine.state.reserveSats} seq=${machine.state.sequence}`);
+    console.log(
+      `lab demo wallets=${k} finalReserve=${machine.state.reserveSats} seq=${machine.state.sequence} plugin=${circleFriPlugin.family} sound=${circleFriPlugin.sound} prove=ok verify=ok`,
+    );
+    return;
+  }
+  if (cmd === "bench") {
+    const instance = crypto.getRandomValues(new Uint8Array(32));
+    const d = applyDeposit(
+      { state: emptyState(instance), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      { amountSats: 50_000n, rho: crypto.getRandomValues(new Uint8Array(32)), ownerSecret: crypto.getRandomValues(new Uint8Array(32)) },
+    );
+    const t0 = performance.now();
+    const proof = await circleFriPlugin.prove(d.statement, {});
+    const t1 = performance.now();
+    const v = circleFriPlugin.verify(d.statement, proof);
+    const t2 = performance.now();
+    console.log(JSON.stringify({
+      family: circleFriPlugin.family,
+      sound: circleFriPlugin.sound,
+      ok: v.ok,
+      proofBytes: proof.length,
+      proveMs: +(t1 - t0).toFixed(2),
+      verifyMs: +(t2 - t1).toFixed(2),
+    }));
+    return;
+  }
+  if (cmd === "fund-wallets") {
+    const n = Number(arg("--count", "15"));
+    const funder = await wallet();
+    const dir = join(process.cwd(), ".local", "wallets");
+    await mkdir(dir, { recursive: true });
+    const pays: Array<{ address: string; sats: bigint }> = [];
+    for (let i = 1; i <= n; i += 1) {
+      const w = createLabWallet();
+      await saveLabWallet(w, join(dir, `w${i}.json`));
+      pays.push({ address: w.address, sats: 2_000_000n });
+    }
+    const txid = await sendMany(funder, pays);
+    console.log(`funded ${n} wallets 2e6 sats each tx=${txid}`);
+    console.log("https://chipnet.imaginary.cash/tx/" + txid);
+    return;
+  }
+  if (cmd === "pool" && process.argv[3] === "measure-tx") {
+    const instance = crypto.getRandomValues(new Uint8Array(32));
+    let machine: PoolMachine = {
+      state: emptyState(instance),
+      notes: new IncrementalMerkle(),
+      nullifiers: new NullifierSet(),
+    };
+    const note: Note = {
+      amountSats: 10_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(machine, note);
+    const proof = encodeFriProof(proveFri(d.statement));
+    const w = applyWithdraw(d.machine, note, d.index, new Uint8Array(32), 3_000n);
+    const sizes = measureGenesisAndSuccessor(d.machine.state, w.machine.state, proof);
+    const report = {
+      plugin: circleFriPlugin.family,
+      sound: circleFriPlugin.sound,
+      proofBytes: proofByteLength(proveFri(d.statement)),
+      unlockingLimit: 10_000,
+      txLimit: 100_000,
+      genesisP2sh32: {
+        txBytes: sizes.genesisP2sh32.txBytes,
+        unlockingBytes: sizes.genesisP2sh32.unlockingBytes,
+        lockP2sBytes: sizes.genesisP2sh32.lockP2sBytes,
+        lockP2sh32Bytes: sizes.genesisP2sh32.lockP2sh32Bytes,
+      },
+      genesisP2s: {
+        txBytes: sizes.genesisP2s.txBytes,
+        unlockingBytes: sizes.genesisP2s.unlockingBytes,
+      },
+      successorP2sh32: {
+        txBytes: sizes.successorP2sh32.txBytes,
+        unlockingBytes: sizes.successorP2sh32.unlockingBytes,
+      },
+    };
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  if (cmd === "pool" && process.argv[3] === "chipnet-covenant") {
+    const w = await wallet();
+    const instance = crypto.getRandomValues(new Uint8Array(32));
+    const note: Note = {
+      amountSats: 10_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(instance), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const proof = await circleFriPlugin.prove(d.statement, {});
+    const v = circleFriPlugin.verify(d.statement, proof);
+    if (!v.ok) throw new Error(`covenant prove: ${v.reason}`);
+    const sent = await broadcastCovenantGenesis(w, d.machine.state, proof, "p2sh32");
+    console.log(
+      JSON.stringify(
+        {
+          txid: sent.broadcast,
+          prepTxid: sent.prepTxid ?? null,
+          explorer: `https://chipnet.imaginary.cash/tx/${sent.broadcast}`,
+          plugin: circleFriPlugin.family,
+          sound: circleFriPlugin.sound,
+          lockKind: sent.lockKind,
+          txBytes: sent.txBytes,
+          unlockingBytes: sent.unlockingBytes,
+          proofBytes: sent.proofBytes,
+          proofSlotBytes: sent.proofSlotBytes,
+          lockP2sBytes: sent.lockP2sBytes,
+          lockP2sh32Bytes: sent.lockP2sh32Bytes,
+        },
+        null,
+        2,
+      ),
+    );
     return;
   }
   if (cmd === "pool" && process.argv[3] === "chipnet-marker") {

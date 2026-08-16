@@ -1,4 +1,4 @@
-import { bytesToHex, concatBytes, sha256, writeI64BE } from "./bytes.ts";
+import { bytesToHex, concatBytes, sha256, writeI64BE, writeU256BE, ZERO32 } from "./bytes.ts";
 import { encodeState, type AnyAmountState } from "./state.ts";
 
 export type ActionKind = "DEPOSIT" | "WITHDRAW";
@@ -12,6 +12,9 @@ export type PoolStatement = {
   noteCommitment: Uint8Array;
   nullifier: Uint8Array;
   payoutLockingDigest: Uint8Array;
+  /** Pedersen-style amount commits (BCR 1570), 32-byte BE scalars. */
+  amountCommitIn: Uint8Array;
+  amountCommitOut: Uint8Array;
 };
 
 export function encodeStatement(s: PoolStatement): Uint8Array {
@@ -25,6 +28,8 @@ export function encodeStatement(s: PoolStatement): Uint8Array {
     s.noteCommitment,
     s.nullifier,
     s.payoutLockingDigest,
+    s.amountCommitIn.length === 32 ? s.amountCommitIn : writeU256BE(0n),
+    s.amountCommitOut.length === 32 ? s.amountCommitOut : writeU256BE(0n),
   );
 }
 

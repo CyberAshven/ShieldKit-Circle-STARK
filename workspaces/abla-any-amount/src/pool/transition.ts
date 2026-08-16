@@ -1,6 +1,14 @@
-import { IncrementalMerkle, NullifierSet, commitNote, nullifierOf, type Note } from "./notes.ts";
+import { IncrementalMerkle, NullifierSet, commitNote, freshRho, nullifierOf, type Note } from "./notes.ts";
 import { type AnyAmountState } from "./state.ts";
 import type { ActionKind, PoolStatement } from "./statement.ts";
+import { commitAmount } from "../amounts/pedersen.ts";
+import { isZero32, writeU256BE, ZERO32 } from "./bytes.ts";
+
+function blindOf(note: Note): bigint {
+  let n = 0n;
+  for (const b of note.rho) n = (n << 8n) | BigInt(b);
+  return n;
+}
 
 export type PoolMachine = {
   state: AnyAmountState;
@@ -32,6 +40,8 @@ export function applyDeposit(
     noteCommitment: leaf,
     nullifier: new Uint8Array(32),
     payoutLockingDigest: new Uint8Array(32),
+    amountCommitIn: new Uint8Array(ZERO32),
+    amountCommitOut: writeU256BE(commitAmount(note.amountSats, blindOf(note))),
   };
   checkPublicTransition(statement);
   return { machine: { ...machine, state: newState }, statement, index };
@@ -43,7 +53,7 @@ export function applyWithdraw(
   index: number,
   payoutLockingDigest: Uint8Array,
   withdrawSats: bigint,
-): { machine: PoolMachine; statement: PoolStatement; change?: Note } {
+): { machine: PoolMachine; statement: PoolStatement; change?: Note; changeIndex?: number } {
   if (withdrawSats <= 0n) throw new Error("withdraw amount must be > 0");
   if (withdrawSats > note.amountSats) throw new Error("withdraw exceeds note");
   const leaf = commitNote(note);
@@ -56,16 +66,18 @@ export function applyWithdraw(
   const nullifierRoot = machine.nullifiers.add(nf);
 
   let change: Note | undefined;
+  let changeIndex: number | undefined;
   const leftover = note.amountSats - withdrawSats;
   let noteRoot = oldState.noteRoot;
   if (leftover > 0n) {
     change = {
       amountSats: leftover,
-      rho: note.rho,
+      rho: freshRho(),
       ownerSecret: note.ownerSecret,
     };
     const inserted = machine.notes.append(commitNote(change));
     noteRoot = inserted.root;
+    changeIndex = inserted.index;
   }
 
   const newState: AnyAmountState = {
@@ -85,9 +97,14 @@ export function applyWithdraw(
     noteCommitment: leftover > 0n ? commitNote(change!) : new Uint8Array(32),
     nullifier: nf,
     payoutLockingDigest,
+    amountCommitIn: writeU256BE(commitAmount(note.amountSats, blindOf(note))),
+    amountCommitOut:
+      leftover > 0n && change
+        ? writeU256BE(commitAmount(change.amountSats, blindOf(change)))
+        : new Uint8Array(ZERO32),
   };
   checkPublicTransition(statement);
-  return { machine: { ...machine, state: newState }, statement, change };
+  return { machine: { ...machine, state: newState }, statement, change, changeIndex };
 }
 
 export function checkPublicTransition(s: PoolStatement): void {
@@ -106,7 +123,16 @@ export function checkPublicTransition(s: PoolStatement): void {
       throw new Error("withdrawalCount");
     }
   }
-  if (s.newState.withdrawalCount > s.newState.depositCount) throw new Error("over-withdraw");
+  if (s.newState.reserveSats < 0n) throw new Error("over-withdraw");
+  if (s.amountCommitIn.length !== 32 || s.amountCommitOut.length !== 32) {
+    throw new Error("amount commit width");
+  }
+  if (s.action === "DEPOSIT" && isZero32(s.amountCommitOut)) {
+    throw new Error("deposit amount commit");
+  }
+  if (s.action === "WITHDRAW" && isZero32(s.amountCommitIn)) {
+    throw new Error("withdraw amount commit");
+  }
 }
 
 export function actionOf(delta: bigint): ActionKind {

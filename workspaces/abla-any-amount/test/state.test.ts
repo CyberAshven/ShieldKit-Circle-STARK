@@ -10,7 +10,7 @@ import {
 } from "../src/pool/notes.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { hashLabPlugin } from "../src/backends/hash-lab.ts";
-import { circleFriPlugin, CIRCLE_FRI_NOT_SOUND_YET } from "../src/backends/circle/plugin.ts";
+import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 
 function rnd32(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(32));
@@ -47,7 +47,12 @@ describe("any-amount machine", () => {
     assert.equal(w.machine.state.reserveSats, 27_000n);
     assert.ok(w.change);
     assert.equal(w.change!.amountSats, 27_000n);
+    assert.equal(typeof w.changeIndex, "number");
+    assert.notDeepEqual(w.change!.rho, note.rho);
     assert.deepEqual(nullifierOf(note, id), w.statement.nullifier);
+    assert.notDeepEqual(nullifierOf(w.change!, id), w.statement.nullifier);
+    const spent = applyWithdraw(w.machine, w.change!, w.changeIndex!, rnd32(), 27_000n);
+    assert.equal(spent.machine.state.reserveSats, 0n);
     const proof = await hashLabPlugin.prove(d.statement, {});
     assert.equal(hashLabPlugin.verify(d.statement, proof).ok, true);
   });
@@ -66,11 +71,8 @@ describe("any-amount machine", () => {
 });
 
 describe("plugins", () => {
-  it("circle-fri refuses to pretend it is sound", async () => {
+  it("circle-fri is hash-based and still unsound at n=32", () => {
     assert.equal(circleFriPlugin.sound, false);
-    await assert.rejects(() => circleFriPlugin.prove({} as never, {}), {
-      message: CIRCLE_FRI_NOT_SOUND_YET,
-    });
-    assert.equal(circleFriPlugin.verify({} as never, new Uint8Array()).ok, false);
+    assert.equal(circleFriPlugin.family, "circle-fri-m31");
   });
 });

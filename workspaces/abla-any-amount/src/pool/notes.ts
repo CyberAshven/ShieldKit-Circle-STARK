@@ -22,6 +22,11 @@ export function nullifierOf(note: Note, poolInstanceId: Uint8Array): Uint8Array 
   return sha256(concatBytes(poolInstanceId, note.ownerSecret, note.rho));
 }
 
+/** Change notes must not reuse rho — same rho ⇒ same nullifier ⇒ second spend dies. */
+export function freshRho(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(32));
+}
+
 function pairHash(left: Uint8Array, right: Uint8Array): Uint8Array {
   return sha256(concatBytes(left, right));
 }
