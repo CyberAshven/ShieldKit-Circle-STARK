@@ -24,7 +24,7 @@ export function announceEvent(secret: Uint8Array, announce: PoolAnnounce): Event
     kind: POOL_ANNOUNCE_KIND,
     created_at: Math.floor(Date.now() / 1000),
     tags: [
-      ["d", "abla-any-amount"],
+      ["d", "any-amount"],
       ["network", announce.network],
       ["profile", announce.profile],
       ["plugin", announce.pluginFamily],

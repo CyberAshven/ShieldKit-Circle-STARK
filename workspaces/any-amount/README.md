@@ -1,6 +1,6 @@
 # Any-amount Chipnet lab
 
-New profile on `@ABLalgorithm`. **Does not edit** the sealed Fv1 lane
+**Does not edit** the sealed Fv1 lane
 (`research-lanes/bch-shielded-pool-design/`). Fv1 stays the joint 0.1-ticket
 size gate. This workspace is the product profile: one set, any amount.
 
@@ -29,7 +29,7 @@ off-chain so swapping in Circle FRI later does not change the statement.
 ## Commands
 
 ```bash
-cd workspaces/abla-any-amount
+cd workspaces/any-amount
 npm ci
 npm test
 npx tsx src/cli.ts wallet new

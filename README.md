@@ -30,7 +30,7 @@ so it is not a clean-clone validation entrypoint for this public mirror.
 ## Any-amount Chipnet lab
 
 Product profile (any amount, one set) lives in
-[`workspaces/abla-any-amount/`](workspaces/abla-any-amount/). It does **not**
-edit the sealed Fv1 0.1-ticket lane. Circle FRI is a plugin that currently
-**refuses** to verify. Chipnet marker txs compile locally; a faucet captcha
-is required to broadcast.
+[`workspaces/any-amount/`](workspaces/any-amount/). It does **not**
+edit the sealed Fv1 0.1-ticket lane. Circle FRI prove/verify is shipped
+(`circle-fri-m31`, `sound: false`). Chipnet five-point genesis and successor
+compile, sign, and broadcast from the lab CLI.

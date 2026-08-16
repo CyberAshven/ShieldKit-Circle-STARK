@@ -17,7 +17,7 @@ import { mkdir } from "node:fs/promises";
 import { broadcastCovenantGenesis, measureGenesisAndSuccessor } from "./chain/covenant-spend.ts";
 import { encodeFriProof, proveFri, proofByteLength } from "./backends/circle/fri.ts";
 
-const help = `abla-pool — Chipnet any-amount lab (ZKP-agnostic)
+const help = `any-amount — Chipnet lab (ZKP-agnostic)
 
   wallet new              create a Chipnet lab key in .local/ (gitignored)
   wallet show             print address

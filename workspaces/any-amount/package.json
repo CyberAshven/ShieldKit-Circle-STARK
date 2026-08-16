@@ -1,9 +1,9 @@
 {
-  "name": "abla-any-amount-pool",
+  "name": "any-amount-chipnet-lab",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "ZKP-agnostic any-amount Chipnet pool lab (Circle FRI first plugin, not sound yet)",
+  "description": "Any-amount Chipnet lab (Circle FRI first plugin, not sound yet)",
   "scripts": {
     "test": "tsx --test test/*.test.ts",
     "cli": "tsx src/cli.ts",
