@@ -26,6 +26,7 @@ import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import {
   dummyFriOpenings,
   dummyFriShardUnlockings,
+  dummyFriShardUnlockingsUnbound,
   encodeLayerRootsPrefix,
   friShardUnlockings,
   proofShardReport,
@@ -37,8 +38,11 @@ import {
   AIR_OFF_QTABLE,
   AIR_PACKED_SIZE,
   encodeAirPacked,
+  fiatShamirQueryIndices,
   nqzAt,
 } from "./air-cqz.ts";
+import { sha256 } from "../pool/bytes.ts";
+import { encodeStatement } from "../pool/statement.ts";
 import { COMMITTED_LAYERS } from "../backends/circle/params.ts";
 import {
   compilePoolCovenant,
@@ -524,6 +528,37 @@ export function evaluateCookedLaterSlot(args: {
     ...args,
     airPacked: cooked,
     statement: args.statement,
+  });
+}
+
+/**
+ * Dummy 8-leaf openings with layerIndex 16+k, dummy roots, honest T,
+ * qTable[0]=nTable[0]=N/Z at FS(dummy roots). A kernel that skips the Q bind
+ * on 16+ would accept this.
+ */
+export function evaluateDummyUnbound(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const honest = encodeAirPacked(args.statement, args.proof);
+  const dummy = dummyFriOpenings(8);
+  const packed = new Uint8Array(honest);
+  for (let r = 0; r < COMMITTED_LAYERS; r += 1) packed.set(dummy[0]!.root, r * 32);
+  const decoded = decodeFriProof(args.proof);
+  const dummyRoots = Array.from({ length: COMMITTED_LAYERS }, () => dummy[0]!.root);
+  const i0 = fiatShamirQueryIndices(sha256(encodeStatement(args.statement)), {
+    ...decoded,
+    layerRoots: dummyRoots,
+  })[0]!;
+  const slot = nqzAt(args.statement, i0);
+  packed.set(encodeLe(slot.q), AIR_OFF_QTABLE);
+  packed.set(encodeLe(slot.n), AIR_OFF_NTABLE);
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: packed,
+    kernelUnlockings: dummyFriShardUnlockingsUnbound(),
   });
 }
 

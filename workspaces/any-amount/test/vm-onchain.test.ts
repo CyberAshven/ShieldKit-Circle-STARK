@@ -22,6 +22,7 @@ import {
   evaluateDigestOnlyPool,
   evaluateDummyKernels,
   evaluateDummyConsistent,
+  evaluateDummyUnbound,
   evaluateCookedLaterSlot,
   evaluateCookedNTable,
   evaluateCookedT,
@@ -219,6 +220,13 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
     });
     assert.equal(honestOpen.accepted, true, honestOpen.error ?? "honest leaf must be in qTable");
 
+    const dummyUnbound = evaluateDummyUnbound({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+    });
+    assert.equal(dummyUnbound.accepted, false, dummyUnbound.error ?? "dummy-unbound 16+ must fail");
     const dummyConsistent = evaluateDummyConsistent({
       oldState: w.statement.oldState,
       newState: w.statement.newState,

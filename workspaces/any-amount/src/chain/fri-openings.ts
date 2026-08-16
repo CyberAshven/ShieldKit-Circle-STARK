@@ -156,6 +156,18 @@ export function dummyFriShardUnlockings(): Uint8Array[] {
   return shardFriOpenings(dummyFriOpenings()).map(encodeFriBatchUnlocking);
 }
 
+/** Same dummy 8-leaf tree, but every opening uses layerIndex 16+k so a skip-bind kernel would walk without a Q check. */
+export function dummyFriOpeningsUnbound(count = FRI_KERNEL_INPUTS): FriOpening[] {
+  return dummyFriOpenings(count).map((o) => ({
+    ...o,
+    layerIndex: FRI_LAYER_UNBOUND + (o.layerIndex % COMMITTED_LAYERS),
+  }));
+}
+
+export function dummyFriShardUnlockingsUnbound(): Uint8Array[] {
+  return shardFriOpenings(dummyFriOpeningsUnbound()).map(encodeFriBatchUnlocking);
+}
+
 export function proofShardReport(proof: Uint8Array | FriProof): {
   openings: number;
   shards: number;

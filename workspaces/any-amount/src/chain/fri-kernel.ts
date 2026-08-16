@@ -1,4 +1,5 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
+import { FRI_QUERIES } from "../backends/circle/params.ts";
 import { AIR_OFF_QTABLE } from "./air-cqz.ts";
 
 /** Fixed kernel-input count in the pool lock (must be known at genesis). */
@@ -7,8 +8,10 @@ export const FRI_KERNEL_INPUTS = 10;
 /**
  * One paired-Merkle opening.
  * Stack: left right steps layerIndex
- * layerIndex 0..6 → layerRoots[i]; layer 0 also binds the opened felt to qTable[0].
- * layerIndex 16..22 → layerRoots[i-16] with no qTable bind (other honest Q queries).
+ * layerIndex 0..6 → layerRoots[i].
+ * layerIndex 16..22 → layerRoots[i-16] (extra honest Q queries).
+ * Actual layer 0 (0 or 16): opened felt must equal some packed qTable entry
+ * so a dummy tree cannot skip the Q bind by using 16+.
  */
 export const FRI_LAYER_UNBOUND = 16;
 
@@ -19,12 +22,10 @@ OP_GREATERTHANOREQUAL
 OP_IF
   <${FRI_LAYER_UNBOUND}>
   OP_SUB
-  OP_0
-OP_ELSE
-  OP_DUP
-  OP_0
-  OP_EQUAL
 OP_ENDIF
+OP_DUP
+OP_0
+OP_EQUAL
 OP_TOALTSTACK
 OP_DUP
 OP_TOALTSTACK
@@ -81,9 +82,7 @@ OP_IF
   <1> OP_SPLIT OP_NIP
   <2> OP_SPLIT OP_NIP
   <${AIR_OFF_QTABLE}> OP_SPLIT OP_NIP
-  <4> OP_SPLIT OP_DROP
-  <0x00> OP_CAT
-  OP_BIN2NUM
+  <${FRI_QUERIES * 4}> OP_SPLIT OP_DROP
   OP_TOALTSTACK
   <0x00> OP_CAT
   OP_BIN2NUM
@@ -91,15 +90,40 @@ OP_IF
   <0x00> OP_CAT
   OP_BIN2NUM
   OP_FROMALTSTACK
-  OP_2 OP_PICK
-  OP_OVER
-  OP_NUMEQUAL
-  OP_SWAP
-  OP_2 OP_PICK
-  OP_NUMEQUAL
-  OP_BOOLOR
-  OP_VERIFY
-  OP_2DROP
+  <0>
+  <0>
+  OP_BEGIN
+    OP_DUP
+    <${FRI_QUERIES}>
+    OP_LESSTHAN
+    OP_IF
+      OP_2 OP_PICK
+      OP_1 OP_PICK
+      <4> OP_MUL
+      OP_SPLIT OP_NIP
+      <4> OP_SPLIT OP_DROP
+      <0x00> OP_CAT
+      OP_BIN2NUM
+      OP_5 OP_PICK
+      OP_OVER
+      OP_NUMEQUAL
+      OP_SWAP
+      OP_5 OP_PICK
+      OP_NUMEQUAL
+      OP_BOOLOR
+      OP_2 OP_ROLL
+      OP_BOOLOR
+      OP_SWAP
+      OP_1ADD
+      OP_0
+    OP_ELSE
+      OP_DROP
+      OP_NIP
+      OP_VERIFY
+      OP_2DROP
+      OP_1
+    OP_ENDIF
+  OP_UNTIL
 OP_ELSE
   OP_2DROP
 OP_ENDIF
