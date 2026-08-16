@@ -20,7 +20,8 @@ npx tsx src/cli.ts --help
 | Chipnet fold lands | Standard `2acb1196…` (98831 B, 1 fold). Consensus 10-fold `18c74b49…` (301279 B) — not the 36-fold compile. No-fold `356630bd…`. See [`workspaces/any-amount/MILESTONE.md`](workspaces/any-amount/MILESTONE.md). |
 | Consensus land path | Compile locally. Tx ≤ 100000: Electrum. Tx > 100000: HTTP JSON-RPC `sendrawtransaction` (not Electrum, not P2P `inv`). Public miners will not relay 301 KB. |
 | Note amounts | Tagged SHA-256 commit bound by `checkAuthRelation`. Public net committed in `encodeStatement`. Pool UTXO stays `STATE_BASE`. |
-| Not this pre-release | Statistical ZK, Lean, mainnet, OPTN builtin register, hidden pool-UTXO value, Chipnet land of the 36-fold lock. |
+| Published witness | `encodeFriProof` one-time-pads rho/owner/amount. Viewing key is not in the encoding. Unlocking cannot recover them. |
+| Not this pre-release | Lean, mainnet, OPTN builtin register, hidden pool-UTXO value, Chipnet land of the 36-fold lock, better-than-XMR. |
 
 Lab notes: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md),
 [`DESIGN.md`](workspaces/any-amount/DESIGN.md).

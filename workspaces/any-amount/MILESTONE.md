@@ -74,7 +74,7 @@ Do **not** relabel `356630bd…` as fold.
 ## What they do **not** prove
 
 - Chipnet land of the compiled 36-fold lock (new txid). `18c74b49…` is 10-fold.
-- Statistical ZK / witness masking.
+- A theorem that the whole STARK is statistically ZK. Published note preimage is one-time-padded; FRI openings stay on public `onChainCells`.
 - Hidden pool-UTXO value (output is `STATE_BASE`). Note amounts are tagged SHA-256 commits; the public net is committed in `encodeStatement`.
 - Zcash / Monero / Voidify parity.
 

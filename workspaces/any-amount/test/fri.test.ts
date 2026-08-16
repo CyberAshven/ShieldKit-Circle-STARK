@@ -5,6 +5,7 @@ import {
   airQuotientLde,
   algebraicC,
   circleDomain,
+  decodeFriProof,
   encodeFriProof,
   proveFri,
   proveFromTLde,
@@ -165,9 +166,9 @@ describe("Circle FRI prove/verify", () => {
     const v = verifyFri(fake, forced);
     assert.equal(v.ok, false);
     assert.match(v.ok ? "" : v.reason, /nullifier|membership|auth|preimage/i);
-    const pluginV = circleFriPlugin.verify(fake, encodeFriProof(forced));
-    assert.equal(pluginV.ok, false, "plugin.verify without witness must reject fake nullifier");
-    assert.match(pluginV.ok ? "" : pluginV.reason, /nullifier|membership|auth|preimage/i);
+    const opened = verifyFri(fake, decodeFriProof(encodeFriProof(forced)), {}, { viewingKey: forced.viewingKey });
+    assert.equal(opened.ok, false, "viewing-key verify must still reject fake nullifier");
+    assert.match(opened.ok ? "" : opened.reason, /nullifier|membership|auth|preimage/i);
   });
 
   it("algebraicC is zero on honest cells and nonzero on a false reserve", () => {

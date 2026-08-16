@@ -5,7 +5,7 @@ export { applyDeposit, applyWithdraw, applyAggregate, checkPublicTransition } fr
 export { runMixSuccessor, mixChangedRootsAndReserve, publicPoolView } from "./pool/mix-successor.ts";
 export { hashLabPlugin } from "./backends/hash-lab.ts";
 export { circleFriPlugin, CIRCLE_FRI_NOT_SOUND_YET } from "./backends/circle/plugin.ts";
-export { proveFri, verifyFri, statementToEvals } from "./backends/circle/fri.ts";
+export { proveFri, verifyFri, statementToEvals, unmaskFriProof } from "./backends/circle/fri.ts";
 export { soundnessWorksheet } from "./backends/circle/soundness.ts";
 export { evaluateProofOnVm } from "./chain/vm-verifier.ts";
 export { compileCovenantSpend, compileCovenantSuccessor } from "./chain/covenant-spend.ts";

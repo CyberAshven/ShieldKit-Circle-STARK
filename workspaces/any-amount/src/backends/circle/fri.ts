@@ -1,6 +1,7 @@
 import {
   bytesToHex,
   concatBytes,
+  eq32,
   readU16BE,
   readU32BE,
   readU64BE,
@@ -9,6 +10,14 @@ import {
   writeU32BE,
   writeU64BE,
 } from "../../pool/bytes.ts";
+import { commitNote } from "../../pool/notes.ts";
+import {
+  freshViewingKey,
+  maskAuth,
+  unmaskAuth,
+  viewingCommit,
+  VIEWING_PAD_LEN,
+} from "./witness-mask.ts";
 import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
 import { foldPair } from "./fold.ts";
 import { addPoints, CIRCLE_GEN, scalarMul, type CirclePoint } from "./group.ts";
@@ -31,7 +40,9 @@ import {
   assertSatisfied,
   buildTrace,
   checkAuthRelation,
+  checkPublicAuthRelation,
   checkPublicConservation,
+  openedNote,
   publicCells,
   publicEvals,
   quotientAtDomain,
@@ -64,7 +75,13 @@ export type FriProof = {
   final: M31El[];
   queries: FriQuery[];
   auth: FriAuth;
+  /** In-memory only. Never written by encodeFriProof. */
+  viewingKey?: Uint8Array;
+  viewingCommit?: Uint8Array;
+  authMasked?: boolean;
 };
+
+export type VerifyFriOpts = { viewingKey?: Uint8Array };
 
 function log2n(n: number): number {
   return Math.round(Math.log2(n));
@@ -229,6 +246,7 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}): Fr
     };
   });
 
+  const viewingKey = freshViewingKey();
   return {
     version: FRI_VERSION,
     grindNonce,
@@ -237,6 +255,9 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}): Fr
     final: evals,
     queries,
     auth: trace.auth,
+    viewingKey,
+    viewingCommit: viewingCommit(viewingKey),
+    authMasked: false,
   };
 }
 
@@ -288,6 +309,7 @@ export function proveFromTLde(statement: PoolStatement, tLde: M31El[], auth: Fri
       tracePath: traceTree.path(start),
     };
   });
+  const viewingKey = freshViewingKey();
   return {
     version: FRI_VERSION,
     grindNonce,
@@ -296,6 +318,9 @@ export function proveFromTLde(statement: PoolStatement, tLde: M31El[], auth: Fri
     final: evals,
     queries,
     auth,
+    viewingKey,
+    viewingCommit: viewingCommit(viewingKey),
+    authMasked: false,
   };
 }
 
@@ -309,14 +334,44 @@ export function mutateTraceAndProve(statement: PoolStatement, bumpIndex: number,
   return proveFromTLde(statement, bumped, trace.auth);
 }
 
+function authPreimageOpen(auth: FriAuth): boolean {
+  try {
+    return eq32(auth.leaf, commitNote(openedNote(auth)));
+  } catch {
+    return false;
+  }
+}
+
+function resolveAuthForVerify(
+  statement: PoolStatement,
+  proof: FriProof,
+  witness: FriWitness,
+  opts: VerifyFriOpts,
+): { ok: true } | { ok: false; reason: string } {
+  const key = opts.viewingKey ?? (proof.authMasked ? undefined : proof.viewingKey);
+  if (key) {
+    if (key.length !== VIEWING_PAD_LEN) return { ok: false, reason: "viewing key" };
+    const commit = proof.viewingCommit ?? viewingCommit(key);
+    if (!eq32(viewingCommit(key), commit)) return { ok: false, reason: "viewing key" };
+    const opened = proof.authMasked ? unmaskAuth(proof.auth, key) : proof.auth;
+    return checkAuthRelation(statement, opened, witness);
+  }
+  if (authPreimageOpen(proof.auth)) {
+    return checkAuthRelation(statement, proof.auth, witness);
+  }
+  return checkPublicAuthRelation(statement, proof.auth);
+}
+
 /**
  * Opening-only verifier. FRI target is algebraicC / Z (conservation, sequence,
  * action). Membership is a sibling nativeWalk, not a residual flag.
+ * Published encodings mask the note preimage; pass `viewingKey` to open it.
  */
 export function verifyFri(
   statement: PoolStatement,
   proof: FriProof,
   witness: FriWitness = {},
+  opts: VerifyFriOpts = {},
 ): { ok: true } | { ok: false; reason: string } {
   if (proof.version !== FRI_VERSION) return { ok: false, reason: "version" };
   if (proof.queries.length !== FRI_QUERIES) return { ok: false, reason: "query count" };
@@ -325,7 +380,7 @@ export function verifyFri(
 
   const cons = checkPublicConservation(statement);
   if (!cons.ok) return cons;
-  const auth = checkAuthRelation(statement, proof.auth, witness);
+  const auth = resolveAuthForVerify(statement, proof, witness, opts);
   if (!auth.ok) return auth;
 
   const cVec = algebraicC(publicCells(statement), statement);
@@ -398,27 +453,28 @@ export function verifyFri(
   return { ok: true };
 }
 
-function encodeAuth(a: FriAuth): Uint8Array {
+function encodeAuth(a: FriAuth, commit: Uint8Array): Uint8Array {
   return concatBytes(
     writeU16BE(a.index),
     Uint8Array.of(a.path.length),
     a.leaf,
     a.root,
     a.nullifier,
-    a.rho,
-    a.owner,
-    writeU64BE(a.amountSats),
-    writeU64BE(a.publicDeltaSats),
     a.amountCommit,
     writeU16BE(a.createdIndex),
     Uint8Array.of(a.createdPath.length),
     a.createdLeaf,
+    commit.length === 32 ? commit : new Uint8Array(32),
+    a.rho,
+    a.owner,
+    writeU64BE(a.amountSats),
+    writeU64BE(a.publicDeltaSats),
     ...a.path,
     ...a.createdPath,
   );
 }
 
-function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; next: number } {
+function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; viewingCommit: Uint8Array; next: number } {
   let o = start;
   const index = readU16BE(bytes, o);
   o += 2;
@@ -429,6 +485,15 @@ function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; next: nu
   o += 32;
   const nullifier = bytes.slice(o, o + 32);
   o += 32;
+  const amountCommit = bytes.slice(o, o + 32);
+  o += 32;
+  const createdIndex = readU16BE(bytes, o);
+  o += 2;
+  const nC = bytes[o++]!;
+  const createdLeaf = bytes.slice(o, o + 32);
+  o += 32;
+  const commit = bytes.slice(o, o + 32);
+  o += 32;
   const rho = bytes.slice(o, o + 32);
   o += 32;
   const owner = bytes.slice(o, o + 32);
@@ -437,13 +502,6 @@ function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; next: nu
   o += 8;
   const publicDeltaSats = readU64BE(bytes, o);
   o += 8;
-  const amountCommit = bytes.slice(o, o + 32);
-  o += 32;
-  const createdIndex = readU16BE(bytes, o);
-  o += 2;
-  const nC = bytes[o++]!;
-  const createdLeaf = bytes.slice(o, o + 32);
-  o += 32;
   const path: Uint8Array[] = [];
   for (let i = 0; i < nP; i += 1) {
     path.push(bytes.slice(o, o + 32));
@@ -456,16 +514,20 @@ function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; next: nu
   }
   return {
     auth: { leaf, index, path, root, nullifier, rho, owner, amountSats, publicDeltaSats, amountCommit, createdLeaf, createdIndex, createdPath },
+    viewingCommit: commit,
     next: o,
   };
 }
 
 export function encodeFriProof(p: FriProof): Uint8Array {
+  const key = p.viewingKey && p.viewingKey.length === VIEWING_PAD_LEN ? p.viewingKey : freshViewingKey();
+  const commit = viewingCommit(key);
+  const published = p.authMasked ? p.auth : maskAuth(p.auth, key);
   const parts: Uint8Array[] = [
     Uint8Array.of(p.version, p.layerRoots.length, p.final.length, p.queries.length),
     writeU32BE(p.grindNonce),
     p.traceRoot,
-    encodeAuth(p.auth),
+    encodeAuth(published, commit),
   ];
   for (const r of p.layerRoots) parts.push(r);
   for (const f of p.final) parts.push(encodeLe(f));
@@ -498,6 +560,7 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
   o += 32;
   const decodedAuth = decodeAuth(bytes, o);
   const auth = decodedAuth.auth;
+  const commit = decodedAuth.viewingCommit;
   o = decodedAuth.next;
   const layerRoots: Uint8Array[] = [];
   for (let i = 0; i < nRoots; i += 1) {
@@ -544,7 +607,30 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
     }
     queries.push({ index, layers, traceValue, tracePath });
   }
-  return { version, grindNonce, layerRoots, traceRoot, final, queries, auth };
+  return {
+    version,
+    grindNonce,
+    layerRoots,
+    traceRoot,
+    final,
+    queries,
+    auth,
+    viewingCommit: commit,
+    authMasked: true,
+  };
+}
+
+export function unmaskFriProof(proof: FriProof, key: Uint8Array): FriProof {
+  if (key.length !== VIEWING_PAD_LEN) throw new Error("viewing key width");
+  if (proof.viewingCommit && !eq32(viewingCommit(key), proof.viewingCommit)) {
+    throw new Error("viewing key");
+  }
+  return {
+    ...proof,
+    auth: proof.authMasked ? unmaskAuth(proof.auth, key) : proof.auth,
+    viewingKey: key,
+    authMasked: false,
+  };
 }
 
 export function proofByteLength(p: FriProof): number {
@@ -552,6 +638,7 @@ export function proofByteLength(p: FriProof): number {
 }
 
 export { add, bytesToHex, COMMITTED_LAYERS, FRI_LOG_N, FRI_N, FRI_QUERIES, TRACE_LEN };
+export { freshViewingKey, unmaskAuth, viewingCommit, VIEWING_PAD_LEN } from "./witness-mask.ts";
 export type { FriWitness, FriAuth };
 export { airQuotientLde, algebraicC, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wDeposit, wWithdraw } from "./air.ts";
 export { interpolateCircle, evalCirclePoly } from "./interpolate.ts";

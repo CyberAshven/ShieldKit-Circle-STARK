@@ -85,7 +85,7 @@ An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserv
 
 ## Confidential amounts
 
-`amountCommitIn` / `amountCommitOut` are 32-byte tagged SHA-256 commits (`SHA-256(PAA1-HASH-AMT-v1 || amount_i64le || rho)`). `checkAuthRelation` requires them to match the opened note. `encodeStatement` writes `commitPublicNet` instead of the raw public i64. Pool UTXO sats stay `STATE_BASE`. The old Pedersen module remains a comparison plugin only.
+`amountCommitIn` / `amountCommitOut` are 32-byte tagged SHA-256 commits (`SHA-256(PAA1-HASH-AMT-v1 || amount_i64le || rho)`). `checkAuthRelation` requires them to match the opened note. `encodeStatement` writes `commitPublicNet` instead of the raw public i64. `encodeFriProof` one-time-pads rho/owner/amount; the viewing key is not in the encoding. Pool UTXO sats stay `STATE_BASE`. The old Pedersen module remains a comparison plugin only.
 
 Partial withdraw mints a **new change note**: leftover amount, same `ownerSecret`, **fresh `rho`**, new Merkle index. Reusing `rho` would make `nullifierOf(change) == nullifierOf(spent)` and the next spend dies (`nullifier already used`).
 

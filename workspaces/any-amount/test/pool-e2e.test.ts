@@ -134,7 +134,8 @@ describe("pool e2e mix", () => {
     assert.equal(circleFriPlugin.verify(mix.statement, mix.proof).ok, true);
 
     const decoded = decodeFriProof(mix.proof);
-    const spent = decoded.auth;
+    const spentNote = mix.spent.note;
+    const spentAuth = decoded.auth;
     const measured = compileCovenantSuccessor({
       wallet: createLabWallet(),
       feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 250_000 },
@@ -156,11 +157,11 @@ describe("pool e2e mix", () => {
     const pushes = parsePushes(unlocking);
     assert.equal(pushes.length, 2, "unlocking is packed AIR + redeem only");
     assert.equal(pushes[0]!.length, AIR_PACKED_SIZE);
-    assert.equal(containsBytes(unlocking, spent.leaf), false, "spent leaf must not appear");
-    assert.equal(containsBytes(unlocking, spent.rho), false, "rho must not appear");
-    assert.equal(containsBytes(unlocking, spent.owner), false, "owner must not appear");
-    assert.equal(containsBytes(unlocking, spent.nullifier), false, "nullifier stays in verifyFri");
-    for (const sib of spent.path) {
+    assert.equal(containsBytes(unlocking, spentAuth.leaf), false, "spent leaf must not appear");
+    assert.equal(containsBytes(unlocking, spentNote.rho), false, "rho must not appear");
+    assert.equal(containsBytes(unlocking, spentNote.ownerSecret), false, "owner must not appear");
+    assert.equal(containsBytes(unlocking, spentAuth.nullifier), false, "nullifier stays in verifyFri");
+    for (const sib of spentAuth.path) {
       assert.equal(containsBytes(unlocking, sib), false, "spent merkle path must not appear");
     }
     assert.equal(

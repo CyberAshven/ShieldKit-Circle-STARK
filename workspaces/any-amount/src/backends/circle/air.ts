@@ -122,6 +122,37 @@ export function checkAuthRelation(
   return { ok: true };
 }
 
+/**
+ * Membership + statement binding without the note preimage.
+ * Used when the published proof is viewing-key-masked.
+ */
+export function checkPublicAuthRelation(
+  statement: PoolStatement,
+  auth: FriAuth,
+): { ok: true } | { ok: false; reason: string } {
+  const root = membershipRoot(statement);
+  if (!eq32(auth.root, root)) return { ok: false, reason: "auth root != public noteRoot" };
+  if (!nativeWalk(auth.leaf, auth.index, auth.path, root)) {
+    return { ok: false, reason: "membership path" };
+  }
+  if (statement.action === "DEPOSIT") {
+    if (!eq32(auth.leaf, statement.noteCommitment)) return { ok: false, reason: "deposit leaf" };
+    if (!isZero32(statement.nullifier) || !isZero32(auth.nullifier)) {
+      return { ok: false, reason: "deposit nullifier must be zero" };
+    }
+    const append = checkAppend(statement, auth);
+    if (!append.ok) return append;
+    return { ok: true };
+  }
+  if (!eq32(auth.nullifier, statement.nullifier)) return { ok: false, reason: "nullifier != statement" };
+  if (isZero32(statement.nullifier)) return { ok: false, reason: "withdraw nullifier zero" };
+  if (!eq32(statement.oldState.noteRoot, statement.newState.noteRoot)) {
+    const append = checkAppend(statement, auth);
+    if (!append.ok) return append;
+  }
+  return { ok: true };
+}
+
 function checkAppend(
   statement: PoolStatement,
   auth: FriAuth,
