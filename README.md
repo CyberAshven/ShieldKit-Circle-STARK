@@ -1,40 +1,41 @@
 # ShieldKit Circle STARK
 
-Public collaboration mirror of the Circle-domain FRI shielded-pool research
-lane from ShieldKit-LABS.
+**Pre-release lab** on `@ABLalgorithm`. Product: **Any-amount Chipnet lab**.
+Language: **TypeScript, CashScript, Rust** — no new JavaScript.
 
-The lane is preserved at
+## Start here (the lab)
+
+```bash
+cd workspaces/any-amount
+npm ci
+npm test
+npx tsx src/cli.ts --help
+```
+
+| Piece | Status |
+| --- | --- |
+| Off-chain Circle FRI prover + verifier | TypeScript `proveFri` / `verifyFri`. False reserve / fake note / fake nullifier fail. |
+| Optional Rust prove worker | `crates/circle-fri-worker` — old n=32 wire; TS is the shipped path. |
+| On-chain 2026 lock | P2SH32 five-point `PAA1` + 10 FRI Merkle kernels + bind-T + **one** `C=Q·Z` slot. |
+| Not in this pre-release | Full FRI fold, all 36 slots, on-chain amount conservation, ZK, Lean, OPTN builtin register. |
+
+Lab notes: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md),
+[`DESIGN.md`](workspaces/any-amount/DESIGN.md).
+OPTN screen stub (not wired into OPTN upstream):
+[`addons/optn-shielded-pool/`](addons/optn-shielded-pool/).
+
+## Sealed Fv1 research lane
+
 [`research-lanes/bch-shielded-pool-design/`](research-lanes/bch-shielded-pool-design/)
-so its content-addressed paths and sealed validation bindings remain stable.
-It is a research workspace, not a qualified implementation or product release.
-
-## Start here
+is the joint 0.1-ticket size-gate lane. This branch does **not** edit it.
+Do not merge `@ABLalgorithm` to `main` unless both sides agreed.
 
 ```bash
 npm ci
 npm run lane:shielded-pool:research:test
 ```
 
-Initial mirror provenance: ShieldKit-LABS commit
-`c92e1f81176f6d196410e70564c50c2bdbd02cb9`.
-
-ShieldKit-LABS retains its copy of this lane. Synchronization between the two
-repositories should be explicit and reviewable rather than automatic.
-
-A LABS-only source package used by the complete lane validator is not
-in this public tree, so that validator is not a clean-clone entrypoint.
-
-## Any-amount Chipnet lab
-
-Product profile (any amount, one set) lives in
-[`workspaces/any-amount/`](workspaces/any-amount/). It does **not**
-edit the sealed Fv1 0.1-ticket lane. Circle FRI prove/verify is shipped
-(`circle-fri-m31`, worksheet 128 conjectural bits). Chipnet five-point
-genesis still compiles; spends require FRI-kernel inputs. Digest-only fails.
-
 ## Reference
 
-Public prior-art notes (Circle FRI, BCH packaging, verifier.cash Groth16
-leaderboard, XO, Voidify, etc.) live in [`Reference/`](Reference/).
-Start at [`Reference/00-INDEX.md`](Reference/00-INDEX.md). Notes here
-cite public URLs only.
+Public prior-art notes live in [`Reference/`](Reference/).
+Start at [`Reference/00-INDEX.md`](Reference/00-INDEX.md). Cite public URLs only.

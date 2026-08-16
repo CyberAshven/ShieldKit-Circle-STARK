@@ -69,10 +69,10 @@ P2PKH is **not** the shielded pool. The pool is the **covenant UTXO**.
 | Queries | 36 + 20-bit grind |
 | Blowup / rate | 16 / `2/B` (quotient of the residual interpolant) |
 | Fold | Circle FRI fold (2024/278) with `x=0` fallback to `y`; partners are Merkle siblings |
-| Binding | Pool AIR cells (reserve, delta, action, statement digest, roots). False reserve is unsatisfiable. |
-| `sound` | **`true`** at 128 conjectural ethSTARK bits (worksheet). Not a Lean theorem. |
+| Binding | **Off-chain** `publicCells`: reserves, delta, action, digest, roots. **On-chain** `onChainCells`: action, digest, roots, seq only (no reserve/delta). |
+| `sound` | Worksheet **128 conjectural bits**. Not a Lean theorem. On-chain is a FRI **prefix**, not the full fold. |
 
-An honest deposit or withdraw verifies. A false reserve, false note commitment, or false nullifier is rejected by residual/auth checks (nullifier is bound to the opened leaf preimage in the proof). The FRI'd polynomial is the residual quotient \(Q=C/Z\), checked at queries as \(C(z)=Q(z)Z(z)\), not the public interpolant of the statement. The pool lock rejects a rewritten `noteRoot` on the 2026 VM without asking JS `verifyFri`.
+An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserve, false note commitment, or false nullifier is rejected there. The off-chain FRI target is the residual quotient \(Q=C/Z\). The on-chain lock binds the new `PAA1` cell, walks packed Merkle openings, binds Newton `T` to `onChainCells`, and checks **one** slot `C=Q·Z`. It does **not** yet check all 36 slots or the FRI fold. Amount conservation is `verifyFri` / `algebraicC`, not the NFT reserve field (that field is zero).
 
 ## Confidential amounts
 
@@ -85,7 +85,7 @@ Partial withdraw mints a **new change note**: leftover amount, same `ownerSecret
 1. Lab wallet is P2PKH (`bchtest:q…`).
 2. `lab demo --wallets 100` rehearses deposit+withdraw prove/verify locally.
 3. `pool measure-tx` compiles P2S genesis, P2SH32 genesis, and a P2SH32 successor; prints byte counts.
-4. `pool chipnet-covenant` signs a P2SH32 five-point genesis with a 128-byte `PAA1` NFT (no OP_RETURN). The successor unlocking carries the note-tree walk + nullifier; the lock binds the new commitment.
+4. `pool chipnet-covenant` signs a P2SH32 five-point genesis with a 128-byte `PAA1` NFT (no OP_RETURN). Successor unlocking is the packed AIR + redeem — not the spent-note preimage. The lock binds the new commitment. Membership/nullifier stay in TypeScript `verifyFri`.
 
 ## 100-wallet scale
 

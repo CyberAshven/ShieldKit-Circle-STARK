@@ -1,9 +1,10 @@
 # Status (2026-08-16)
 
-Shipped: Circle FRI of the pool AIR (residual quotient) + a 2026 pool lock that
+**Pre-release.** Off-chain TypeScript prover/verifier + a 2026 pool lock that
 **binds** the new 128-byte PAA1 NFT and spends **10 FRI-kernel inputs** that
-verify every Merkle opening of the ~64 KB proof. This is **not** a Lean theorem
-and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
+Merkle-walk packed openings. This is **not** a full on-chain FRI fold, **not**
+ZK, **not** a Lean theorem, and **not** a “better than XMR/Zcash/Aztec”
+cryptanalysis. Language: TypeScript / CashScript / Rust.
 
 ## Passing
 

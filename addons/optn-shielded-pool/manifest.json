@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "com.circularstarks.shielded-pool",
+  "name": "Shielded Pool",
+  "version": "0.1.0-pre",
+  "description": "Chipnet any-amount pool screen. Pre-release stub; proofs and txs stay in the lab CLI.",
+  "trustTier": "restricted",
+  "permissions": [
+    {
+      "kind": "capabilities",
+      "capabilities": [
+        "wallet:context:read",
+        "wallet:addresses:read",
+        "utxo:wallet:read",
+        "tx:build",
+        "tx:broadcast"
+      ]
+    }
+  ],
+  "apps": [
+    {
+      "id": "shielded-pool",
+      "name": "Shielded pool",
+      "description": "Deposit or withdraw any Chipnet amount into one pool",
+      "kind": "declarative",
+      "requiredCapabilities": [
+        "wallet:context:read",
+        "wallet:addresses:read",
+        "utxo:wallet:read"
+      ],
+      "config": {
+        "screen": "ShieldedPoolApp"
+      }
+    }
+  ],
+  "contracts": [],
+  "iconUri": null,
+  "enabledByDefault": false
+}
