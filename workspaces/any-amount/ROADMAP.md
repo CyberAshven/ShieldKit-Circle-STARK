@@ -10,7 +10,7 @@ Chipnet Circle-FRI shielded covenant. Standard 1 fold + 6 C=QZ (`2acb1196…`). 
 ## Next, in order
 
 1. **36 on-chain folds** — lock+VM+measure done (382203 B). Chipnet JSON-RPC land of this lock still required (new txid, not `18c74b49…`).
-2. **Conservation on chain** from PAA1 / packed cells only — no rho, owner, or raw reserves on the successor.
+2. **Conservation on chain** — seq+1 and reserve-field=0 execute on the lock; leak test on successor hex. Hidden reserve **value** residuals stay in `verifyFri`.
 3. **Replace Pedersen** with a hash/PQ amount commit; hide or commit the public P2PKH net.
 4. **Statistical ZK** (mask openings). Viewing keys after that.
 

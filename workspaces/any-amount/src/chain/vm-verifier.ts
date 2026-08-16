@@ -225,6 +225,8 @@ export function evaluatePoolSuccessorVm(args: {
   statement?: PoolStatement;
   airPacked?: Uint8Array;
   outputValueSats?: bigint;
+  /** Override output PAA1 (default encodePublicPaa1(newState)). */
+  outputCommitment?: Uint8Array;
   slotKernels?: number;
   /** false = consensus/nonstandard (tx may exceed 100 KB). Default: standard iff slotKernels is the 100 KB count. */
   standard?: boolean;
@@ -307,7 +309,7 @@ export function evaluatePoolSuccessorVm(args: {
         token: {
           amount: 0n,
           category,
-          nft: { capability: "mutable" as const, commitment: encodePublicPaa1(args.newState) },
+          nft: { capability: "mutable" as const, commitment: args.outputCommitment ?? encodePublicPaa1(args.newState) },
         },
       },
     ],
