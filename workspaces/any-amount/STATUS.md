@@ -27,14 +27,15 @@ and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 
 Lab address stays in gitignored `.local/lab-wallet.json`.
 
-**This lock** (packed AIR + 10 FRI kernels + bind-T + slot-0 C=QZ + path-depth), Electrum-accepted 2026-08-16:
+**This lock** (no spent-note unlocking; packed digest + public PAA1), Electrum-accepted 2026-08-16:
 
 | Step | txid |
 | --- | --- |
-| Prep self-send (vout 0 for CashTokens genesis) | `f4969bcdfbe6887d4e0457d7d480b675ff9f728109cd6c93ac4e3933bb715ce2` |
-| Genesis P2SH32 PAA1 | `2001ac68c61108b5403491e6a229851ec368853c3e317d5ae1ccf7666d113db5` |
-| 12 verifier-kernel carriers (10 FRI + bind-T + slot) | `70b277637535a40a5fa9d6f1bb805d7b841b31e7fc0e09ff8713ac00768dee2d` |
-| Mix successor (69115 B, 252 openings, plugin.verify ok) | `52b46dab18aaac03b15655c6154822f1c330a4513a5dad9f49b7c2084e910147` |
+| Genesis P2SH32 PAA1 | `397bb22e80e8fdad20a33f9e57526be89a97c9c45519ea26305ff2dda04a34d9` |
+| 12 verifier-kernel carriers | `f9e2b74d882bdb70d9aa2f17f32fecb0f6cafa945ed4c03bfd4943152f9589d1` |
+| Mix successor (66840 B, unlocking 2240, 252 openings) | `8ccad3b816d02156abe5fc4de1b0c574df9b76cc15bf5caf154e0e997c010004` |
+
+Prior same-day txs `2001ac68…` / `52b46dab…` used the old unlocking that published the spent preimage.
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 
