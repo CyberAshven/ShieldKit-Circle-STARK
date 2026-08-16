@@ -4,18 +4,29 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { circleFriPlugin } from "./backends/circle/plugin.ts";
 import { hashLabPlugin } from "./backends/hash-lab.ts";
-import { broadcastMarkerTx, genesisStateFor, requestFaucet, walletBalance } from "./chain/chipnet.ts";
+import { requestFaucet, walletBalance } from "./chain/chipnet.ts";
 import { createLabWallet, loadLabWallet, saveLabWallet, type LabWallet } from "./chain/wallet.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "./pool/notes.ts";
-import { emptyState } from "./pool/state.ts";
+import { emptyState, encodeState, STATE_BASE_SATS } from "./pool/state.ts";
 import { applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition.ts";
+import { mixChangedRootsAndReserve, runMixSuccessor } from "./pool/mix-successor.ts";
 import { announceEvent, newRoundKey } from "./nostr/bus.ts";
 import { torStatus } from "./nostr/tor.ts";
 import { describePlugins } from "./plugins/registry.ts";
 import { sendMany } from "./chain/send.ts";
 import { mkdir } from "node:fs/promises";
-import { broadcastCovenantGenesis, measureGenesisAndSuccessor } from "./chain/covenant-spend.ts";
-import { encodeFriProof, proveFri, proofByteLength } from "./backends/circle/fri.ts";
+import {
+  broadcastCovenantGenesis,
+  compileCovenantSuccessor,
+  compileFundFriKernels,
+  measureGenesisAndSuccessor,
+} from "./chain/covenant-spend.ts";
+import { encodePublicPaa1 } from "./pool/state.ts";
+import { FRI_KERNEL_INPUTS } from "./chain/fri-kernel.ts";
+import { proofShardReport } from "./chain/fri-openings.ts";
+import { broadcast, connectChipnet, listUnspent } from "./chain/electrum.ts";
+import { binToHex, hexToBin } from "@bitauth/libauth";
+import { encodeFriProof, proveFri, proofByteLength, wDeposit, wWithdraw } from "./backends/circle/fri.ts";
 
 const help = `any-amount — Chipnet lab (ZKP-agnostic)
 
@@ -26,12 +37,14 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   pool create             local genesis state (PAA1)
   pool deposit --sats N   any-amount deposit (off-chain machine + plugin)
   pool withdraw --sats N  partial withdraw
-  pool chipnet-marker     broadcast PAA1 OP_RETURN (needs faucet coins)
+
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
+  pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded
   pool measure-tx         compile genesis+successor, print byte counts
   serve                   localhost:17432 for the OPTN addon
   lab demo --wallets K    sequential rehearsal + Circle FRI prove/verify
-  bench                   time prove/verify, print proof bytes
+  lab e2e                 deposit-aggregate-withdraw twice (anon set growth)
+  bench                   time prove/verify/VM, print proof bytes + worksheet
   fund-wallets --count N  Chipnet fan-out from the funded lab UTXO
   status                  honest capability dump
 
@@ -138,8 +151,9 @@ async function main(): Promise<void> {
           pluginFamily: circleFriPlugin.family,
           vkId: circleFriPlugin.vkId,
           sound: circleFriPlugin.sound,
-          proveVerify: "circle-fri-m31 prove/verify shipped (bench n=32 q=8)",
-          covenant: "P2S (2026) / P2SH32 (P1 shells) — not P2PKH",
+          proveVerify: "circle-fri-m31 AIR+FRI + 2026 VM kernel",
+          worksheet: (await import("./backends/circle/soundness.ts")).soundnessWorksheet(),
+          covenant: "P2S/P2SH32 five-point + PAA1 bind + FRI-kernel inputs (not OP_RETURN)",
           design: describePlugins(),
           tor: torStatus("optional"),
           chipnet: "wss://chipnet.imaginary.cash:50004",
@@ -201,7 +215,7 @@ async function main(): Promise<void> {
       ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
     };
     const d = applyDeposit(loaded.machine, note);
-    const proof = await circleFriPlugin.prove(d.statement, {});
+    const proof = await circleFriPlugin.prove(d.statement, wDeposit(note, d.index, d.path));
     const v = circleFriPlugin.verify(d.statement, proof);
     if (!v.ok) throw new Error(v.reason);
     loaded.notes.push({ note, index: d.index });
@@ -215,7 +229,7 @@ async function main(): Promise<void> {
     const held = loaded.notes.find((n) => n.note.amountSats >= sats);
     if (!held) throw new Error("no note covers that amount");
     const w = applyWithdraw(loaded.machine, held.note, held.index, new Uint8Array(32), sats);
-    const proof = await circleFriPlugin.prove(w.statement, {});
+    const proof = await circleFriPlugin.prove(w.statement, wWithdraw(held.note, held.index, w.path, w.created));
     const v = circleFriPlugin.verify(w.statement, proof);
     if (!v.ok) throw new Error(v.reason);
     const next = loaded.notes.filter((n) => n.index !== held.index);
@@ -240,7 +254,7 @@ async function main(): Promise<void> {
         ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
       };
       const d = applyDeposit(machine, note);
-      const proof = await circleFriPlugin.prove(d.statement, {});
+      const proof = await circleFriPlugin.prove(d.statement, wDeposit(note, d.index, d.path));
       const v = circleFriPlugin.verify(d.statement, proof);
       if (!v.ok) throw new Error(`deposit proof: ${v.reason}`);
       machine = d.machine;
@@ -251,7 +265,7 @@ async function main(): Promise<void> {
       const half = h.note.amountSats / 2n;
       if (half > 0n && h.note.amountSats - half > 0n) {
         const w = applyWithdraw(machine, h.note, h.index, new Uint8Array(32), half);
-        const proof = await circleFriPlugin.prove(w.statement, {});
+        const proof = await circleFriPlugin.prove(w.statement, wWithdraw(h.note, h.index, w.path, w.created));
         const v = circleFriPlugin.verify(w.statement, proof);
         if (!v.ok) throw new Error(`partial proof: ${v.reason}`);
         if (!w.change || w.changeIndex === undefined) throw new Error("partial withdraw produced no change");
@@ -263,7 +277,7 @@ async function main(): Promise<void> {
     }
     for (const h of afterPartial.reverse()) {
       const w = applyWithdraw(machine, h.note, h.index, new Uint8Array(32), h.note.amountSats);
-      const proof = await circleFriPlugin.prove(w.statement, {});
+      const proof = await circleFriPlugin.prove(w.statement, wWithdraw(h.note, h.index, w.path));
       const v = circleFriPlugin.verify(w.statement, proof);
       if (!v.ok) throw new Error(`withdraw proof: ${v.reason}`);
       machine = w.machine;
@@ -273,24 +287,58 @@ async function main(): Promise<void> {
     );
     return;
   }
+  if (cmd === "lab" && process.argv[3] === "e2e") {
+    const run = (tag: string) => {
+      const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
+      const v = circleFriPlugin.verify(mix.statement, mix.proof);
+      if (!v.ok) throw new Error(`${tag} mix proof: ${v.reason}`);
+      if (!mixChangedRootsAndReserve(mix)) throw new Error(`${tag} mix did not update roots/reserve`);
+      return {
+        tag,
+        publicBefore: mix.publicBefore,
+        publicAfter: mix.publicAfter,
+        sound: circleFriPlugin.sound,
+        changed: {
+          noteRoot: mix.publicBefore.noteRoot !== mix.publicAfter.noteRoot,
+          nullifierRoot: mix.publicBefore.nullifierRoot !== mix.publicAfter.nullifierRoot,
+          reserve: mix.publicBefore.reserveSats !== mix.publicAfter.reserveSats,
+        },
+      };
+    };
+    const a = run("e2e-1");
+    const b = run("e2e-2");
+    console.log(JSON.stringify({ a, b, grew: a.publicAfter.anonSet >= 6 && b.publicAfter.anonSet >= 6 }, null, 2));
+    return;
+  }
   if (cmd === "bench") {
     const instance = crypto.getRandomValues(new Uint8Array(32));
+    const benchNote = { amountSats: 50_000n, rho: crypto.getRandomValues(new Uint8Array(32)), ownerSecret: crypto.getRandomValues(new Uint8Array(32)) };
     const d = applyDeposit(
       { state: emptyState(instance), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
-      { amountSats: 50_000n, rho: crypto.getRandomValues(new Uint8Array(32)), ownerSecret: crypto.getRandomValues(new Uint8Array(32)) },
+      benchNote,
     );
     const t0 = performance.now();
-    const proof = await circleFriPlugin.prove(d.statement, {});
+    const proof = await circleFriPlugin.prove(d.statement, wDeposit(benchNote, d.index, d.path));
     const t1 = performance.now();
     const v = circleFriPlugin.verify(d.statement, proof);
     const t2 = performance.now();
+    const { evaluateProofOnVm, proofFitsEnvelope } = await import("./chain/vm-verifier.ts");
+    const { soundnessWorksheet } = await import("./backends/circle/soundness.ts");
+    const tVm0 = performance.now();
+    const vm = evaluateProofOnVm(proof);
+    const tVm1 = performance.now();
     console.log(JSON.stringify({
       family: circleFriPlugin.family,
       sound: circleFriPlugin.sound,
       ok: v.ok,
+      vmAccepted: vm.accepted,
+      vmQueries: vm.queryEvals,
       proofBytes: proof.length,
       proveMs: +(t1 - t0).toFixed(2),
       verifyMs: +(t2 - t1).toFixed(2),
+      vmMs: +(tVm1 - tVm0).toFixed(2),
+      envelope: proofFitsEnvelope(proof),
+      worksheet: soundnessWorksheet(),
     }));
     return;
   }
@@ -323,13 +371,14 @@ async function main(): Promise<void> {
       ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
     };
     const d = applyDeposit(machine, note);
-    const proof = encodeFriProof(proveFri(d.statement));
+    const depW = wDeposit(note, d.index, d.path);
+    const proof = encodeFriProof(proveFri(d.statement, depW));
     const w = applyWithdraw(d.machine, note, d.index, new Uint8Array(32), 3_000n);
     const sizes = measureGenesisAndSuccessor(d.machine.state, w.machine.state, proof);
     const report = {
       plugin: circleFriPlugin.family,
       sound: circleFriPlugin.sound,
-      proofBytes: proofByteLength(proveFri(d.statement)),
+      proofBytes: proofByteLength(proveFri(d.statement, depW)),
       unlockingLimit: 10_000,
       txLimit: 100_000,
       genesisP2sh32: {
@@ -362,7 +411,7 @@ async function main(): Promise<void> {
       { state: emptyState(instance), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
       note,
     );
-    const proof = await circleFriPlugin.prove(d.statement, {});
+    const proof = await circleFriPlugin.prove(d.statement, wDeposit(note, d.index, d.path));
     const v = circleFriPlugin.verify(d.statement, proof);
     if (!v.ok) throw new Error(`covenant prove: ${v.reason}`);
     const sent = await broadcastCovenantGenesis(w, d.machine.state, proof, "p2sh32");
@@ -388,13 +437,64 @@ async function main(): Promise<void> {
     );
     return;
   }
-  if (cmd === "pool" && process.argv[3] === "chipnet-marker") {
+  if (cmd === "pool" && process.argv[3] === "chipnet-mix") {
+    const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
+    if (!mixChangedRootsAndReserve(mix)) throw new Error("mix did not update roots/reserve");
+    const v = circleFriPlugin.verify(mix.statement, mix.proof);
+    if (!v.ok) throw new Error(v.reason);
     const w = await wallet();
-    const txid = await broadcastMarkerTx(w, genesisStateFor(w));
-    console.log(`chipnet marker ${txid}`);
-    console.log("https://chipnet.imaginary.cash/tx/" + txid);
+    const genesis = await broadcastCovenantGenesis(w, mix.oldState, mix.proof, "p2sh32");
+    if (genesis.changeValue === undefined || genesis.changeValue < 150_000) {
+      throw new Error("genesis left no usable change for FRI kernels + successor fee");
+    }
+    const client = await connectChipnet();
+    try {
+      const funder = { tx_hash: genesis.broadcast, tx_pos: 1, value: genesis.changeValue };
+      const funded = compileFundFriKernels(w, funder, FRI_KERNEL_INPUTS);
+      const kernelTxid = await broadcast(client, binToHex(funded.raw));
+      const feeUtxo = { tx_hash: funded.txid, tx_pos: FRI_KERNEL_INPUTS, value: funded.changeValue };
+      const successor = compileCovenantSuccessor({
+        wallet: w,
+        feeUtxo,
+        pool: {
+          tx_hash: genesis.broadcast,
+          tx_pos: 0,
+          value: Number(STATE_BASE_SATS + mix.oldState.reserveSats),
+          category: hexToBin(genesis.categoryHex),
+          commitment: encodePublicPaa1(mix.oldState),
+        },
+        newState: mix.newState,
+        proof: mix.proof,
+        lockKind: "p2sh32",
+        kernelUtxos: funded.kernels,
+      });
+      const succTxid = await broadcast(client, binToHex(successor.raw));
+      const shards = proofShardReport(mix.proof);
+      console.log(
+        JSON.stringify(
+          {
+            genesis: genesis.broadcast,
+            kernelTxid,
+            successor: succTxid,
+            explorer: `https://chipnet.imaginary.cash/tx/${succTxid}`,
+            publicBefore: mix.publicBefore,
+            publicAfter: mix.publicAfter,
+            txBytes: successor.txBytes,
+            unlockingBytes: successor.unlockingBytes,
+            kernelInputs: FRI_KERNEL_INPUTS,
+            openings: shards.openings,
+            unlockingMax: shards.unlockingMax,
+          },
+          null,
+          2,
+        ),
+      );
+    } finally {
+      client.close();
+    }
     return;
   }
+
   if (cmd === "serve") {
     const port = Number(process.env.POOL_PORT ?? 17432);
     const server = createServer(async (req, res) => {
@@ -411,7 +511,7 @@ async function main(): Promise<void> {
           JSON.stringify({
             profile: "any-amount-v0",
             plugins: [hashLabPlugin.family, circleFriPlugin.family],
-            circleSound: false,
+            circleSound: circleFriPlugin.sound,
             chipnetOnly: true,
           }),
         );

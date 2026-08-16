@@ -1,9 +1,12 @@
 export { ANY_STATE_BYTES, ANY_STATE_MAGIC, decodeState, emptyState, encodeState } from "./pool/state.ts";
 export { IncrementalMerkle, commitNote, nullifierOf } from "./pool/notes.ts";
-export { applyDeposit, applyWithdraw, checkPublicTransition } from "./pool/transition.ts";
+export { applyDeposit, applyWithdraw, applyAggregate, checkPublicTransition } from "./pool/transition.ts";
+export { runMixSuccessor, mixChangedRootsAndReserve, publicPoolView } from "./pool/mix-successor.ts";
 export { hashLabPlugin } from "./backends/hash-lab.ts";
 export { circleFriPlugin, CIRCLE_FRI_NOT_SOUND_YET } from "./backends/circle/plugin.ts";
-export { proveFri, verifyFri, statementCoeffs } from "./backends/circle/fri.ts";
+export { proveFri, verifyFri, statementToEvals } from "./backends/circle/fri.ts";
+export { soundnessWorksheet } from "./backends/circle/soundness.ts";
+export { evaluateProofOnVm } from "./chain/vm-verifier.ts";
 export { compileCovenantSpend, compileCovenantSuccessor } from "./chain/covenant-spend.ts";
 export { poolLockP2s, poolLockP2sh32 } from "./chain/covenant-p2s.ts";
 export { CIRCLE_GEN, addPoints, onCircle } from "./backends/circle/group.ts";

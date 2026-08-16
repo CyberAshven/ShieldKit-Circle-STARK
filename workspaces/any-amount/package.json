@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Any-amount Chipnet lab (Circle FRI first plugin, not sound yet)",
+  "description": "Any-amount Chipnet lab (Circle FRI AIR + 2026 VM kernel)",
   "scripts": {
     "test": "tsx --test test/*.test.ts",
     "cli": "tsx src/cli.ts",

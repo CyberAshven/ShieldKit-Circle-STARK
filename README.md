@@ -32,8 +32,8 @@ so it is not a clean-clone validation entrypoint for this public mirror.
 Product profile (any amount, one set) lives in
 [`workspaces/any-amount/`](workspaces/any-amount/). It does **not**
 edit the sealed Fv1 0.1-ticket lane. Circle FRI prove/verify is shipped
-(`circle-fri-m31`, `sound: false`). Chipnet five-point genesis and successor
-compile, sign, and broadcast from the lab CLI.
+(`circle-fri-m31`, worksheet 128 conjectural bits). Chipnet five-point
+genesis still compiles; spends require FRI-kernel inputs. Digest-only fails.
 
 ## Reference
 

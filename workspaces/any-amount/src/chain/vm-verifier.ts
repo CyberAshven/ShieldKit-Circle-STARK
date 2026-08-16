@@ -1,0 +1,455 @@
+/**
+ * BCH 2026 VM verifier for Circle FRI paired Merkle openings.
+ * Standard P2S lock is 201 bytes — this kernel is a P2SH32 redeem
+ * (OP_SHA256 + OP_BEGIN/OP_UNTIL). A digest / OP_RETURN is not Verify.
+ */
+import { createTestAuthenticationProgramBch, createVirtualMachineBch2026 } from "@bitauth/libauth";
+import { encodeLe } from "../backends/circle/m31.ts";
+import { decodeFriProof, verifyFri, type FriProof } from "../backends/circle/fri.ts";
+import { FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
+import { compileFriQueryKernel, compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS, FRI_QUERY_KERNEL } from "./fri-kernel.ts";
+import { compileCqzLockP2sh32, cqzKernelUnlocking } from "./air-cqz.ts";
+import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
+import {
+  dummyFriOpenings,
+  dummyFriShardUnlockings,
+  encodeLayerRootsPrefix,
+  friShardUnlockings,
+  proofShardReport,
+} from "./fri-openings.ts";
+import { AIR_OFF_NTABLE, AIR_OFF_QTABLE, encodeAirPacked } from "./air-cqz.ts";
+import {
+  compilePoolCovenant,
+  FIVE_POINT_PAA1,
+  p2sh32Unlocking,
+  poolLockP2sh32,
+  pushData,
+  walkWitnessFromAuth,
+} from "./covenant-p2s.ts";
+import { encodePublicPaa1, STATE_BASE_SATS, type AnyAmountState } from "../pool/state.ts";
+import type { PoolStatement } from "../pool/statement.ts";
+
+export { compileFriQueryKernel, compileFriQueryLockP2sh32, FRI_QUERY_KERNEL };
+
+export function poolLockRedeem(): Uint8Array {
+  return compilePoolCovenant();
+}
+
+
+
+function concat(parts: Uint8Array[]): Uint8Array {
+  const n = parts.reduce((s, p) => s + p.length, 0);
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) {
+    out.set(p, o);
+    o += p.length;
+  }
+  return out;
+}
+
+function push(data: Uint8Array): Uint8Array {
+  return pushData(data);
+}
+
+export { encodeSteps, parentIndexOf };
+
+export function encodeFriQueryUnlocking(args: {
+  left: Uint8Array;
+  right: Uint8Array;
+  root: Uint8Array;
+  parentPath: Uint8Array[];
+  parentIndex: number;
+  layerIndex?: number;
+}): Uint8Array {
+  const steps = encodeSteps(args.parentIndex, args.parentPath);
+  const layer = args.layerIndex ?? 0;
+  const layerPush = layer === 0 ? Uint8Array.of(0x00) : Uint8Array.of(0x50 + layer);
+  return concat([
+    push(args.left),
+    push(args.right),
+    push(steps),
+    layerPush,
+    Uint8Array.of(0x51),
+    push(compileFriQueryKernel()),
+  ]);
+}
+
+export type VmEval = {
+  accepted: boolean;
+  error: string | null;
+  unlockingBytes: number;
+  lockingBytes: number;
+};
+
+export function evaluateBch2026(locking: Uint8Array, unlocking: Uint8Array): VmEval {
+  const vm = createVirtualMachineBch2026(true);
+  const program = createTestAuthenticationProgramBch({
+    lockingBytecode: locking,
+    unlockingBytecode: unlocking,
+    valueSatoshis: 1000n,
+  });
+  const state = vm.evaluate(program);
+  const ok = vm.stateSuccess(state);
+  return {
+    accepted: ok === true,
+    error: ok === true ? null : String(ok),
+    unlockingBytes: unlocking.length,
+    lockingBytes: locking.length,
+  };
+}
+
+export function evaluateFriQueryOpening(args: {
+  left: Uint8Array;
+  right: Uint8Array;
+  root: Uint8Array;
+  parentPath: Uint8Array[];
+  parentIndex: number;
+  layerIndex?: number;
+}): VmEval {
+  const vm = createVirtualMachineBch2026(true);
+  const layer = args.layerIndex ?? 0;
+  const roots = Array.from({ length: 7 }, (_, i) => (i === layer ? args.root : new Uint8Array(32)));
+  const carrierUnlock = encodeLayerRootsPrefix(roots);
+  const carrierLock = Uint8Array.of(0x75, 0x51);
+  const sourceOutputs = [
+    { lockingBytecode: carrierLock, valueSatoshis: 1000n },
+    { lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: 1000n },
+  ];
+  const transaction = {
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x22),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: carrierUnlock,
+      },
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x44),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: encodeFriQueryUnlocking(args),
+      },
+    ],
+    outputs: [{ lockingBytecode: carrierLock, valueSatoshis: 1000n }],
+  };
+  const result = vm.verify({ sourceOutputs, transaction });
+  return {
+    accepted: result === true,
+    error: result === true ? null : String(result),
+    unlockingBytes: encodeFriQueryUnlocking(args).length,
+    lockingBytes: compileFriQueryLockP2sh32().length,
+  };
+}
+
+export function evaluateDigestOnly(): VmEval {
+  const digest = new Uint8Array(40);
+  digest.set(new TextEncoder().encode("PAA1PROF"));
+  const unlocking = concat([push(digest), push(compileFriQueryKernel())]);
+  return evaluateBch2026(compileFriQueryLockP2sh32(), unlocking);
+}
+
+export function evaluateMissingProof(): VmEval {
+  return evaluateBch2026(compileFriQueryLockP2sh32(), push(compileFriQueryKernel()));
+}
+
+export function firstFriQueryUnlocking(proof: Uint8Array | FriProof): Uint8Array {
+  return friShardUnlockings(proof)[0]!;
+}
+
+/** Full pool successor: five-point + FRI-kernel input, no OP_RETURN digest. */
+export function evaluatePoolSuccessorVm(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  category?: Uint8Array;
+  kernelUnlockings?: Uint8Array[];
+  statement?: PoolStatement;
+  airPacked?: Uint8Array;
+}): VmEval {
+  const vm = createVirtualMachineBch2026(true);
+  const poolLock = poolLockP2sh32();
+  const friLock = compileFriQueryLockP2sh32();
+  const category = args.category ?? new Uint8Array(32).fill(0x11);
+  const poolValue = STATE_BASE_SATS + args.oldState.reserveSats;
+  const newValue = STATE_BASE_SATS + args.newState.reserveSats;
+  const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof);
+  const cqzLock = compileCqzLockP2sh32();
+  const cqzUnlock = cqzKernelUnlocking();
+  const sourceOutputs = [
+    {
+      lockingBytecode: poolLock,
+      valueSatoshis: poolValue,
+      token: {
+        amount: 0n,
+        category,
+        nft: { capability: "mutable" as const, commitment: encodePublicPaa1(args.oldState) },
+      },
+    },
+    ...shards.map(() => ({ lockingBytecode: friLock, valueSatoshis: 1000n })),
+    { lockingBytecode: cqzLock, valueSatoshis: 1000n },
+  ];
+  const decoded = decodeFriProof(args.proof);
+  const prefix = args.airPacked
+    ?? (args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots);
+  const poolUnlock = p2sh32Unlocking(
+    walkWitnessFromAuth(decoded.auth, args.oldState.noteRoot, args.newState.noteRoot),
+    prefix,
+  );
+  const transaction = {
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x11),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: poolUnlock,
+      },
+      ...shards.map((unlocking, i) => ({
+        outpointTransactionHash: new Uint8Array(32).fill(0x44 + i),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: unlocking,
+      })),
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x88),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: cqzUnlock,
+      },
+    ],
+    outputs: [
+      {
+        lockingBytecode: poolLock,
+        valueSatoshis: newValue,
+        token: {
+          amount: 0n,
+          category,
+          nft: { capability: "mutable" as const, commitment: encodePublicPaa1(args.newState) },
+        },
+      },
+    ],
+  };
+  const result = vm.verify({ sourceOutputs, transaction });
+  return {
+    accepted: result === true,
+    error: result === true ? null : String(result),
+    unlockingBytes: transaction.inputs[0]!.unlockingBytecode.length,
+    lockingBytes: poolLock.length,
+  };
+}
+
+export function evaluateDigestOnlyPool(oldState: AnyAmountState): VmEval {
+  const vm = createVirtualMachineBch2026(true);
+  const poolLock = poolLockP2sh32();
+  const digest = new Uint8Array(40);
+  digest.set(new TextEncoder().encode("PAA1PROF"));
+  const sourceOutputs = [
+    {
+      lockingBytecode: poolLock,
+      valueSatoshis: STATE_BASE_SATS + oldState.reserveSats,
+      token: {
+        amount: 0n,
+        category: new Uint8Array(32).fill(0x11),
+        nft: { capability: "mutable" as const, commitment: encodePublicPaa1(oldState) },
+      },
+    },
+  ];
+  const transaction = {
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x11),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: concat([push(digest), p2sh32Unlocking()]),
+      },
+    ],
+    outputs: [
+      {
+        lockingBytecode: poolLock,
+        valueSatoshis: STATE_BASE_SATS + oldState.reserveSats,
+        token: {
+          amount: 0n,
+          category: new Uint8Array(32).fill(0x11),
+          nft: { capability: "mutable" as const, commitment: encodePublicPaa1(oldState) },
+        },
+      },
+    ],
+  };
+  const result = vm.verify({ sourceOutputs, transaction });
+  return {
+    accepted: result === true,
+    error: result === true ? null : String(result),
+    unlockingBytes: transaction.inputs[0]!.unlockingBytecode.length,
+    lockingBytes: poolLock.length,
+  };
+}
+
+export function evaluateMissingProofPool(oldState: AnyAmountState): VmEval {
+  const vm = createVirtualMachineBch2026(true);
+  const poolLock = poolLockP2sh32();
+  const sourceOutputs = [
+    {
+      lockingBytecode: poolLock,
+      valueSatoshis: STATE_BASE_SATS + oldState.reserveSats,
+      token: {
+        amount: 0n,
+        category: new Uint8Array(32).fill(0x11),
+        nft: { capability: "mutable" as const, commitment: encodePublicPaa1(oldState) },
+      },
+    },
+  ];
+  const transaction = {
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x11),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: p2sh32Unlocking(),
+      },
+    ],
+    outputs: sourceOutputs,
+  };
+  const result = vm.verify({ sourceOutputs, transaction });
+  return {
+    accepted: result === true,
+    error: result === true ? null : String(result),
+    unlockingBytes: p2sh32Unlocking().length,
+    lockingBytes: poolLock.length,
+  };
+}
+
+/** Executed 2026 lock only. JS verifyFri is logged separately, not AND-ed. */
+export function evaluateOnChainVerify(
+  statement: PoolStatement,
+  proof: Uint8Array,
+): { accepted: boolean; pool: VmEval; stark: ReturnType<typeof verifyFri> } {
+  const pool = evaluatePoolSuccessorVm({
+    oldState: statement.oldState,
+    newState: statement.newState,
+    proof,
+    statement,
+  });
+  const stark = verifyFri(statement, decodeFriProof(proof));
+  return { accepted: pool.accepted, pool, stark };
+}
+
+export function evaluateProofOnVm(proof: FriProof | Uint8Array): {
+  accepted: boolean;
+  failed: string | null;
+  queryEvals: number;
+  unlockingMax: number;
+} {
+  const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
+  let unlockingMax = 0;
+  let nEval = 0;
+  for (const q of p.queries) {
+    for (let r = 0; r < q.layers.length; r += 1) {
+      const layer = q.layers[r]!;
+      const n = FRI_N >> r;
+      const i = q.index % n;
+      const lo = i < n / 2;
+      const ev = evaluateFriQueryOpening({
+        left: encodeLe(lo ? layer.value : layer.partner),
+        right: encodeLe(lo ? layer.partner : layer.value),
+        root: p.layerRoots[r]!,
+        parentPath: layer.path,
+        parentIndex: parentIndexOf(i, n),
+        layerIndex: r,
+      });
+      unlockingMax = Math.max(unlockingMax, ev.unlockingBytes);
+      nEval += 1;
+      if (!ev.accepted) {
+        return { accepted: false, failed: ev.error ?? `query ${q.index} L${r}`, queryEvals: nEval, unlockingMax };
+      }
+    }
+  }
+  return { accepted: true, failed: null, queryEvals: nEval, unlockingMax };
+}
+
+export function evaluateFalseRoot(proof: FriProof | Uint8Array): VmEval {
+  const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
+  const q = p.queries[0]!;
+  const layer = q.layers[0]!;
+  const n = FRI_N;
+  const i = q.index % n;
+  const lo = i < n / 2;
+  const bad = new Uint8Array(p.layerRoots[0]!);
+  bad[0] ^= 1;
+  return evaluateFriQueryOpening({
+    left: encodeLe(lo ? layer.value : layer.partner),
+    right: encodeLe(lo ? layer.partner : layer.value),
+    root: bad,
+    parentPath: layer.path,
+    parentIndex: parentIndexOf(i, n),
+    layerIndex: 0,
+  });
+}
+
+/** Honest PAA1 walk + dummy 8-leaf kernel openings against this statement's roots. */
+export function evaluateDummyKernels(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement?: PoolStatement;
+}): VmEval {
+  return evaluatePoolSuccessorVm({
+    ...args,
+    kernelUnlockings: dummyFriShardUnlockings(),
+  });
+}
+
+/** Dummy 8-leaf kernels AND dummy layerRoots/qTable in the pool unlocking. */
+export function evaluateSwappedDummyKernels(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const dummy = dummyFriOpenings(8);
+  const honest = encodeAirPacked(args.statement, args.proof);
+  const swapped = new Uint8Array(honest);
+  for (let r = 0; r < 7; r += 1) swapped.set(dummy[0]!.root, r * 32);
+  for (let s = 0; s < FRI_QUERIES && AIR_OFF_QTABLE + (s + 1) * 4 <= swapped.length; s += 1) {
+    swapped.set(dummy[s % dummy.length]!.left, AIR_OFF_QTABLE + s * 4);
+  }
+  swapped.set(encodeLe(1n), AIR_OFF_NTABLE);
+  return evaluatePoolSuccessorVm({
+    ...args,
+    kernelUnlockings: dummyFriShardUnlockings(),
+    airPacked: swapped,
+    statement: args.statement,
+  });
+}
+
+export function proofFitsEnvelope(proof: Uint8Array): {
+  proofBytes: number;
+  shards: number;
+  unlockingLimit: number;
+  txLimit: number;
+  shardsFit10k: boolean;
+  txFit100k: boolean;
+  unlockingMax: number;
+  openings: number;
+} {
+  const report = proofShardReport(proof);
+  return {
+    proofBytes: proof.length,
+    shards: report.shards,
+    unlockingLimit: 10_000,
+    txLimit: 100_000,
+    shardsFit10k: report.shardsFit10k,
+    txFit100k: report.txFit100k,
+    unlockingMax: report.unlockingMax,
+    openings: report.openings,
+  };
+}
+
+export { FIVE_POINT_PAA1, FRI_QUERIES };

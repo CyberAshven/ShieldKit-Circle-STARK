@@ -1,4 +1,5 @@
 import { bytesToHex, hexToBytes, readU64BE, writeU64BE } from "./bytes.ts";
+import { emptyMerkleRoot } from "./notes.ts";
 
 function writeU32BE(value: bigint): Uint8Array {
   if (value < 0n || value > 0xffffffffn) throw new Error("u32 out of range");
@@ -19,7 +20,7 @@ function readU32BE(bytes: Uint8Array, offset: number): bigint {
 export const ANY_STATE_MAGIC = "PAA1";
 export const ANY_STATE_BYTES = 128;
 export const ANY_STATE_VERSION = 1;
-export const STATE_BASE_SATS = 1000n;
+export const STATE_BASE_SATS = 2000n;
 
 export type AnyAmountState = {
   magic: typeof ANY_STATE_MAGIC;
@@ -47,7 +48,7 @@ export function emptyState(poolInstanceId: Uint8Array): AnyAmountState {
     depositCount: 0n,
     withdrawalCount: 0n,
     poolInstanceId: assertLen(poolInstanceId, 32, "poolInstanceId"),
-    noteRoot: new Uint8Array(32),
+    noteRoot: emptyMerkleRoot(),
     nullifierRoot: new Uint8Array(32),
   };
 }
@@ -71,6 +72,11 @@ export function encodeState(state: AnyAmountState): Uint8Array {
   out.set(assertLen(state.noteRoot, 32, "noteRoot"), 64);
   out.set(assertLen(state.nullifierRoot, 32, "nullifierRoot"), 96);
   return out;
+}
+
+/** On-chain NFT cell is the full PAA1 (sequence, reserve, roots). */
+export function encodePublicPaa1(state: AnyAmountState): Uint8Array {
+  return encodeState(state);
 }
 
 export function decodeState(bytes: Uint8Array): AnyAmountState {

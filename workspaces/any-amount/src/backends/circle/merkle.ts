@@ -12,11 +12,11 @@ export function leafHash(value: M31El): Uint8Array {
 export class MerkleTree {
   readonly layers: Uint8Array[][];
 
-  constructor(values: M31El[]) {
+  constructor(values: M31El[] | Uint8Array[]) {
     if (values.length === 0 || (values.length & (values.length - 1)) !== 0) {
       throw new Error("merkle width must be a power of two");
     }
-    const leaves = values.map(leafHash);
+    const leaves = values.map((v) => (v instanceof Uint8Array ? sha256(v) : leafHash(v)));
     this.layers = [leaves];
     let cur = leaves;
     while (cur.length > 1) {
@@ -45,12 +45,37 @@ export class MerkleTree {
   }
 
   static verify(value: M31El, index: number, path: Uint8Array[], root: Uint8Array): boolean {
-    let acc = leafHash(value);
+    return MerkleTree.verifyLeaf(leafHash(value), index, path, root);
+  }
+
+  static verifyBytes(raw: Uint8Array, index: number, path: Uint8Array[], root: Uint8Array): boolean {
+    return MerkleTree.verifyLeaf(sha256(raw), index, path, root);
+  }
+
+  static verifyLeaf(leaf: Uint8Array, index: number, path: Uint8Array[], root: Uint8Array): boolean {
+    let acc = leaf;
     let i = index;
     for (const sib of path) {
       acc = i % 2 === 0 ? merkleParent(acc, sib) : merkleParent(sib, acc);
       i >>= 1;
     }
     return bytesToHex(acc) === bytesToHex(root);
+  }
+
+  /** Partner-as-sibling: both leaves known, path starts at their parent. */
+  static verifyPaired(
+    value: M31El,
+    partner: M31El,
+    valueIndex: number,
+    n: number,
+    parentPath: Uint8Array[],
+    root: Uint8Array,
+  ): boolean {
+    const i = valueIndex % n;
+    const lo = i < n / 2;
+    const left = lo ? leafHash(value) : leafHash(partner);
+    const right = lo ? leafHash(partner) : leafHash(value);
+    const parent = merkleParent(left, right);
+    return MerkleTree.verifyLeaf(parent, lo ? i : i - n / 2, parentPath, root);
   }
 }

@@ -1,15 +1,46 @@
-import { bytesToHex, concatBytes, readU16BE, sha256, writeU16BE } from "../../pool/bytes.ts";
+import {
+  bytesToHex,
+  concatBytes,
+  readU16BE,
+  readU32BE,
+  readU64BE,
+  sha256,
+  writeU16BE,
+  writeU32BE,
+  writeU64BE,
+} from "../../pool/bytes.ts";
 import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
 import { foldPair } from "./fold.ts";
 import { addPoints, CIRCLE_GEN, scalarMul, type CirclePoint } from "./group.ts";
-import { add, el, encodeLe, M31, type M31El } from "./m31.ts";
+import { add, encodeLe, M31, mul, type M31El } from "./m31.ts";
 import { MerkleTree } from "./merkle.ts";
+import {
+  COMMITTED_LAYERS,
+  FRI_FINAL,
+  FRI_LOG_N,
+  FRI_N,
+  FRI_QUERIES,
+  FRI_VERSION,
+  GRIND_BITS,
+  TRACE_LEN,
+  assertSoundParams,
+} from "./params.ts";
+import {
+  airQuotientLde,
+  algebraicC,
+  assertSatisfied,
+  buildTrace,
+  checkAuthRelation,
+  checkPublicConservation,
+  publicCells,
+  publicEvals,
+  quotientAtDomain,
+  type FriAuth,
+  type FriWitness,
+} from "./air.ts";
+import { evalCirclePoly, interpolateCircle } from "./interpolate.ts";
 
-/** Bench Circle FRI. Hash-based = PQ. Not 128-bit sound (n=32, 8 queries). */
-export const FRI_LOG_N = 5;
-export const FRI_N = 32;
-export const FRI_QUERIES = 8;
-export const FRI_VERSION = 1;
+assertSoundParams();
 
 export type FriQueryLayer = {
   value: M31El;
@@ -21,23 +52,43 @@ export type FriQueryLayer = {
 export type FriQuery = {
   index: number;
   layers: FriQueryLayer[];
+  traceValue: M31El;
+  tracePath: Uint8Array[];
 };
 
 export type FriProof = {
   version: number;
+  grindNonce: number;
   layerRoots: Uint8Array[];
+  traceRoot: Uint8Array;
   final: M31El[];
   queries: FriQuery[];
+  auth: FriAuth;
 };
 
-function subgroupGen(): CirclePoint {
-  return scalarMul(CIRCLE_GEN, 2n ** 26n);
+function log2n(n: number): number {
+  return Math.round(Math.log2(n));
 }
 
-export function circleDomain(): CirclePoint[] {
-  const g = subgroupGen();
-  const out: CirclePoint[] = [];
-  for (let i = 0; i < FRI_N; i += 1) out.push(scalarMul(g, BigInt(i)));
+function subgroupGen(n: number): CirclePoint {
+  const log = log2n(n);
+  return scalarMul(CIRCLE_GEN, 2n ** BigInt(31 - log));
+}
+
+const domainCache = new Map<number, CirclePoint[]>();
+
+export function circleDomain(n: number = FRI_N): CirclePoint[] {
+  const hit = domainCache.get(n);
+  if (hit) return hit;
+  const g = subgroupGen(n);
+  const out: CirclePoint[] = [scalarMul(g, 0n)];
+  let acc = g;
+  out.push(acc);
+  for (let i = 2; i < n; i += 1) {
+    acc = addPoints(acc, g);
+    out.push(acc);
+  }
+  domainCache.set(n, out);
   return out;
 }
 
@@ -48,36 +99,22 @@ function hashToM31(...parts: Uint8Array[]): M31El {
   return n % M31;
 }
 
-/** Pair the two halves of the current layer (classical FRI even/odd). */
 function partnerIndex(i: number, n: number): number {
   return (i + n / 2) % n;
 }
 
-/** Whole statement → 16 M31 coeffs via SHA-256(stmt || i). Membership, nullifier, reserve all bind. */
-export function statementCoeffs(bytes: Uint8Array): M31El[] {
-  const coeffs: M31El[] = [];
-  for (let i = 0; i < 16; i += 1) {
-    const h = sha256(concatBytes(bytes, Uint8Array.of(i)));
-    let c = 0n;
-    for (let k = 0; k < 8; k += 1) c = (c << 8n) | BigInt(h[k]!);
-    coeffs.push(c % M31);
+/** Lay out (i, i+n/2) as merkle siblings so each query sends one shared path. */
+function pairOrder(evals: M31El[]): M31El[] {
+  const n = evals.length;
+  const out: M31El[] = [];
+  for (let i = 0; i < n / 2; i += 1) {
+    out.push(evals[i]!, evals[i + n / 2]!);
   }
-  return coeffs;
+  return out;
 }
 
-export function evalOnCircle(coeffs: M31El[], p: CirclePoint): M31El {
-  let acc = 0n;
-  let pow = 1n;
-  for (const c of coeffs) {
-    acc = add(acc, (c * pow) % M31);
-    pow = (pow * p.x) % M31;
-  }
-  return el(acc);
-}
-
-export function statementToEvals(statement: PoolStatement, domain: CirclePoint[]): M31El[] {
-  const coeffs = statementCoeffs(encodeStatement(statement));
-  return domain.map((p) => evalOnCircle(coeffs, p));
+function pairMerkleIndex(i: number, n: number): number {
+  return i < n / 2 ? 2 * i : 2 * (i - n / 2) + 1;
 }
 
 function foldLayer(
@@ -97,34 +134,79 @@ function foldLayer(
   return { domain: nextD, evals: nextE };
 }
 
-function queryIndices(digest: Uint8Array, roots: Uint8Array[]): number[] {
-  const seed = sha256(concatBytes(digest, ...roots, new TextEncoder().encode("queries")));
+function queryIndices(seed: Uint8Array, n: number, count: number): number[] {
   const idx: number[] = [];
-  for (let q = 0; q < FRI_QUERIES; q += 1) idx.push(seed[q]! % FRI_N);
+  let h = seed;
+  while (idx.length < count) {
+    h = sha256(concatBytes(h, new TextEncoder().encode("q"), Uint8Array.of(idx.length)));
+    const v = (h[0]! << 8) | h[1]!;
+    idx.push(v % n);
+  }
   return idx;
 }
 
-export function proveFri(statement: PoolStatement): FriProof {
+function grindOk(digest: Uint8Array, nonce: number): boolean {
+  const h = sha256(concatBytes(digest, writeU32BE(nonce), new TextEncoder().encode("grind")));
+  let bits = 0;
+  for (const b of h) {
+    for (let i = 7; i >= 0; i -= 1) {
+      if (((b >> i) & 1) !== 0) return bits >= GRIND_BITS;
+      bits += 1;
+      if (bits >= GRIND_BITS) return true;
+    }
+  }
+  return bits >= GRIND_BITS;
+}
+
+function findGrind(digest: Uint8Array): number {
+  for (let nonce = 0; nonce < 1 << 24; nonce += 1) {
+    if (grindOk(digest, nonce)) return nonce;
+  }
+  throw new Error("grind failed");
+}
+
+export function statementToEvals(statement: PoolStatement, domain: CirclePoint[]): M31El[] {
+  return publicEvals(statement, circleDomain(TRACE_LEN), domain);
+}
+
+export function proveFri(statement: PoolStatement, witness: FriWitness = {}): FriProof {
+  const trace = buildTrace(statement, witness);
+  assertSatisfied(trace);
   const digest = sha256(encodeStatement(statement));
-  let domain = circleDomain();
-  let evals = statementToEvals(statement, domain);
+  const small = circleDomain(TRACE_LEN);
+  const big = circleDomain(FRI_N);
+  const { qLde } = airQuotientLde(statement, small, big);
+  const tLde = qLde;
+  const traceTree = new MerkleTree(tLde);
+
+  let domain = big;
+  let evals = tLde.slice();
   const trees: MerkleTree[] = [];
   const layers: M31El[][] = [];
   const domains: CirclePoint[][] = [];
 
-  for (let r = 0; r < FRI_LOG_N - 1; r += 1) {
-    const tree = new MerkleTree(evals);
+  const stopAt = FRI_FINAL;
+  while (evals.length > stopAt) {
+    const tree = new MerkleTree(pairOrder(evals));
     trees.push(tree);
     layers.push(evals);
     domains.push(domain);
-    const lambda = hashToM31(digest, Uint8Array.of(r), tree.root, new TextEncoder().encode("lambda"));
+    const lambda = hashToM31(digest, Uint8Array.of(trees.length - 1), tree.root, new TextEncoder().encode("lambda"));
     const next = foldLayer(domain, evals, lambda);
     evals = next.evals;
     domain = next.domain;
   }
 
   const layerRoots = trees.map((t) => t.root);
-  const queries = queryIndices(digest, layerRoots).map((start) => {
+  const grindSeed = sha256(concatBytes(digest, traceTree.root, ...layerRoots));
+  const grindNonce = findGrind(grindSeed);
+  const qIdx = queryIndices(
+    sha256(concatBytes(grindSeed, writeU32BE(grindNonce), new TextEncoder().encode("queries"))),
+    FRI_N,
+    FRI_QUERIES,
+  );
+
+  const queries = qIdx.map((start) => {
     const qLayers: FriQueryLayer[] = [];
     let index = start;
     for (let r = 0; r < trees.length; r += 1) {
@@ -134,48 +216,155 @@ export function proveFri(statement: PoolStatement): FriProof {
       qLayers.push({
         value: layers[r]![i]!,
         partner: layers[r]![j]!,
-        path: trees[r]!.path(i),
-        partnerPath: trees[r]!.path(j),
+        path: trees[r]!.path(pairMerkleIndex(i, n)).slice(1),
+        partnerPath: [],
       });
       index = i % (n / 2);
     }
-    return { index: start, layers: qLayers };
+    return {
+      index: start,
+      layers: qLayers,
+      traceValue: tLde[start]!,
+      tracePath: traceTree.path(start),
+    };
   });
 
-  return { version: FRI_VERSION, layerRoots, final: evals, queries };
+  return {
+    version: FRI_VERSION,
+    grindNonce,
+    layerRoots,
+    traceRoot: traceTree.root,
+    final: evals,
+    queries,
+    auth: trace.auth,
+  };
 }
 
+/** FRI of a caller-supplied quotient LDE (mutation / cheat tests). Still carries auth. */
+export function proveFromTLde(statement: PoolStatement, tLde: M31El[], auth: FriAuth): FriProof {
+  const digest = sha256(encodeStatement(statement));
+  const big = circleDomain(FRI_N);
+  const traceTree = new MerkleTree(tLde);
+  let domain = big;
+  let evals = tLde.slice();
+  const trees: MerkleTree[] = [];
+  const layers: M31El[][] = [];
+  while (evals.length > FRI_FINAL) {
+    const tree = new MerkleTree(pairOrder(evals));
+    trees.push(tree);
+    layers.push(evals);
+    const lambda = hashToM31(digest, Uint8Array.of(trees.length - 1), tree.root, new TextEncoder().encode("lambda"));
+    const next = foldLayer(domain, evals, lambda);
+    evals = next.evals;
+    domain = next.domain;
+  }
+  const layerRoots = trees.map((t) => t.root);
+  const grindSeed = sha256(concatBytes(digest, traceTree.root, ...layerRoots));
+  const grindNonce = findGrind(grindSeed);
+  const qIdx = queryIndices(
+    sha256(concatBytes(grindSeed, writeU32BE(grindNonce), new TextEncoder().encode("queries"))),
+    FRI_N,
+    FRI_QUERIES,
+  );
+  const queries = qIdx.map((start) => {
+    const qLayers: FriQueryLayer[] = [];
+    let index = start;
+    for (let r = 0; r < trees.length; r += 1) {
+      const n = layers[r]!.length;
+      const i = index % n;
+      const j = partnerIndex(i, n);
+      qLayers.push({
+        value: layers[r]![i]!,
+        partner: layers[r]![j]!,
+        path: trees[r]!.path(pairMerkleIndex(i, n)).slice(1),
+        partnerPath: [],
+      });
+      index = i % (n / 2);
+    }
+    return {
+      index: start,
+      layers: qLayers,
+      traceValue: tLde[start]!,
+      tracePath: traceTree.path(start),
+    };
+  });
+  return {
+    version: FRI_VERSION,
+    grindNonce,
+    layerRoots,
+    traceRoot: traceTree.root,
+    final: evals,
+    queries,
+    auth,
+  };
+}
+
+export function mutateTraceAndProve(statement: PoolStatement, bumpIndex: number, witness: FriWitness): FriProof {
+  const small = circleDomain(TRACE_LEN);
+  const big = circleDomain(FRI_N);
+  const trace = buildTrace(statement, witness);
+  assertSatisfied(trace);
+  const { qLde } = airQuotientLde(statement, small, big);
+  const bumped = qLde.map((x, i) => (i === bumpIndex % qLde.length ? add(x, 1n) : add(x, 1n)));
+  return proveFromTLde(statement, bumped, trace.auth);
+}
+
+/**
+ * Opening-only verifier. FRI target is algebraicC / Z (conservation, sequence,
+ * action). Membership is a sibling nativeWalk, not a residual flag.
+ */
 export function verifyFri(
   statement: PoolStatement,
   proof: FriProof,
+  witness: FriWitness = {},
 ): { ok: true } | { ok: false; reason: string } {
   if (proof.version !== FRI_VERSION) return { ok: false, reason: "version" };
-  if (proof.layerRoots.length !== FRI_LOG_N - 1) return { ok: false, reason: "layers" };
   if (proof.queries.length !== FRI_QUERIES) return { ok: false, reason: "query count" };
+  if (proof.final.length !== FRI_FINAL) return { ok: false, reason: "final width" };
+  if (!proof.auth) return { ok: false, reason: "missing auth" };
+
+  const cons = checkPublicConservation(statement);
+  if (!cons.ok) return cons;
+  const auth = checkAuthRelation(statement, proof.auth, witness);
+  if (!auth.ok) return auth;
+
+  const cVec = algebraicC(publicCells(statement), statement);
+  if (cVec.some((r) => r !== 0n)) return { ok: false, reason: "algebraicC" };
+  const { nLde, zLde } = airQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain(FRI_N));
 
   const digest = sha256(encodeStatement(statement));
-  const expectedIdx = queryIndices(digest, proof.layerRoots);
-  const honest = statementToEvals(statement, circleDomain());
+  const grindSeed = sha256(concatBytes(digest, proof.traceRoot, ...proof.layerRoots));
+  if (!grindOk(grindSeed, proof.grindNonce)) return { ok: false, reason: "grind" };
+  const expectedIdx = queryIndices(
+    sha256(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries"))),
+    FRI_N,
+    FRI_QUERIES,
+  );
 
   for (let q = 0; q < proof.queries.length; q += 1) {
     const query = proof.queries[q]!;
     if (query.index !== expectedIdx[q]) return { ok: false, reason: `query ${q} index` };
-    if (query.layers[0]!.value !== honest[query.index]) {
-      return { ok: false, reason: "layer0 != statement polynomial" };
+    if (!MerkleTree.verify(query.traceValue, query.index, query.tracePath, proof.traceRoot)) {
+      return { ok: false, reason: "trace merkle" };
+    }
+    const nAt = nLde[query.index]!;
+    const zAt = zLde[query.index]!;
+    if (mul(query.traceValue, zAt) !== nAt) {
+      return { ok: false, reason: "N != Q*Z" };
+    }
+    if (query.layers[0]!.value !== query.traceValue) {
+      return { ok: false, reason: "FRI layer0 != Q(z)" };
     }
 
-    let domain = circleDomain();
+    let domain = circleDomain(FRI_N);
     let index = query.index;
     for (let r = 0; r < query.layers.length; r += 1) {
       const n = FRI_N >> r;
       const i = index % n;
       const j = partnerIndex(i, n);
       const layer = query.layers[r]!;
-      if (!MerkleTree.verify(layer.value, i, layer.path, proof.layerRoots[r]!)) {
-        return { ok: false, reason: `merkle value L${r}` };
-      }
-      if (!MerkleTree.verify(layer.partner, j, layer.partnerPath, proof.layerRoots[r]!)) {
-        return { ok: false, reason: `merkle partner L${r}` };
+      if (!MerkleTree.verifyPaired(layer.value, layer.partner, i, n, layer.path, proof.layerRoots[r]!)) {
+        return { ok: false, reason: `merkle T L${r}` };
       }
       const lambda = hashToM31(
         digest,
@@ -209,14 +398,82 @@ export function verifyFri(
   return { ok: true };
 }
 
+function encodeAuth(a: FriAuth): Uint8Array {
+  return concatBytes(
+    writeU16BE(a.index),
+    Uint8Array.of(a.path.length),
+    a.leaf,
+    a.root,
+    a.nullifier,
+    a.rho,
+    a.owner,
+    writeU64BE(a.amountSats),
+    writeU64BE(a.publicDeltaSats),
+    a.amountCommit,
+    writeU16BE(a.createdIndex),
+    Uint8Array.of(a.createdPath.length),
+    a.createdLeaf,
+    ...a.path,
+    ...a.createdPath,
+  );
+}
+
+function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; next: number } {
+  let o = start;
+  const index = readU16BE(bytes, o);
+  o += 2;
+  const nP = bytes[o++]!;
+  const leaf = bytes.slice(o, o + 32);
+  o += 32;
+  const root = bytes.slice(o, o + 32);
+  o += 32;
+  const nullifier = bytes.slice(o, o + 32);
+  o += 32;
+  const rho = bytes.slice(o, o + 32);
+  o += 32;
+  const owner = bytes.slice(o, o + 32);
+  o += 32;
+  const amountSats = readU64BE(bytes, o);
+  o += 8;
+  const publicDeltaSats = readU64BE(bytes, o);
+  o += 8;
+  const amountCommit = bytes.slice(o, o + 32);
+  o += 32;
+  const createdIndex = readU16BE(bytes, o);
+  o += 2;
+  const nC = bytes[o++]!;
+  const createdLeaf = bytes.slice(o, o + 32);
+  o += 32;
+  const path: Uint8Array[] = [];
+  for (let i = 0; i < nP; i += 1) {
+    path.push(bytes.slice(o, o + 32));
+    o += 32;
+  }
+  const createdPath: Uint8Array[] = [];
+  for (let i = 0; i < nC; i += 1) {
+    createdPath.push(bytes.slice(o, o + 32));
+    o += 32;
+  }
+  return {
+    auth: { leaf, index, path, root, nullifier, rho, owner, amountSats, publicDeltaSats, amountCommit, createdLeaf, createdIndex, createdPath },
+    next: o,
+  };
+}
+
 export function encodeFriProof(p: FriProof): Uint8Array {
   const parts: Uint8Array[] = [
     Uint8Array.of(p.version, p.layerRoots.length, p.final.length, p.queries.length),
+    writeU32BE(p.grindNonce),
+    p.traceRoot,
+    encodeAuth(p.auth),
   ];
   for (const r of p.layerRoots) parts.push(r);
   for (const f of p.final) parts.push(encodeLe(f));
   for (const q of p.queries) {
     parts.push(writeU16BE(q.index));
+    parts.push(encodeLe(q.traceValue));
+    parts.push(Uint8Array.of(q.tracePath.length));
+    for (const node of q.tracePath) parts.push(node);
     parts.push(Uint8Array.of(q.layers.length));
     for (const layer of q.layers) {
       parts.push(encodeLe(layer.value), encodeLe(layer.partner));
@@ -235,6 +492,13 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
   const nRoots = bytes[o++]!;
   const nFinal = bytes[o++]!;
   const nQ = bytes[o++]!;
+  const grindNonce = readU32BE(bytes, o);
+  o += 4;
+  const traceRoot = bytes.slice(o, o + 32);
+  o += 32;
+  const decodedAuth = decodeAuth(bytes, o);
+  const auth = decodedAuth.auth;
+  o = decodedAuth.next;
   const layerRoots: Uint8Array[] = [];
   for (let i = 0; i < nRoots; i += 1) {
     layerRoots.push(bytes.slice(o, o + 32));
@@ -252,6 +516,13 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
   for (let q = 0; q < nQ; q += 1) {
     const index = readU16BE(bytes, o);
     o += 2;
+    const traceValue = readEl();
+    const nTP = bytes[o++]!;
+    const tracePath: Uint8Array[] = [];
+    for (let i = 0; i < nTP; i += 1) {
+      tracePath.push(bytes.slice(o, o + 32));
+      o += 32;
+    }
     const nL = bytes[o++]!;
     const layers: FriQueryLayer[] = [];
     for (let r = 0; r < nL; r += 1) {
@@ -271,13 +542,16 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
       }
       layers.push({ value, partner, path, partnerPath });
     }
-    queries.push({ index, layers });
+    queries.push({ index, layers, traceValue, tracePath });
   }
-  return { version, layerRoots, final, queries };
+  return { version, grindNonce, layerRoots, traceRoot, final, queries, auth };
 }
 
 export function proofByteLength(p: FriProof): number {
   return encodeFriProof(p).length;
 }
 
-export { addPoints, bytesToHex };
+export { add, bytesToHex, COMMITTED_LAYERS, FRI_LOG_N, FRI_N, FRI_QUERIES, TRACE_LEN };
+export type { FriWitness, FriAuth };
+export { airQuotientLde, algebraicC, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wDeposit, wWithdraw } from "./air.ts";
+export { interpolateCircle, evalCirclePoly } from "./interpolate.ts";

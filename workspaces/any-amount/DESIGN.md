@@ -33,7 +33,11 @@ Output 0 must keep:
 
 Layla (2026-05-15) made NFT commitments **128 bytes**. That is why `PAA1` is 128 bytes, not a 40-byte hash of the state.
 
-The on-chain proof slot is `OP_RETURN PAA1PROF || SHA-256(proof)`. The full Circle FRI blob stays off-chain until a sharded on-chain verifier fits the 10 KB unlocking / 100 KB tx envelopes.
+The continuing lock is five-point **plus** required kernel inputs (`TXINPUTCOUNT >= 12`: inputs 1..10 SHA-256 paired-Merkle FRI, input 11 slot-0 `C=Q·Z`). A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Proof witness shards across those inputs (10 KB unlocking / 100 KB tx). Kernels read the packed AIR prefix (roots + FS indices + Q/N tables) from the **pool** unlocking — not a root the kernel spender chooses.
+
+## Why not OP_RETURN (authoring)
+
+`OP_RETURN` is not a covenant and cannot verify. State lives in the **128-byte mutable NFT commitment** (`PAA1`). The readable contract is CashScript (`contracts/PoolCovenant.cash`). The executed redeem is **libauth CashAssembly** (`src/chain/covenant-p2s.ts`, `fri-kernel.ts`, `air-cqz.ts`) because CashScript cannot emit the fused `OP_BEGIN`/`OP_UNTIL` Merkle/FRI/`C=Q·Z` loop. Tx assembly, P2SH32, CashTokens, and `createVirtualMachineBch2026` are libauth. FS query indices are decoded as unsigned BE16 (`OP_BIN2NUM` on a lone high bit is signed).
 
 ## Plugins (do not flatten)
 
@@ -61,13 +65,14 @@ P2PKH is **not** the shielded pool. The pool is the **covenant UTXO**.
 | --- | --- |
 | Family | `circle-fri-m31` |
 | Field | M31 (`2^31-1`) |
-| Domain | circle group `x²+y²=1`, generator `(2, 1268011823)`, subgroup `g = [2^26]G`, `n=32` |
-| Queries | 8 |
-| Fold | Circle FRI fold (2024/278) with `x=0` fallback to `y` |
-| Binding | `SHA-256(encodeStatement \|\| i)` → 16 coeffs; membership, nullifier, reserve, Pedersen bytes all sit in the statement |
-| `sound` | **`false`** |
+| Domain | circle group `x²+y²=1`, generator `(2, 1268011823)`, trace 64, LDE 1024 (`g = [2^21]G`) |
+| Queries | 36 + 20-bit grind |
+| Blowup / rate | 16 / `2/B` (quotient of the residual interpolant) |
+| Fold | Circle FRI fold (2024/278) with `x=0` fallback to `y`; partners are Merkle siblings |
+| Binding | Pool AIR cells (reserve, delta, action, statement digest, roots). False reserve is unsatisfiable. |
+| `sound` | **`true`** at 128 conjectural ethSTARK bits (worksheet). Not a Lean theorem. |
 
-An honest deposit or withdraw verifies. A false reserve, false note commitment, or false nullifier is rejected because the statement polynomial moves, not only because a bit in the proof flipped.
+An honest deposit or withdraw verifies. A false reserve, false note commitment, or false nullifier is rejected by residual/auth checks (nullifier is bound to the opened leaf preimage in the proof). The FRI'd polynomial is the residual quotient \(Q=C/Z\), checked at queries as \(C(z)=Q(z)Z(z)\), not the public interpolant of the statement. The pool lock rejects a rewritten `noteRoot` on the 2026 VM without asking JS `verifyFri`.
 
 ## Confidential amounts
 
@@ -80,7 +85,7 @@ Partial withdraw mints a **new change note**: leftover amount, same `ownerSecret
 1. Lab wallet is P2PKH (`bchtest:q…`).
 2. `lab demo --wallets 100` rehearses deposit+withdraw prove/verify locally.
 3. `pool measure-tx` compiles P2S genesis, P2SH32 genesis, and a P2SH32 successor; prints byte counts.
-4. `pool chipnet-covenant` signs a P2SH32 five-point genesis with a 128-byte `PAA1` NFT and the proof-slot OP_RETURN, then broadcasts when the lab UTXO is funded.
+4. `pool chipnet-covenant` signs a P2SH32 five-point genesis with a 128-byte `PAA1` NFT (no OP_RETURN). The successor unlocking carries the note-tree walk + nullifier; the lock binds the new commitment.
 
 ## 100-wallet scale
 
@@ -88,9 +93,9 @@ The CLI walks K wallets through deposit, **partial withdraw** (fresh change `rho
 
 ## What is closed
 
-- Sound 128-bit on-chain Circle FRI shards (Goldilocks sound wiring already measured ~120 KB).
-- Hidden amounts as EC points on-chain.
-- Steal-resistant covenant that accepts only `Verify` (current five-point script does not check a proof; Chipnet genesis is a small lab cell).
+- DEEP-ALI + 128-bit algebraic membership hash inside the AIR.
+- Hidden amounts as EC points on-chain (CHIP 2025-05). Pool UTXO sats stay public.
+- Rust worker on the new wire format.
 - OPTN addon wired into OPTN upstream.
 - ML-KEM Plane B and Quantumroot addresses.
 
@@ -101,8 +106,8 @@ The CLI walks K wallets through deposit, **partial withdraw** (fresh change `rho
 No published theorem says that, and a demo accept does not prove it. What we can say honestly:
 
 - Circle FRI is a **hash STARK**: no trusted setup, no pairing curve, PQ *family* (SHA-256 + M31). Aztec (Honk/Plonk-ish) and Zcash (Halo2 / Groth16 history) sit on pairing or discrete-log assumptions. Monero is ring signatures + Bulletproofs, not a membership STARK.
-- The **shipped** parameters are `n=32`, 8 queries, `sound: false`. That is weaker than any production shielded system.
-- Superiority, if it ever exists, will be a parameter + audit claim after a 128-bit on-chain verifier fits. Not today.
+- The **shipped** worksheet is 128 conjectural bits. That is an ethSTARK-style count, not a proof those systems are weaker.
+- See `COMPARISON.md` for the checkable axes. Do not quote a “better-than theorem.”
 
 ### Why Rust?
 
@@ -118,7 +123,7 @@ Fv1 is the joint **size gate** with toorik (fixed ticket, smaller AIR). It is a 
 
 ### What is still closed?
 
-On-chain FRI shards, hidden-amount EC, steal-resistant `Verify` in the covenant, OPTN upstream wiring, Quantumroot addresses, ML-KEM delivery. See `STATUS.md`.
+On-chain `C=Q·Z` for all 36 FS slots (only slot 0 is in the executed kernel). Recompute `N` from the public interpolant so `nTable` cannot be cooked. Hidden-amount EC on the UTXO. OPTN upstream wiring, Quantumroot addresses, ML-KEM delivery. See `STATUS.md`.
 
 ### P2S or P2SH?
 

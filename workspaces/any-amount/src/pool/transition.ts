@@ -19,11 +19,11 @@ export type PoolMachine = {
 export function applyDeposit(
   machine: PoolMachine,
   note: Note,
-): { machine: PoolMachine; statement: PoolStatement; index: number } {
+): { machine: PoolMachine; statement: PoolStatement; index: number; path: Uint8Array[] } {
   if (note.amountSats <= 0n) throw new Error("deposit amount must be > 0");
   const leaf = commitNote(note);
   const oldState = machine.state;
-  const { index, root } = machine.notes.append(leaf);
+  const { index, root, path } = machine.notes.append(leaf);
   const newState: AnyAmountState = {
     ...oldState,
     sequence: oldState.sequence + 1n,
@@ -44,7 +44,7 @@ export function applyDeposit(
     amountCommitOut: writeU256BE(commitAmount(note.amountSats, blindOf(note))),
   };
   checkPublicTransition(statement);
-  return { machine: { ...machine, state: newState }, statement, index };
+  return { machine: { ...machine, state: newState }, statement, index, path };
 }
 
 export function applyWithdraw(
@@ -53,7 +53,14 @@ export function applyWithdraw(
   index: number,
   payoutLockingDigest: Uint8Array,
   withdrawSats: bigint,
-): { machine: PoolMachine; statement: PoolStatement; change?: Note; changeIndex?: number } {
+): {
+  machine: PoolMachine;
+  statement: PoolStatement;
+  change?: Note;
+  changeIndex?: number;
+  path: Uint8Array[];
+  created?: { note: Note; index: number; path: Uint8Array[] };
+} {
   if (withdrawSats <= 0n) throw new Error("withdraw amount must be > 0");
   if (withdrawSats > note.amountSats) throw new Error("withdraw exceeds note");
   const leaf = commitNote(note);
@@ -67,6 +74,7 @@ export function applyWithdraw(
 
   let change: Note | undefined;
   let changeIndex: number | undefined;
+  let created: { note: Note; index: number; path: Uint8Array[] } | undefined;
   const leftover = note.amountSats - withdrawSats;
   let noteRoot = oldState.noteRoot;
   if (leftover > 0n) {
@@ -78,6 +86,7 @@ export function applyWithdraw(
     const inserted = machine.notes.append(commitNote(change));
     noteRoot = inserted.root;
     changeIndex = inserted.index;
+    created = { note: change, index: inserted.index, path: inserted.path };
   }
 
   const newState: AnyAmountState = {
@@ -104,7 +113,7 @@ export function applyWithdraw(
         : new Uint8Array(ZERO32),
   };
   checkPublicTransition(statement);
-  return { machine: { ...machine, state: newState }, statement, change, changeIndex };
+  return { machine: { ...machine, state: newState }, statement, change, changeIndex, path, created };
 }
 
 export function checkPublicTransition(s: PoolStatement): void {
@@ -137,4 +146,52 @@ export function checkPublicTransition(s: PoolStatement): void {
 
 export function actionOf(delta: bigint): ActionKind {
   return delta > 0n ? "DEPOSIT" : "WITHDRAW";
+}
+
+/**
+ * One-set mix: many notes in, many notes out, one public net delta.
+ * Individual amounts stay in Pedersen leaves — only the net hits the UTXO.
+ */
+export function applyAggregate(
+  machine: PoolMachine,
+  deposits: Note[],
+  withdraws: Array<{ note: Note; index: number; amount: bigint }>,
+): {
+  machine: PoolMachine;
+  statement: PoolStatement;
+  deposited: Array<{ note: Note; index: number }>;
+  change: Array<{ note: Note; index: number }>;
+} {
+  let next = machine;
+  const deposited: Array<{ note: Note; index: number }> = [];
+  for (const note of deposits) {
+    const d = applyDeposit(next, note);
+    next = d.machine;
+    deposited.push({ note, index: d.index });
+  }
+  const change: Array<{ note: Note; index: number }> = [];
+  let last = undefined as ReturnType<typeof applyWithdraw> | undefined;
+  for (const w of withdraws) {
+    last = applyWithdraw(next, w.note, w.index, new Uint8Array(32), w.amount);
+    next = last.machine;
+    if (last.change && last.changeIndex !== undefined) {
+      change.push({ note: last.change, index: last.changeIndex });
+    }
+  }
+  const net = next.state.reserveSats - machine.state.reserveSats;
+  const statement: PoolStatement = {
+    profile: "any-amount-v0",
+    action: net >= 0n ? "DEPOSIT" : "WITHDRAW",
+    publicAmountSats: net,
+    oldState: machine.state,
+    newState: next.state,
+    noteCommitment: next.state.noteRoot,
+    nullifier: last?.statement.nullifier ?? new Uint8Array(32),
+    payoutLockingDigest: new Uint8Array(32),
+    amountCommitIn: last?.statement.amountCommitIn ?? new Uint8Array(ZERO32),
+    amountCommitOut: deposited[0]
+      ? writeU256BE(commitAmount(deposited[0].note.amountSats, blindOf(deposited[0].note)))
+      : new Uint8Array(ZERO32),
+  };
+  return { machine: next, statement, deposited, change };
 }

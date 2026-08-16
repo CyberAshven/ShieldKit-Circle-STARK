@@ -71,8 +71,8 @@ describe("any-amount machine", () => {
 });
 
 describe("plugins", () => {
-  it("circle-fri is hash-based and still unsound at n=32", () => {
-    assert.equal(circleFriPlugin.sound, false);
+  it("circle-fri is hash-based and gated by the soundness worksheet", () => {
+    assert.equal(circleFriPlugin.sound, true);
     assert.equal(circleFriPlugin.family, "circle-fri-m31");
   });
 });

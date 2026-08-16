@@ -1,6 +1,14 @@
-import { concatBytes, sha256, ZERO32 } from "./bytes.ts";
+import { concatBytes, sha256, writeU256BE, ZERO32 } from "./bytes.ts";
+import { commitAmount } from "../amounts/pedersen.ts";
 
-export const MERKLE_DEPTH = 8;
+export const MERKLE_DEPTH = 16;
+
+/** Empty incremental-Merkle root (hash^depth of 32 zero bytes). */
+export function emptyMerkleRoot(depth = MERKLE_DEPTH): Uint8Array {
+  let z = new Uint8Array(ZERO32);
+  for (let i = 0; i < depth; i += 1) z = sha256(concatBytes(z, z));
+  return z;
+}
 
 export type Note = {
   amountSats: bigint;
@@ -8,14 +16,16 @@ export type Note = {
   ownerSecret: Uint8Array;
 };
 
+function blindOf(note: Note): bigint {
+  let n = 0n;
+  for (const b of note.rho) n = (n << 8n) | BigInt(b);
+  return n;
+}
+
+/** Leaf hides the amount: SHA-256(Pedersen(v,r) || rho || owner). */
 export function commitNote(note: Note): Uint8Array {
-  const amt = new Uint8Array(8);
-  let n = note.amountSats;
-  for (let i = 7; i >= 0; i -= 1) {
-    amt[i] = Number(n & 0xffn);
-    n >>= 8n;
-  }
-  return sha256(concatBytes(amt, note.rho, note.ownerSecret));
+  const c = writeU256BE(commitAmount(note.amountSats, blindOf(note)));
+  return sha256(concatBytes(c, note.rho, note.ownerSecret));
 }
 
 export function nullifierOf(note: Note, poolInstanceId: Uint8Array): Uint8Array {

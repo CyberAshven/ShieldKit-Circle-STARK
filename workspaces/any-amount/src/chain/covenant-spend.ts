@@ -7,18 +7,22 @@ import {
   walletTemplateP2pkhNonHd,
   walletTemplateToCompilerBCH,
 } from "@bitauth/libauth";
-import { encodeState, STATE_BASE_SATS, type AnyAmountState } from "../pool/state.ts";
-import { sha256 } from "../pool/bytes.ts";
+import { encodePublicPaa1, encodeState, STATE_BASE_SATS, type AnyAmountState } from "../pool/state.ts";
 import { createLabWallet, privateKeyOf, type LabWallet } from "./wallet.ts";
 import { broadcast, connectChipnet, listUnspent } from "./electrum.ts";
 import {
   compilePoolCovenant,
-  opReturn,
   p2sUnlocking,
   p2sh32Unlocking,
   poolLockP2s,
   poolLockP2sh32,
+  walkWitnessFromAuth,
 } from "./covenant-p2s.ts";
+import { decodeFriProof } from "../backends/circle/fri.ts";
+import { decodeState } from "../pool/state.ts";
+import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
+import { friShardUnlockings } from "./fri-openings.ts";
+import { cqzKernelUnlocking } from "./air-cqz.ts";
 
 export type LockKind = "p2s" | "p2sh32";
 
@@ -32,12 +36,11 @@ export type MeasuredTx = {
   proofBytes: number;
   proofSlotBytes: number;
   lockKind: LockKind;
+  changeValue?: number;
 };
 
-const PROOF_SLOT_TAG = new TextEncoder().encode("PAA1PROF");
-
 export function proofSlot(proof: Uint8Array): Uint8Array {
-  return Uint8Array.of(...PROOF_SLOT_TAG, ...sha256(proof));
+  return proof;
 }
 
 function compiler() {
@@ -62,15 +65,15 @@ function measureOf(
     lockP2sBytes: poolLockP2s().length,
     lockP2sh32Bytes: poolLockP2sh32().length,
     proofBytes: proof.length,
-    proofSlotBytes: proofSlot(proof).length,
+    proofSlotBytes: 0,
     lockKind,
   };
 }
 
 /**
  * Genesis: P2PKH funds a P2S / P2SH32 five-point cell.
- * NFT commitment is the 128-byte PAA1 state (Layla). Proof lives in the
- * OP_RETURN slot as `PAA1PROF || SHA-256(proof)` — full FRI is off-chain.
+ * NFT commitment is the 128-byte PAA1 state (Layla). Verify is the FRI-kernel
+ * input on the successor — genesis only creates the cell.
  */
 export function compileCovenantSpend(args: {
   wallet: LabWallet;
@@ -87,7 +90,7 @@ export function compileCovenantSpend(args: {
   const change = BigInt(args.utxo.value) - value - fee;
   if (change < 546n) throw new Error("utxo too small for covenant spend");
 
-  const commitment = encodeState(args.state);
+  const commitment = encodePublicPaa1(args.state);
   if (commitment.length !== 128) throw new Error("PAA1 must be 128 bytes");
 
   const generated = generateTransaction({
@@ -120,20 +123,20 @@ export function compileCovenantSpend(args: {
         lockingBytecode: { compiler: c, script: "lock", data },
         valueSatoshis: change,
       },
-      { lockingBytecode: opReturn(proofSlot(args.proof)), valueSatoshis: 0n },
     ],
   });
   if (!generated.success) {
     throw new Error(`covenant spend: ${JSON.stringify(generated.errors).slice(0, 500)}`);
   }
   const raw = encodeTransaction(generated.transaction);
-  return measureOf(raw, generated.transaction.inputs[0]!.unlockingBytecode.length, args.proof, lockKind);
+  const measured = measureOf(raw, generated.transaction.inputs[0]!.unlockingBytecode.length, args.proof, lockKind);
+  measured.changeValue = Number(change);
+  return measured;
 }
 
 /**
- * Five-point successor: spend the pool cell as input 0 (P2S empty unlock or
- * P2SH32 redeem push) plus a P2PKH fee input. Output 0 keeps lock, category,
- * token amount 0, and a new 128-byte PAA1.
+ * Five-point successor: pool input 0 + FRI-kernel input 1 + P2PKH fee.
+ * Output 0 keeps lock, category, token amount 0, and a new 128-byte PAA1.
  */
 export function compileCovenantSuccessor(args: {
   wallet: LabWallet;
@@ -148,16 +151,33 @@ export function compileCovenantSuccessor(args: {
   newState: AnyAmountState;
   proof: Uint8Array;
   lockKind?: LockKind;
+  kernelUtxo?: { tx_hash: string; tx_pos: number; value: number };
+  kernelUtxos?: Array<{ tx_hash: string; tx_pos: number; value: number }>;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
-  const fee = 1_500n;
+  const fee = 100_000n;
   const value = STATE_BASE_SATS + args.newState.reserveSats;
   const change = BigInt(args.feeUtxo.value) - fee;
   if (change < 546n) throw new Error("fee utxo too small for successor");
-  const commitment = encodeState(args.newState);
-  const unlocking = lockKind === "p2s" ? p2sUnlocking() : p2sh32Unlocking();
+  const commitment = encodePublicPaa1(args.newState);
+  const oldState = decodeState(args.pool.commitment);
+  const decoded = decodeFriProof(args.proof);
+  const wit = walkWitnessFromAuth(decoded.auth, oldState.noteRoot, args.newState.noteRoot);
+  const unlocking =
+    lockKind === "p2s"
+      ? p2sUnlocking(wit, decoded.layerRoots)
+      : p2sh32Unlocking(wit, decoded.layerRoots);
+  const shards = friShardUnlockings(args.proof);
+  const dummy = "44".repeat(32);
+  const kernels = args.kernelUtxos ??
+    (args.kernelUtxo
+      ? [args.kernelUtxo]
+      : shards.map((_, i) => ({ tx_hash: dummy, tx_pos: i, value: 1000 })));
+  if (kernels.length !== FRI_KERNEL_INPUTS) {
+    throw new Error(`need ${FRI_KERNEL_INPUTS} FRI kernel UTXOs, got ${kernels.length}`);
+  }
 
   const generated = generateTransaction({
     version: 2,
@@ -168,6 +188,18 @@ export function compileCovenantSuccessor(args: {
         outpointTransactionHash: hexToBin(args.pool.tx_hash),
         sequenceNumber: 0xffffffff,
         unlockingBytecode: unlocking,
+      },
+      ...shards.map((friUnlock, i) => ({
+        outpointIndex: kernels[i]!.tx_pos,
+        outpointTransactionHash: hexToBin(kernels[i]!.tx_hash),
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: friUnlock,
+      })),
+      {
+        outpointIndex: 10,
+        outpointTransactionHash: hexToBin(dummy),
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: cqzKernelUnlocking(),
       },
       {
         outpointIndex: args.feeUtxo.tx_pos,
@@ -195,7 +227,6 @@ export function compileCovenantSuccessor(args: {
         lockingBytecode: { compiler: c, script: "lock", data },
         valueSatoshis: change + BigInt(args.pool.value) - value,
       },
-      { lockingBytecode: opReturn(proofSlot(args.proof)), valueSatoshis: 0n },
     ],
   });
   if (!generated.success) {
@@ -238,13 +269,13 @@ export function measureGenesisAndSuccessor(state: AnyAmountState, next: AnyAmoun
   });
   const successorP2sh32 = compileCovenantSuccessor({
     wallet,
-    feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 100_000 },
+    feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 250_000 },
     pool: {
       tx_hash: genesisP2sh32.txid,
       tx_pos: 0,
       value: Number(STATE_BASE_SATS + state.reserveSats),
       category: hexToBin("11".repeat(32)),
-      commitment: encodeState(state),
+      commitment: encodePublicPaa1(state),
     },
     newState: next,
     proof,
@@ -293,12 +324,74 @@ export function compileSelfSendVout0(
   return { raw, txid: hashTransaction(raw), value: Number(value) };
 }
 
+/** Fund FRI-kernel P2SH32 carriers (one per proof shard) so the successor can spend them. */
+export function compileFundFriKernels(
+  wallet: LabWallet,
+  utxo: { tx_hash: string; tx_pos: number; value: number },
+  count = FRI_KERNEL_INPUTS,
+  kernelSats = 1_000,
+): {
+  raw: Uint8Array;
+  txid: string;
+  kernels: Array<{ tx_hash: string; tx_pos: number; value: number }>;
+  changeValue: number;
+} {
+  const c = compiler();
+  const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
+  const fee = 800n;
+  const change = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - fee;
+  if (change < 546n) throw new Error("utxo too small to fund FRI kernels");
+  const kernelOut = { lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: BigInt(kernelSats) };
+  const generated = generateTransaction({
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointIndex: utxo.tx_pos,
+        outpointTransactionHash: hexToBin(utxo.tx_hash),
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: {
+          compiler: c,
+          script: "unlock",
+          data,
+          valueSatoshis: BigInt(utxo.value),
+        },
+      },
+    ],
+    outputs: [
+      ...Array.from({ length: count }, () => kernelOut),
+      { lockingBytecode: { compiler: c, script: "lock", data }, valueSatoshis: change },
+    ],
+  });
+  if (!generated.success) {
+    throw new Error(`fund kernels: ${JSON.stringify(generated.errors).slice(0, 400)}`);
+  }
+  const raw = encodeTransaction(generated.transaction);
+  const txid = hashTransaction(raw);
+  return {
+    raw,
+    txid,
+    kernels: Array.from({ length: count }, (_, i) => ({ tx_hash: txid, tx_pos: i, value: kernelSats })),
+    changeValue: Number(change),
+  };
+}
+
+/** @deprecated use compileFundFriKernels */
+export function compileFundFriKernel(
+  wallet: LabWallet,
+  utxo: { tx_hash: string; tx_pos: number; value: number },
+  kernelSats = 1_000,
+): { raw: Uint8Array; txid: string; kernel: { tx_hash: string; tx_pos: number; value: number }; changeValue: number } {
+  const funded = compileFundFriKernels(wallet, utxo, 1, kernelSats);
+  return { raw: funded.raw, txid: funded.txid, kernel: funded.kernels[0]!, changeValue: funded.changeValue };
+}
+
 export async function broadcastCovenantGenesis(
   wallet: LabWallet,
   state: AnyAmountState,
   proof: Uint8Array,
   lockKind: LockKind = "p2sh32",
-): Promise<MeasuredTx & { broadcast: string; prepTxid?: string }> {
+): Promise<MeasuredTx & { broadcast: string; prepTxid?: string; categoryHex: string }> {
   const client = await connectChipnet();
   try {
     const utxos = await listUnspent(client, wallet.address);
@@ -318,7 +411,7 @@ export async function broadcastCovenantGenesis(
       lockKind,
     });
     const txid = await broadcast(client, binToHex(measured.raw));
-    return { ...measured, broadcast: txid, prepTxid };
+    return { ...measured, broadcast: txid, prepTxid, categoryHex: picked.tx_hash };
   } finally {
     client.close();
   }

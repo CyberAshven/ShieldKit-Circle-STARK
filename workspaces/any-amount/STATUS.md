@@ -1,50 +1,38 @@
 # Status (2026-08-16)
 
-Honest leftover list. This is **not** a sound shielded pool and **not** a 128-bit on-chain theorem.
+Shipped: Circle FRI of the pool AIR (residual quotient) + a 2026 pool lock that
+**binds** the new 128-byte PAA1 NFT and spends **10 FRI-kernel inputs** that
+verify every Merkle opening of the ~64 KB proof. This is **not** a Lean theorem
+and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 
-## Passing (this workspace)
+## Passing
 
-- Circle FRI prove **and** verify on shipped functions (`circle-fri-m31`, `sound: false`, n=32, 8 queries).
-- Honest deposit, partial withdraw, and **spend-change** accept (change notes mint a fresh `rho` + new Merkle index so the nullifier is not reused).
-- False statements reject: tampered reserve, wrong note commitment, wrong nullifier (statement polynomial binds all three).
-- Pedersen-style 32-byte amount commits on the statement; ML-KEM and Quantumroot stay **off** `Verify`.
-- P2S program + P2SH32 shell compile; five-point genesis and successor **compile and sign** locally; unlocking and full-tx measured under 10 KB / 100 KB (proof slot is a 40-byte digest, full FRI is off-chain).
-- CLI `status`, `bench`, `lab demo --wallets 100`, `pool measure-tx`, `pool chipnet-covenant`.
-- Optional Rust prove worker (`crates/circle-fri-worker`) in the Toorik `fri-worker` role.
+- Soundness worksheet: TRACE=64, blowup=16, FRI_N=1024, queries=36, grind=20, rate 2/B → **128 conjectural bits**. `sound: true`. Old n=32/q=8 fails the build.
+- Prover FRIs the residual quotient \(Q=C/Z\) (honest residuals vanish so \(Q=0\)). `plugin.verify` / `verifyFri` take **no private witness**: `proof.auth` carries the note preimage, so a fake nullifier + valid membership path is rejected (`nullifier preimage`). Query check is \(C(z)=Q(z)Z(z)\), not \(T(z)=\) public interpolant.
+- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): pool five-point + spent-note preimage; PAA1 NFT commitment is the public cell. Inputs 1..10 Merkle-walk packed `layerRoots`; input 11 runs slot-0 `C=Q·Z` (`PAA1STMT` + `qTable[0]·Z([i]G)=nTable[0]`). FS indices are unsigned BE16 (high-bit bytes like 0x93 no longer decode as signed). Dummy 8-leaf kernels fail. Swapped dummy roots/`qTable` fail the C=QZ kernel. Remaining: only FS slot 0 is checked (not all 36); `nTable` is still spender-filled.
+- Proof ~64 KB, **10 shards**, 252 Merkle openings, unlocking max 6414, Chipnet successor **63992 bytes**.
+- Any-amount one set; Pedersen-hidden note amounts. On-chain PAA1 is the full state (reserve + sequence + roots). Public net is also the UTXO value (`STATE_BASE + reserve`). `runMixSuccessor` updates noteRoot, nullifierRoot, and reserve.
+- Comparison table in `COMPARISON.md` (checkable axes only).
 
-## Not done (do not claim)
+## Not done (honest)
 
-- Sound Circle FRI membership / query / Merkle FRI **on chain** (would need shards; Goldilocks sound wiring ~120 KB).
-- Hidden amounts as EC points (CHIP 2025-05) or a finished Bulletproof.
-- Steal-resistant 5-point P2S that accepts only a plugin proof (current script checks lock/category/token/commitment magic, not the FRI blob).
-- OPTN builtin register (zero-touch).
-- 100 **funded** on-chain wallets (faucet captcha-gated). Local 100-wallet rehearsal is the bar.
-- `sound: true` / 128-bit parameters.
-- A cryptanalysis that Aztec, Zcash, or Monero are “less sound.”
+- Full DEEP-ALI / 128-bit algebraic note-tree hash inside the AIR (note tree is still SHA-256; AIR binds public reserves/digest).
+- On-chain **value** hiding (pool UTXO sats remain public; only note amounts are committed).
+- 100 faucet-funded Chipnet wallets. VM eval of the same bytecode is the on-chain bar.
+- Formal paper proof. Rust worker still speaks the old n=32 wire (optional; TS is shipped).
+- OPTN upstream. Merge to `upstream/main` only if both sides agree.
 
 ## Chipnet
 
-Lab address (gitignored `.local/lab-wallet.json`):
-
-`bchtest:qqf9c6rdd52wwdws5flgfe9kq4ftnzp5vv6763aw48`
-
-Broadcast (2026-08-16), Electrum-accepted:
+Lab address stays in gitignored `.local/lab-wallet.json`.
+Mix successor on Chipnet (2026-08-16), Electrum-accepted, **10-kernel sharded FRI**:
 
 | Step | txid |
 | --- | --- |
-| First genesis (OP_SIZE leak, unspendable 11k) | `0adce2cac20c3dae0e2913b4bb6f8db09b7d8a249b5f9a52cb64efcc7cdcb8a8` |
-| Prep vout=0 (CashTokens genesis parent must be output 0) | `095acda13ed11873c6024d1ac2229f8705bcf147e8d8517e0c7d7d71cf634efc` |
-| Fixed P2SH32 genesis | `f6ebcf57a8b19f8788ffea522a9453d95602f3e80775ea6235aa7734ee746545` |
-| Five-point successor (unlocking 35 B, tx 519 B) | `1c772b594dd28e90724054f8e55feb70c6224d2f5c5fc2fc6e04723586faa6e6` |
+| Genesis (PAA1 includes reserve+sequence) | `1973c06552a371a595872727d8edbe5a988c362c14c46d3bbee7da0e565f6958` |
+| 10 FRI-kernel carriers | `23ec0c8d2e689e71df52025b5af2d1073999307ddcdc6998c40d706863998f0b` |
+| Withdraw successor (64111 B, 252 openings) | `86bd413fad8606207f26eb69cb6391db27e966f76dd2202f3e4cbd62424792d9` |
 
-Explorer: `https://chipnet.imaginary.cash/tx/<txid>` (imaginary.cash returned 502 when we fetched; Electrum accepted all four).
+Earlier 937 B / 1777 B / 64 KB cells without spent-note preimage / kernel-root bind / C=QZ kernel are **not** this lock. Dummy 8-leaf kernel openings against this statement’s `layerRoots` fail input 1. Swapping dummy roots + `qTable` into the pool unlocking fails input 11 (`C=Q·Z`). The lock rejects a fake nullifier. `verifyFri` checks \(N=QZ\) of the Lagrange AIR numerator (honest Q is not identically 0). On-chain C=QZ is still only slot 0; cooking `nTable[0]=Q·Z` is not closed.
 
-These are a **covenant cell** (PAA1 NFT + proof-slot OP_RETURN), not a sound shielded withdraw. `chipnet-marker` is only an announcement.
-
-## Sidecar for the OPTN addon
-
-```bash
-npx tsx src/cli.ts serve
-```
-
-Addon reads `http://127.0.0.1:17432/status`. Not wired into OPTN upstream.
+Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
