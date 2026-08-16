@@ -58,7 +58,9 @@ Previous 1-slot lock, Electrum-accepted 2026-08-16:
 
 `b4d66312…` / `8ccad3b8…` still interpolated full `publicCells` into Newton T. `52b46dab…` published the spent preimage.
 
-**36-slot 1 MB consensus** compiles one tx (270251 B after the matching 36-slot redeem; VM-accepted off-chain with `createVirtualMachineBch2026(false)`). Pool unlocking pushes `compilePoolCovenant({slotKernels:36})` so P2SH32 HASH256 matches the genesis lock (a 6-slot redeem cannot spend a 36-slot lock). Public Electrum timed out; Start9 BCHN P2P (`192.168.0.55:48333`) rejected `5dcf42cc726017f8a93b8e19f37bf41e38bb6094904befe08a0c94b056295d9e`: `not standard: size 270251 > max allowed 100000`. Chipnet default is `fRequireStandard = true`. The node must set `acceptnonstdtxn=1` (or mine nonstandard) before this envelope can land. No fake inclusion.
+**36-slot 1 MB consensus** compiles one tx (270251 B after the matching 36-slot redeem; VM-accepted off-chain with `createVirtualMachineBch2026(false)`). Pool unlocking pushes `compilePoolCovenant({slotKernels:36})` so P2SH32 HASH256 matches the genesis lock (a 6-slot redeem cannot spend a 36-slot lock). Public Electrum timed out; Start9 BCHN P2P (`192.168.0.55:48333`) rejected `5dcf42cc726017f8a93b8e19f37bf41e38bb6094904befe08a0c94b056295d9e`: `not standard: size 270251 > max allowed 100000`. Chipnet default is `fRequireStandard = true`.
+
+This is **not a hashpower problem**. ASICSeer (stratum on :3333/:3334) only mines whatever Bitcoin Cash Node puts in `getblocktemplate`. BCHN dropped the 270 KB tx at **relay policy** before the mempool, so extra ASIC hash cannot include it. Chipnet consensus block size is 2 MB; 270 KB fits a block if the node will accept it. Set `acceptnonstdtxn=1` on the Start9 **BCHN** service (not on ASICSeer), restart BCHN, resubmit. Then ASICSeer will see it in the next template. No fake inclusion.
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 
