@@ -1,0 +1,51 @@
+{
+  "contractName": "Composition",
+  "constructorInputs": [
+    { "name": "P", "type": "int" },
+    { "name": "omegaN", "type": "int" },
+    { "name": "offsetD", "type": "int" },
+    { "name": "last", "type": "int" },
+    { "name": "C", "type": "int" },
+    { "name": "out", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "check",
+      "inputs": [
+        { "name": "k0", "type": "int" },
+        { "name": "half0", "type": "int" },
+        { "name": "tp", "type": "int" },
+        { "name": "tpn", "type": "int" },
+        { "name": "a1", "type": "int" },
+        { "name": "a2", "type": "int" },
+        { "name": "invXn1", "type": "int" },
+        { "name": "invXlast", "type": "int" },
+        { "name": "v0", "type": "int" },
+        { "name": "w0", "type": "int" }
+      ]
+    }
+  ],
+  "bytecode": "OP_1 OP_ROT OP_2 OP_PICK OP_MOD OP_7 OP_PICK OP_0 OP_BEGIN OP_DUP OP_10 OP_LESSTHAN OP_DUP OP_TOALTSTACK OP_IF OP_OVER OP_2 OP_MOD OP_1 OP_NUMEQUAL OP_IF OP_2OVER OP_MUL OP_5 OP_PICK OP_MOD OP_4 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_ENDIF OP_2 OP_PICK OP_3 OP_PICK OP_MUL OP_5 OP_PICK OP_MOD OP_3 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_OVER OP_2 OP_DIV OP_ROT OP_DROP OP_SWAP OP_DUP OP_1ADD OP_NIP OP_ENDIF OP_FROMALTSTACK OP_NOT OP_UNTIL OP_DROP OP_4 OP_ROLL OP_3 OP_ROLL OP_MUL OP_3 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_4 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_5 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_6 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_7 OP_PICK OP_MOD OP_1SUB OP_7 OP_PICK OP_ADD OP_7 OP_PICK OP_MOD OP_4 OP_ROLL OP_8 OP_ROLL OP_SUB OP_7 OP_PICK OP_ADD OP_7 OP_PICK OP_MOD OP_16 OP_PICK OP_ROT OP_MUL OP_7 OP_PICK OP_MOD OP_1 OP_NUMEQUALVERIFY OP_16 OP_PICK OP_OVER OP_MUL OP_7 OP_PICK OP_MOD OP_1 OP_NUMEQUALVERIFY OP_12 OP_ROLL OP_12 OP_PICK OP_13 OP_PICK OP_MUL OP_8 OP_PICK OP_MOD OP_SUB OP_8 OP_ROLL OP_SUB OP_7 OP_PICK OP_ADD OP_7 OP_PICK OP_ADD OP_7 OP_PICK OP_MOD OP_SWAP OP_MUL OP_6 OP_PICK OP_MOD OP_13 OP_ROLL OP_MUL OP_6 OP_PICK OP_MOD OP_10 OP_ROLL OP_8 OP_ROLL OP_SUB OP_7 OP_PICK OP_ADD OP_7 OP_PICK OP_MOD OP_12 OP_ROLL OP_MUL OP_7 OP_PICK OP_MOD OP_10 OP_ROLL OP_ROT OP_MUL OP_7 OP_PICK OP_MOD OP_10 OP_ROLL OP_ROT OP_MUL OP_7 OP_PICK OP_MOD OP_ADD OP_6 OP_ROLL OP_MOD OP_9 OP_ROLL OP_7 OP_ROLL OP_8 OP_ROLL OP_LESSTHAN OP_IF OP_7 OP_PICK OP_NIP OP_ENDIF OP_NUMEQUALVERIFY OP_2DROP OP_2DROP OP_2DROP OP_1",
+  "source": "pragma cashscript ^0.13.0;\n\n// Composition VALUE check (block 1): recompute comp = a1*Qt + a2*Qb from the\n// opened trace values and verified inverse hints, and require it equals the\n// FRI layer-0 opened value at the query index (ties the AIR to the committed FRI).\n//   x = D[k0] = offset*omegaN^k0 ; Pt = tpn - tp^2 - C\n//   Qt = Pt*(x-last)/(x^n-1) ; Qb = (tp-out)/(x-last)\ncontract Composition(int P, int omegaN, int offsetD, int last, int C, int out) {\n    function check(int k0, int half0, int tp, int tpn, int a1, int a2,\n                   int invXn1, int invXlast, int v0, int w0) {\n        // x = offsetD * omegaN^k0  (single modexp loop)\n        int result = 1; int b = omegaN % P; int e = k0;\n        for (int t = 0; t < 10; t = t + 1) {\n            if (e % 2 == 1) { result = (result * b) % P; }\n            b = (b * b) % P;\n            e = e / 2;\n        }\n        int x = (offsetD * result) % P;\n        // x^n - 1  (n = 16 -> 4 straight-line squarings, no second loop)\n        int xn = (x * x) % P; xn = (xn * xn) % P; xn = (xn * xn) % P; xn = (xn * xn) % P;\n        int xn1 = (xn - 1 + P) % P;\n        int xml = (x - last + P) % P;\n        require((invXn1 * xn1) % P == 1);\n        require((invXlast * xml) % P == 1);\n        int Pt = (tpn - ((tp * tp) % P) - C + P + P) % P;\n        int Qt = (((Pt * xml) % P) * invXn1) % P;\n        int Qb = (((tp - out + P) % P) * invXlast) % P;\n        int comp = (((a1 * Qt) % P) + ((a2 * Qb) % P)) % P;\n        int target = w0;\n        if (k0 < half0) { target = v0; }\n        require(comp == target);\n    }\n}\n",
+  "fingerprint": "3ba5292355448b47a5c77dc815f6631078bfa8df9f9a20ec3547c954f0831bd3",
+  "debug": {
+    "bytecode": "517b52799757790065765a9f766b63785297519c637095557997547a757c6b7c6b7c6c6c685279537995557997537a757c6b7c6c7852967b757c768b77686c916675547a537a955379977676955479977676955579977676955679977676955779978c577993577997547a587a9457799357799760797b95577997519d60797895577997519d5c7a5c795d799558799794587a945779935779935779977c955679975d7a955679975a7a587a945779935779975c7a955779975a7a7b955779975a7a7b9557799793567a97597a577a587a9f63577977689d6d6d6d51",
+    "sourceMap": "12:21:12:22;:32::38;:41::42;;:32:::1;:52::54:0;;13:21:13:22;:8:17:9;:24:13:25;:28::30;:24:::1;;;:43:17:9:0;14:16:14:17;:20::21;:16:::1;:25::26:0;:16:::1;:28::58:0;:40::50;::::1;:54::55:0;;:39:::1;:30::56;;;;;;;;;;:28::58;15:17:15:18:0;;:21::22;;:17:::1;:26::27:0;;:16:::1;:12::28;;;;;;;16:16:16:17:0;:20::21;:16:::1;:12::22;;;13:36:13:37:0;:::41:1;:32;:43:17:9;;:8;;;18:17:18:24:0;;:27::33;;:17:::1;:37::38:0;;:16:::1;20:18:20:23:0;;::::1;:27::28:0;;:17:::1;:36::43:0;;::::1;:47::48:0;;:35:::1;:56::63:0;;::::1;:67::68:0;;:55:::1;:76::83:0;;::::1;:87::88:0;;:75:::1;21:19:21:25;:28::29:0;;:19:::1;:33::34:0;;:18:::1;22:19:22:20:0;;:23::27;;:19:::1;:30::31:0;;:19:::1;:35::36:0;;:18:::1;23:17:23:23:0;;:26::29;:17:::1;:33::34:0;;:16:::1;:38::39:0;:8::41:1;24:17:24:25:0;;:28::31;:17:::1;:35::36:0;;:16:::1;:40::41:0;:8::43:1;25:18:25:21:0;;:26::28;;:31::33;;:26:::1;:37::38:0;;:25:::1;:18::39;:42::43:0;;:18:::1;:46::47:0;;:18:::1;:50::51:0;;:18:::1;:55::56:0;;:17:::1;26:25:26:28:0;:20:::1;:32::33:0;;:19:::1;:37::43:0;;:18:::1;:47::48:0;;:17:::1;27:20:27:22:0;;:25::28;;:20:::1;:31::32:0;;:20:::1;:36::37:0;;:19:::1;:41::49:0;;:18:::1;:53::54:0;;:17:::1;28:22:28:24:0;;:27::29;:22:::1;:33::34:0;;:21:::1;:40::42:0;;:45::47;:40:::1;:51::52:0;;:39:::1;:20::53;:57::58:0;;:19:::1;29:21:29:23:0;;30:12:30:14;;:17::22;;:12:::1;:24::40:0;:35::37;;:26::38:1;:24::40;31:8:31:32;10:61:32:5;;;",
+    "logs": [],
+    "requires": [
+      { "ip": 130, "line": 23 },
+      { "ip": 139, "line": 24 },
+      { "ip": 221, "line": 31 }
+    ],
+    "sourceTags": "58:60:fu"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.13.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-06-09T04:29:34.647Z"
+}

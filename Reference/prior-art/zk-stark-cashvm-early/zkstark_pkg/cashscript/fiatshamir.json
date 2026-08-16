@@ -1,0 +1,47 @@
+{
+  "contractName": "FiatShamir",
+  "constructorInputs": [],
+  "abi": [
+    {
+      "name": "check",
+      "inputs": [
+        { "name": "tpRoot", "type": "bytes" },
+        { "name": "outLE", "type": "bytes" },
+        { "name": "friRoots", "type": "bytes" },
+        { "name": "nLayers", "type": "int" },
+        { "name": "nonce", "type": "bytes" },
+        { "name": "grindTarget", "type": "int" },
+        { "name": "a1raw", "type": "bytes" },
+        { "name": "a2raw", "type": "bytes" },
+        { "name": "betasRaw", "type": "bytes" },
+        { "name": "idxsRaw", "type": "bytes" },
+        { "name": "nQueries", "type": "int" }
+      ]
+    }
+  ],
+  "bytecode": "535441524b2d7630 OP_DUP OP_ROT OP_CAT OP_SHA256 OP_DUP OP_3 OP_ROLL OP_CAT OP_SHA256 OP_DUP 6368616c OP_CAT OP_SHA256 OP_DUP OP_8 OP_SPLIT OP_DROP OP_9 OP_ROLL OP_EQUALVERIFY OP_DUP 6368616c OP_CAT OP_SHA256 OP_DUP OP_8 OP_SPLIT OP_DROP OP_10 OP_ROLL OP_EQUALVERIFY OP_DUP 667269 OP_CAT OP_SHA256 OP_6 OP_ROLL OP_10 OP_ROLL OP_0 OP_BEGIN OP_DUP OP_10 OP_PICK OP_LESSTHAN OP_DUP OP_TOALTSTACK OP_IF OP_2 OP_PICK 20 OP_SPLIT OP_DUP OP_5 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_5 OP_PICK OP_2 OP_PICK OP_CAT OP_SHA256 OP_6 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_2 OP_PICK OP_12 OP_PICK OP_1SUB OP_LESSTHAN OP_IF OP_5 OP_PICK 6368616c OP_CAT OP_SHA256 OP_6 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_3 OP_PICK OP_8 OP_SPLIT OP_DUP OP_6 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_7 OP_PICK OP_8 OP_SPLIT OP_DROP OP_2 OP_PICK OP_EQUALVERIFY OP_2DROP OP_ENDIF OP_2 OP_PICK OP_1ADD OP_3 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_2DROP OP_ENDIF OP_FROMALTSTACK OP_NOT OP_UNTIL OP_DROP OP_2 OP_PICK OP_10 OP_ROLL OP_CAT OP_SHA256 OP_DUP OP_8 OP_SPLIT OP_DROP 00 OP_CAT OP_BIN2NUM OP_11 OP_ROLL OP_LESSTHAN OP_VERIFY OP_10 OP_ROLL OP_0 OP_BEGIN OP_DUP OP_13 OP_PICK OP_LESSTHAN OP_DUP OP_TOALTSTACK OP_IF OP_2 OP_PICK 696478 OP_CAT OP_SHA256 OP_3 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_OVER OP_8 OP_SPLIT OP_DUP OP_4 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_4 OP_PICK OP_8 OP_SPLIT OP_DROP OP_2 OP_PICK OP_EQUALVERIFY OP_2 OP_PICK OP_1ADD OP_3 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_2DROP OP_ENDIF OP_FROMALTSTACK OP_NOT OP_UNTIL OP_2DROP OP_2DROP OP_2DROP OP_2DROP OP_2DROP OP_2DROP OP_DROP OP_1",
+  "source": "pragma cashscript ^0.13.0;\n\n// On-chain Fiat-Shamir transcript verification (the trustless keystone).\n// Recomputes the verifier's challenges from the proof's commitments and checks\n// they match, and enforces the grinding (proof-of-work) bound. This is what stops\n// a prover from choosing favorable challenges. Mirrors stark.py's FS exactly.\ncontract FiatShamir() {\n    function check(\n        bytes tpRoot, bytes outLE, bytes friRoots, int nLayers,\n        bytes nonce, int grindTarget,\n        bytes a1raw, bytes a2raw, bytes betasRaw,\n        bytes idxsRaw, int nQueries\n    ) {\n        bytes s = 0x535441524b2d7630;            // \"STARK-v0\"\n        s = sha256(s + tpRoot);\n        s = sha256(s + outLE);\n        s = sha256(s + 0x6368616c);              // \"chal\"\n        require(s.split(8)[0] == a1raw);\n        s = sha256(s + 0x6368616c);\n        require(s.split(8)[0] == a2raw);\n        s = sha256(s + 0x667269);                // \"fri\"\n        bytes remRoots = friRoots;\n        bytes remBetas = betasRaw;\n        for (int j = 0; j < nLayers; j = j + 1) {\n            bytes root, bytes rr = remRoots.split(32);\n            remRoots = rr;\n            s = sha256(s + root);\n            if (j < nLayers - 1) {\n                s = sha256(s + 0x6368616c);\n                bytes b, bytes rb = remBetas.split(8);\n                remBetas = rb;\n                require(s.split(8)[0] == b);\n            }\n        }\n        bytes sN = sha256(s + nonce);\n        require(int(sN.split(8)[0] + 0x00) < grindTarget);   // proof-of-work bound\n        s = sN;\n        bytes remIdx = idxsRaw;\n        for (int q = 0; q < nQueries; q = q + 1) {\n            s = sha256(s + 0x696478);            // \"idx\"\n            bytes ir, bytes ri = remIdx.split(8);\n            remIdx = ri;\n            require(s.split(8)[0] == ir);\n        }\n    }\n}\n",
+  "fingerprint": "f1a63e794c5b8aa832186b9678193d43535a6d72c6926b24a9fa8904f77ddd14",
+  "debug": {
+    "bytecode": "08535441524b2d7630767b7ea876537a7ea876046368616c7ea876587f75597a8876046368616c7ea876587f755a7a8876036672697ea8567a5a7a0065765a799f766b63527901207f76557a757c6b7c6b7c6b7c6c6c6c557952797ea8567a757c6b7c6b7c6b7c6b7c6c6c6c6c52795c798c9f635579046368616c7ea8567a757c6b7c6b7c6b7c6b7c6c6c6c6c5379587f76567a757c6b7c6b7c6b7c6b7c6c6c6c6c5779587f755279886d6852798b537a757c6b7c6c6d686c91667552795a7a7ea876587f7501007e815b7a9f695a7a0065765d799f766b635279036964787ea8537a757c6b7c6c78587f76547a757c6b7c6b7c6c6c5479587f7552798852798b537a757c6b7c6c6d686c91666d6d6d6d6d6d7551",
+    "sourceMap": "14:18:14:36;15:19:15:20;:23::29;:19:::1;:12::30;16:19:16:20:0;:23::28;;:19:::1;:12::29;17:19:17:20:0;:23::33;:19:::1;:12::34;18:16:18:17:0;:24::25;:16::26:1;:::29;:33::38:0;;:8::40:1;19:19:19:20:0;:23::33;:19:::1;:12::34;20:16:20:17:0;:24::25;:16::26:1;:::29;:33::38:0;;:8::40:1;21:19:21:20:0;:23::31;:19:::1;:12::32;22:25:22:33:0;;23::23;;24:21:24:22;:8:34:9;:24:24:25;:28::35;;:24:::1;;;:48:34:9:0;25:35:25:43;;:50::52;:35::53:1;26:23:26:25:0;:12::26:1;;;;;;;;;;;;;27:23:27:24:0;;:27::31;;:23:::1;:16::32;:12::33;;;;;;;;;;;;;;;;28:16:28:17:0;;:20::27;;:::31:1;:16;:33:33:13:0;29:27:29:28;;:31::41;:27:::1;:20::42;:16::43;;;;;;;;;;;;;;;;30:36:30:44:0;;:51::52;:36::53:1;31:27:31:29:0;:16::30:1;;;;;;;;;;;;;;;;32:24:32:25:0;;:32::33;:24::34:1;:::37;:41::42:0;;:16::44:1;28:33:33:13;;24:41:24:42:0;;:::46:1;:37;;;;;;;:48:34:9;;;:8;;;35:26:35:27:0;;:30::35;;:26:::1;:19::36;36:20:36:22:0;:29::30;:20::31:1;:::34;:37::41:0;:20:::1;:16::42;:45::56:0;;:16:::1;:8::58;38:23:38:30:0;;39:21:39:22;:8:44:9;:24:39:25;:28::36;;:24:::1;;;:49:44:9:0;40:23:40:24;;:27::35;:23:::1;:16::36;:12::37;;;;;;;41:33:41:39:0;:46::47;:33::48:1;42:21:42:23:0;:12::24:1;;;;;;;;;;43:20:43:21:0;;:28::29;:20::30:1;:::33;:37::39:0;;:12::41:1;39:42:39:43:0;;:::47:1;:38;;;;;;;:49:44:9;;;:8;;13:6:45:5;;;;;;;",
+    "logs": [],
+    "requires": [
+      { "ip": 20, "line": 18 },
+      { "ip": 31, "line": 20 },
+      { "ip": 145, "line": 32 },
+      { "ip": 180, "line": 36 },
+      { "ip": 225, "line": 43 }
+    ],
+    "sourceTags": "148:157:fu;226:235:fu"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.13.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-06-08T21:14:55.836Z"
+}

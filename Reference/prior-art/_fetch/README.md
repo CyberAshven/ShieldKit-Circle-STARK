@@ -1,0 +1,1 @@
+Raw markdown dumps fetched from Voidify gitbook / SDK and Block blog on 2026-08-16. Prefer the polished notes in `../` and the clones under `repos/`. These files exist so the live sites can change without losing the wording we cited.

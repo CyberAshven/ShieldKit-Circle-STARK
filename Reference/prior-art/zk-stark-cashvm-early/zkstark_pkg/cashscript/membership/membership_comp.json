@@ -1,0 +1,74 @@
+{
+  "contractName": "MembershipComp",
+  "constructorInputs": [
+    { "name": "P", "type": "int" },
+    { "name": "omegaN", "type": "int" },
+    { "name": "offsetD", "type": "int" },
+    { "name": "last", "type": "int" },
+    { "name": "DOM", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "check",
+      "inputs": [
+        { "name": "k", "type": "int" },
+        { "name": "isr", "type": "int" },
+        { "name": "sl", "type": "int" },
+        { "name": "slv", "type": "int" },
+        { "name": "sn", "type": "int" },
+        { "name": "sp", "type": "int" },
+        { "name": "rc", "type": "int" },
+        { "name": "st", "type": "int" },
+        { "name": "u2", "type": "int" },
+        { "name": "u4", "type": "int" },
+        { "name": "u6", "type": "int" },
+        { "name": "nu", "type": "int" },
+        { "name": "inj", "type": "int" },
+        { "name": "stn", "type": "int" },
+        { "name": "nun", "type": "int" },
+        { "name": "a0", "type": "int" },
+        { "name": "a1", "type": "int" },
+        { "name": "a2", "type": "int" },
+        { "name": "a3", "type": "int" },
+        { "name": "a4", "type": "int" },
+        { "name": "a5", "type": "int" },
+        { "name": "a6", "type": "int" },
+        { "name": "a7", "type": "int" },
+        { "name": "root", "type": "int" },
+        { "name": "nh", "type": "int" },
+        { "name": "hdRoot", "type": "int" },
+        { "name": "hdNull", "type": "int" },
+        { "name": "invZH", "type": "int" },
+        { "name": "invX0", "type": "int" },
+        { "name": "invXroot", "type": "int" },
+        { "name": "invXnull", "type": "int" },
+        { "name": "target", "type": "int" }
+      ]
+    }
+  ],
+  "bytecode": "OP_1 OP_ROT OP_2 OP_PICK OP_MOD OP_6 OP_ROLL OP_0 OP_BEGIN OP_DUP OP_11 OP_LESSTHAN OP_DUP OP_TOALTSTACK OP_IF OP_OVER OP_2 OP_MOD OP_1 OP_NUMEQUAL OP_IF OP_2OVER OP_MUL OP_5 OP_PICK OP_MOD OP_4 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_ENDIF OP_2 OP_PICK OP_3 OP_PICK OP_MUL OP_5 OP_PICK OP_MOD OP_3 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_OVER OP_2 OP_DIV OP_ROT OP_DROP OP_SWAP OP_DUP OP_1ADD OP_NIP OP_ENDIF OP_FROMALTSTACK OP_NOT OP_UNTIL OP_DROP OP_4 OP_ROLL OP_3 OP_ROLL OP_MUL OP_3 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_4 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_5 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_6 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_7 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_8 OP_PICK OP_MOD OP_DUP OP_DUP OP_MUL OP_9 OP_PICK OP_MOD OP_1SUB OP_9 OP_PICK OP_ADD OP_9 OP_PICK OP_MOD OP_6 OP_PICK OP_11 OP_ROLL OP_SUB OP_10 OP_PICK OP_ADD OP_10 OP_PICK OP_MOD 26 OP_PICK OP_ROT OP_MUL OP_10 OP_PICK OP_MOD OP_1 OP_NUMEQUALVERIFY 26 OP_PICK OP_7 OP_PICK OP_1SUB OP_11 OP_PICK OP_ADD OP_11 OP_PICK OP_MOD OP_MUL OP_10 OP_PICK OP_MOD OP_1 OP_NUMEQUALVERIFY 27 OP_PICK OP_7 OP_PICK 25 OP_ROLL OP_SUB OP_11 OP_PICK OP_ADD OP_11 OP_PICK OP_MOD OP_MUL OP_10 OP_PICK OP_MOD OP_1 OP_NUMEQUALVERIFY 27 OP_PICK OP_7 OP_ROLL 24 OP_ROLL OP_SUB OP_10 OP_PICK OP_ADD OP_10 OP_PICK OP_MOD OP_MUL OP_9 OP_PICK OP_MOD OP_1 OP_NUMEQUALVERIFY OP_16 OP_PICK OP_16 OP_ROLL OP_ADD OP_9 OP_PICK OP_MOD OP_11 OP_PICK 12 OP_PICK OP_2 OP_PICK OP_3 OP_PICK OP_MUL OP_12 OP_PICK OP_MOD OP_SUB OP_11 OP_PICK OP_ADD OP_11 OP_PICK OP_MOD OP_MUL OP_10 OP_PICK OP_MOD OP_12 OP_PICK 14 OP_PICK 14 OP_PICK 15 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD OP_SUB OP_12 OP_PICK OP_ADD OP_12 OP_PICK OP_MOD OP_MUL OP_11 OP_PICK OP_MOD OP_13 OP_PICK 16 OP_PICK 16 OP_ROLL 16 OP_ROLL OP_MUL OP_14 OP_PICK OP_MOD OP_SUB OP_13 OP_PICK OP_ADD OP_13 OP_PICK OP_MOD OP_MUL OP_12 OP_PICK OP_MOD OP_14 OP_ROLL 14 OP_ROLL OP_5 OP_ROLL OP_MUL OP_13 OP_PICK OP_MOD OP_MUL OP_12 OP_PICK OP_MOD OP_14 OP_ROLL 12 OP_PICK 15 OP_PICK OP_ADD OP_14 OP_PICK OP_MOD 14 OP_PICK OP_ADD OP_14 OP_PICK OP_MOD OP_MUL OP_13 OP_PICK OP_MOD OP_15 OP_ROLL 12 OP_PICK 15 OP_ROLL OP_ADD OP_15 OP_PICK OP_MOD OP_MUL OP_14 OP_PICK OP_MOD OP_16 OP_ROLL 13 OP_PICK 11 OP_ROLL OP_ADD OP_16 OP_PICK OP_MOD OP_MUL OP_15 OP_PICK OP_MOD OP_16 OP_ROLL 11 OP_PICK OP_MUL OP_16 OP_PICK OP_MOD OP_4 OP_ROLL OP_4 OP_ROLL OP_ADD OP_15 OP_PICK OP_MOD OP_2SWAP OP_ADD OP_14 OP_PICK OP_MOD OP_ADD OP_13 OP_PICK OP_MOD OP_ADD OP_12 OP_PICK OP_MOD OP_15 OP_ROLL OP_SWAP OP_SUB OP_12 OP_PICK OP_ADD OP_12 OP_PICK OP_MOD OP_15 OP_ROLL OP_15 OP_ROLL OP_SUB OP_13 OP_PICK OP_ADD OP_13 OP_PICK OP_MOD OP_4 OP_ROLL OP_5 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD 19 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD OP_4 OP_ROLL OP_5 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD 19 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD OP_4 OP_ROLL OP_5 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD 19 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD OP_4 OP_ROLL OP_5 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD 19 OP_PICK OP_MUL OP_13 OP_PICK OP_MOD OP_2ROT OP_SWAP OP_MUL OP_12 OP_PICK OP_MOD 18 OP_ROLL OP_MUL OP_12 OP_PICK OP_MOD OP_13 OP_PICK OP_0 OP_SUB OP_13 OP_PICK OP_ADD OP_13 OP_PICK OP_MOD 19 OP_ROLL OP_MUL OP_13 OP_PICK OP_MOD OP_14 OP_PICK 18 OP_ROLL OP_SUB OP_14 OP_PICK OP_ADD OP_14 OP_PICK OP_MOD 19 OP_ROLL OP_MUL OP_14 OP_PICK OP_MOD OP_15 OP_ROLL 18 OP_ROLL OP_SUB OP_15 OP_PICK OP_ADD OP_15 OP_PICK OP_MOD 18 OP_ROLL OP_MUL OP_15 OP_PICK OP_MOD OP_16 OP_ROLL OP_8 OP_ROLL OP_MUL OP_15 OP_PICK OP_MOD OP_16 OP_ROLL OP_8 OP_ROLL OP_MUL OP_15 OP_PICK OP_MOD OP_ADD OP_14 OP_PICK OP_MOD OP_15 OP_ROLL OP_7 OP_ROLL OP_MUL OP_14 OP_PICK OP_MOD OP_ADD OP_13 OP_PICK OP_MOD OP_14 OP_ROLL OP_6 OP_ROLL OP_MUL OP_13 OP_PICK OP_MOD OP_ADD OP_12 OP_PICK OP_MOD OP_13 OP_ROLL OP_5 OP_ROLL OP_MUL OP_12 OP_PICK OP_MOD OP_ADD OP_11 OP_PICK OP_MOD OP_12 OP_ROLL OP_4 OP_ROLL OP_MUL OP_11 OP_PICK OP_MOD OP_ADD OP_10 OP_PICK OP_MOD OP_11 OP_ROLL OP_3 OP_ROLL OP_MUL OP_10 OP_PICK OP_MOD OP_ADD OP_9 OP_PICK OP_MOD OP_10 OP_ROLL OP_ROT OP_MUL OP_9 OP_PICK OP_MOD OP_ADD OP_8 OP_ROLL OP_MOD OP_8 OP_ROLL OP_NUMEQUALVERIFY OP_2DROP OP_2DROP OP_2DROP OP_DROP OP_1",
+  "source": "pragma cashscript ^0.13.0;\n\n// On-chain membership-AIR composition check (one query), 6-column layout.\n// Columns: st, u2, u4, u6, nu (held), inj (secret at leaf row / sibling at level rows).\n// 5 transition constraints (u2,u4,u6 round-aux; st main; nu held) + 3 boundary\n// (st@row0=0, st@root_row=root, st@null_row=nullifierHash) = 8 constraints.\n// Recomputes comp = sum(alpha_i * quotient_i) and requires it equals the FRI layer-0\n// value at the query index. Selector values (isr,sl,slv,sn,sp,rc) are bound to x by\n// selector_horner.cash (Horner over hash-pinned public coeffs); here they are inputs.\ncontract MembershipComp(int P, int omegaN, int offsetD, int last, int DOM) {\n    function check(\n        int k,\n        int isr, int sl, int slv, int sn, int sp, int rc,\n        int st, int u2, int u4, int u6, int nu, int inj,\n        int stn, int nun,\n        int a0, int a1, int a2, int a3, int a4, int a5, int a6, int a7,\n        int root, int nh, int hdRoot, int hdNull,\n        int invZH, int invX0, int invXroot, int invXnull,\n        int target\n    ) {\n        // x = offsetD * omegaN^k  (modexp, k < 2048 -> 11 bits)\n        int r = 1; int b = omegaN % P; int e = k;\n        for (int t = 0; t < 11; t = t + 1) {\n            if (e % 2 == 1) { r = (r * b) % P; }\n            b = (b * b) % P; e = e / 2;\n        }\n        int x = (offsetD * r) % P;\n        // x^T - 1, T = 64 -> 6 squarings\n        int xn = (x * x) % P; xn = (xn * xn) % P; xn = (xn * xn) % P;\n        xn = (xn * xn) % P; xn = (xn * xn) % P; xn = (xn * xn) % P;\n        int xn1 = (xn - 1 + P) % P;\n        int xml = (x - last + P) % P;\n        require((invZH * xn1) % P == 1);\n        require((invX0 * ((x - 1 + P) % P)) % P == 1);\n        require((invXroot * ((x - hdRoot + P) % P)) % P == 1);\n        require((invXnull * ((x - hdNull + P) % P)) % P == 1);\n        // transition values\n        int u = (st + rc) % P;\n        int vu2 = (isr * ((u2 - ((u * u) % P) + P) % P)) % P;\n        int vu4 = (isr * ((u4 - ((u2 * u2) % P) + P) % P)) % P;\n        int vu6 = (isr * ((u6 - ((u4 * u2) % P) + P) % P)) % P;\n        int rnd  = (isr * ((u6 * u) % P)) % P;\n        int leaf = (sl  * (((st + inj) % P + nu) % P)) % P;   // secret(inj) + nullifier(held)\n        int lvl  = (slv * ((st + inj) % P)) % P;              // sibling(inj)\n        int nulc = (sn  * ((nu + DOM) % P)) % P;\n        int padc = (sp  * st) % P;\n        int rhs  = (((rnd + leaf) % P + (lvl + nulc) % P) % P + padc) % P;\n        int vst  = (stn - rhs + P) % P;\n        int vnu  = (nun - nu + P) % P;\n        // transition quotients\n        int qu2 = (((vu2 * xml) % P) * invZH) % P;\n        int qu4 = (((vu4 * xml) % P) * invZH) % P;\n        int qu6 = (((vu6 * xml) % P) * invZH) % P;\n        int qst = (((vst * xml) % P) * invZH) % P;\n        int qnu = (((vnu * xml) % P) * invZH) % P;\n        // boundary quotients\n        int qb0    = (((st - 0 + P) % P) * invX0) % P;\n        int qbroot = (((st - root + P) % P) * invXroot) % P;\n        int qbnull = (((st - nh + P) % P) * invXnull) % P;\n        int comp =\n            ((((((((a0*qu2)%P + (a1*qu4)%P)%P + (a2*qu6)%P)%P + (a3*qst)%P)%P\n            + (a4*qnu)%P)%P + (a5*qb0)%P)%P + (a6*qbroot)%P)%P + (a7*qbnull)%P) % P;\n        require(comp == target);\n    }\n}\n",
+  "fingerprint": "c5c362d637ed7515999c04421758c91f23781c6f54ba6ca7233af1c71cf695b4",
+  "debug": {
+    "bytecode": "517b527997567a0065765b9f766b63785297519c637095557997547a757c6b7c6b7c6c6c685279537995557997537a757c6b7c6c7852967b757c768b77686c916675547a537a955379977676955479977676955579977676955679977676955779977676955879977676955979978c59799359799756795b7a945a79935a79970126797b955a7997519d01267957798c5b79935b7997955a7997519d012779577901257a945b79935b7997955a7997519d012779577a01247a945a79935a799795597997519d6079607a935979975b7901127952795379955c7997945b79935b7997955a79975c79011479011479011579955d7997945c79935c7997955b79975d7901167901167a01167a955e7997945d79935d7997955c79975e7a01147a557a955d7997955c79975e7a011279011579935e7997011479935e7997955d79975f7a01127901157a935f7997955e7997607a01137901117a93607997955f7997607a01117995607997547a547a935f799772935e7997935d7997935c79975f7a7c945c79935c79975f7a5f7a945d79935d7997547a5579955d7997011979955d7997547a5579955d7997011979955d7997547a5579955d7997011979955d7997547a5579955d7997011979955d7997717c955c799701187a955c79975d7900945d79935d799701197a955d79975e7901187a945e79935e799701197a955e79975f7a01187a945f79935f799701187a955f7997607a587a955f7997607a587a955f7997935e79975f7a577a955e7997935d79975e7a567a955d7997935c79975d7a557a955c7997935b79975c7a547a955b7997935a79975b7a537a955a7997935979975a7a7b9559799793587a97587a9d6d6d6d7551",
+    "sourceMap": "22:16:22:17;:27::33;:36::37;;:27:::1;:47::48:0;;23:21:23:22;:8:26:9;:24:23:25;:28::30;:24:::1;;;:43:26:9:0;24:16:24:17;:20::21;:16:::1;:25::26:0;:16:::1;:28::48:0;:35::40;::::1;:44::45:0;;:34:::1;:30::46;;;;;;;;;;:28::48;25:17:25:18:0;;:21::22;;:17:::1;:26::27:0;;:16:::1;:12::28;;;;;;;:33::34:0;:37::38;:33:::1;:29::39;;;23:36:23:37:0;:::41:1;:32;:43:26:9;;:8;;;27:17:27:24:0;;:27::28;;:17:::1;:32::33:0;;:16:::1;29:18:29:23:0;;::::1;:27::28:0;;:17:::1;:36::43:0;;::::1;:47::48:0;;:35:::1;:56::63:0;;::::1;:67::68:0;;:55:::1;30:14:30:21:0;;::::1;:25::26:0;;:13:::1;:34::41:0;;::::1;:45::46:0;;:33:::1;:54::61:0;;::::1;:65::66:0;;:53:::1;31:19:31:25;:28::29:0;;:19:::1;:33::34:0;;:18:::1;32:19:32:20:0;;:23::27;;:19:::1;:30::31:0;;:19:::1;:35::36:0;;:18:::1;33:17:33:22:0;;:25::28;:17:::1;:32::33:0;;:16:::1;:37::38:0;:8::40:1;34:17:34:22:0;;:27::28;;:::32:1;:35::36:0;;:27:::1;:40::41:0;;:26:::1;:17::42;:46::47:0;;:16:::1;:51::52:0;:8::54:1;35:17:35:25:0;;:30::31;;:34::40;;:30:::1;:43::44:0;;:30:::1;:48::49:0;;:29:::1;:17::50;:54::55:0;;:16:::1;:59::60:0;:8::62:1;36:17:36:25:0;;:30::31;;:34::40;;:30:::1;:43::44:0;;:30:::1;:48::49:0;;:29:::1;:17::50;:54::55:0;;:16:::1;:59::60:0;:8::62:1;38:17:38:19:0;;:22::24;;:17:::1;:28::29:0;;:16:::1;39:19:39:22:0;;:27::29;;:34::35;;:38::39;;:34:::1;:43::44:0;;:33:::1;:27::45;:48::49:0;;:27:::1;:53::54:0;;:26:::1;:19::55;:59::60:0;;:18:::1;40:19:40:22:0;;:27::29;;:34::36;;:39::41;;:34:::1;:45::46:0;;:33:::1;:27::47;:50::51:0;;:27:::1;:55::56:0;;:26:::1;:19::57;:61::62:0;;:18:::1;41:19:41:22:0;;:27::29;;:34::36;;:39::41;;:34:::1;:45::46:0;;:33:::1;:27::47;:50::51:0;;:27:::1;:55::56:0;;:26:::1;:19::57;:61::62:0;;:18:::1;42:20:42:23:0;;:28::30;;:33::34;;:28:::1;:38::39:0;;:27:::1;:20::40;:44::45:0;;:19:::1;43:20:43:22:0;;:29::31;;:34::37;;:29:::1;:41::42:0;;:28:::1;:45::47:0;;:28:::1;:51::52:0;;:27:::1;:20::53;:57::58:0;;:19:::1;44:20:44:23:0;;:28::30;;:33::36;;:28:::1;:40::41:0;;:27:::1;:20::42;:46::47:0;;:19:::1;45:20:45:22:0;;:28::30;;:33::36;;:28:::1;:40::41:0;;:27:::1;:20::42;:46::47:0;;:19:::1;46:20:46:22:0;;:26::28;;:20:::1;:32::33:0;;:19:::1;47:22:47:25:0;;:28::32;;:22:::1;:36::37:0;;:21:::1;:41::51:0;::::1;:55::56:0;;:40:::1;:21;:60::61:0;;:20:::1;:::68;:72::73:0;;:19:::1;48:20:48:23:0;;:26::29;:20:::1;:32::33:0;;:20:::1;:37::38:0;;:19:::1;49:20:49:23:0;;:26::28;;:20:::1;:31::32:0;;:20:::1;:36::37:0;;:19:::1;51:21:51:24:0;;:27::30;;:21:::1;:34::35:0;;:20:::1;:39::44:0;;:19:::1;:48::49:0;;:18:::1;52:21:52:24:0;;:27::30;;:21:::1;:34::35:0;;:20:::1;:39::44:0;;:19:::1;:48::49:0;;:18:::1;53:21:53:24:0;;:27::30;;:21:::1;:34::35:0;;:20:::1;:39::44:0;;:19:::1;:48::49:0;;:18:::1;54:21:54:24:0;;:27::30;;:21:::1;:34::35:0;;:20:::1;:39::44:0;;:19:::1;:48::49:0;;:18:::1;55:21:55:30:0;;::::1;:34::35:0;;:20:::1;:39::44:0;;:19:::1;:48::49:0;;:18:::1;57:24:57:26:0;;:29::30;:24:::1;:33::34:0;;:24:::1;:38::39:0;;:23:::1;:43::48:0;;:22:::1;:52::53:0;;:21:::1;58:24:58:26:0;;:29::33;;:24:::1;:36::37:0;;:24:::1;:41::42:0;;:23:::1;:46::54:0;;:22:::1;:58::59:0;;:21:::1;59:24:59:26:0;;:29::31;;:24:::1;:34::35:0;;:24:::1;:39::40:0;;:23:::1;:44::52:0;;:22:::1;:56::57:0;;:21:::1;61:20:61:22:0;;:23::26;;:20:::1;:28::29:0;;:19:::1;:33::35:0;;:36::39;;:33:::1;:41::42:0;;:32:::1;:19;:44::45:0;;:18:::1;:49::51:0;;:52::55;;:49:::1;:57::58:0;;:48:::1;:18;:60::61:0;;:17:::1;:65::67:0;;:68::71;;:65:::1;:73::74:0;;:64:::1;:17;:76::77:0;;:16:::1;62:15:62:17:0;;:18::21;;:15:::1;:23::24:0;;:14:::1;61:16;62:26::27:0;;61:15:::1;62:31::33:0;;:34::37;;:31:::1;:39::40:0;;:30:::1;61:15;62:42::43:0;;61:14:::1;62:47::49:0;;:50::56;;:47:::1;:58::59:0;;:46:::1;61:14;62:61::62:0;;61:13:::1;62:66::68:0;;:69::75;:66:::1;:77::78:0;;:65:::1;61:13;62:82::83:0;;61:12:::1;63:24:63:30:0;;:8::32:1;20:6:64:5;;;;",
+    "logs": [],
+    "requires": [
+      { "ip": 141, "line": 33 },
+      { "ip": 158, "line": 34 },
+      { "ip": 177, "line": 35 },
+      { "ip": 196, "line": 36 },
+      { "ip": 597, "line": 63 }
+    ],
+    "sourceTags": "58:60:fu"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.13.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-06-10T00:00:10.689Z"
+}

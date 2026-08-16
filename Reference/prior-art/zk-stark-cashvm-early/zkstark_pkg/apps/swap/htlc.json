@@ -1,0 +1,51 @@
+{
+  "contractName": "HTLC",
+  "constructorInputs": [
+    { "name": "recipientPKH", "type": "bytes20" },
+    { "name": "senderPKH", "type": "bytes20" },
+    { "name": "hashlock", "type": "bytes32" },
+    { "name": "timeout", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "claim",
+      "inputs": [
+        { "name": "pk", "type": "pubkey" },
+        { "name": "s", "type": "sig" },
+        { "name": "secret", "type": "bytes" }
+      ]
+    },
+    {
+      "name": "refund",
+      "inputs": [
+        { "name": "pk", "type": "pubkey" },
+        { "name": "s", "type": "sig" }
+      ]
+    }
+  ],
+  "bytecode": "OP_4 OP_PICK OP_0 OP_NUMEQUAL OP_IF OP_7 OP_ROLL OP_SHA256 OP_3 OP_ROLL OP_EQUALVERIFY OP_4 OP_PICK OP_HASH160 OP_EQUALVERIFY OP_4 OP_ROLL OP_4 OP_ROLL OP_CHECKSIG OP_NIP OP_NIP OP_NIP OP_ELSE OP_4 OP_ROLL OP_1 OP_NUMEQUALVERIFY OP_3 OP_ROLL OP_CHECKLOCKTIMEVERIFY OP_DROP OP_3 OP_PICK OP_HASH160 OP_ROT OP_EQUALVERIFY OP_2SWAP OP_CHECKSIG OP_NIP OP_NIP OP_ENDIF",
+  "source": "pragma cashscript ^0.13.0;\n\n// Hash time-locked contract for a cross-chain atomic swap leg.\n// The SAME sha256 hashlock is used on both chains. Claiming on one chain reveals\n// the preimage on-chain, which the counterparty uses to claim the other leg.\ncontract HTLC(\n    bytes20 recipientPKH,   // who receives if the secret is revealed\n    bytes20 senderPKH,      // who refunds after timeout\n    bytes32 hashlock,       // sha256(secret)\n    int timeout             // block height for refund\n) {\n    // recipient claims by revealing the secret preimage\n    function claim(pubkey pk, sig s, bytes secret) {\n        require(sha256(secret) == hashlock);\n        require(hash160(pk) == recipientPKH);\n        require(checkSig(s, pk));\n    }\n    // sender reclaims funds after the timeout if never claimed\n    function refund(pubkey pk, sig s) {\n        require(tx.time >= timeout);\n        require(hash160(pk) == senderPKH);\n        require(checkSig(s, pk));\n    }\n}\n",
+  "fingerprint": "81a1a95eed9093edd16cef039e95ed3825a4e73a68a7f202a92acf1ce25621bc",
+  "debug": {
+    "bytecode": "5479009c63577aa8537a885479a988547a547aac77777767547a519d537ab1755379a97b8872ac777768",
+    "sourceMap": "13:4:17:5;;;;;14:23:14:29;;:16::30:1;:34::42:0;;:8::44:1;15:24:15:26:0;;:16::27:1;:8::45;16:25:16:26:0;;:28::30;;:8::33:1;13:51:17:5;;;:4;19::23::0;;;;20:27:20:34;;:8::36:1;;21:24:21:26:0;;:16::27:1;:31::40:0;:8::42:1;22:25:22:30:0;:8::33:1;19:38:23:5;;6:0:24:1",
+    "logs": [],
+    "requires": [
+      { "ip": 14, "line": 14 },
+      { "ip": 18, "line": 15 },
+      { "ip": 24, "line": 16 },
+      { "ip": 34, "line": 20 },
+      { "ip": 40, "line": 21 },
+      { "ip": 43, "line": 22 }
+    ]
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.13.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-06-09T23:20:35.628Z"
+}

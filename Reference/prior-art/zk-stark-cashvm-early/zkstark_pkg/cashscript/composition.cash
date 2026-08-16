@@ -1,0 +1,33 @@
+pragma cashscript ^0.13.0;
+
+// Composition VALUE check (block 1): recompute comp = a1*Qt + a2*Qb from the
+// opened trace values and verified inverse hints, and require it equals the
+// FRI layer-0 opened value at the query index (ties the AIR to the committed FRI).
+//   x = D[k0] = offset*omegaN^k0 ; Pt = tpn - tp^2 - C
+//   Qt = Pt*(x-last)/(x^n-1) ; Qb = (tp-out)/(x-last)
+contract Composition(int P, int omegaN, int offsetD, int last, int C, int out) {
+    function check(int k0, int half0, int tp, int tpn, int a1, int a2,
+                   int invXn1, int invXlast, int v0, int w0) {
+        // x = offsetD * omegaN^k0  (single modexp loop)
+        int result = 1; int b = omegaN % P; int e = k0;
+        for (int t = 0; t < 10; t = t + 1) {
+            if (e % 2 == 1) { result = (result * b) % P; }
+            b = (b * b) % P;
+            e = e / 2;
+        }
+        int x = (offsetD * result) % P;
+        // x^n - 1  (n = 16 -> 4 straight-line squarings, no second loop)
+        int xn = (x * x) % P; xn = (xn * xn) % P; xn = (xn * xn) % P; xn = (xn * xn) % P;
+        int xn1 = (xn - 1 + P) % P;
+        int xml = (x - last + P) % P;
+        require((invXn1 * xn1) % P == 1);
+        require((invXlast * xml) % P == 1);
+        int Pt = (tpn - ((tp * tp) % P) - C + P + P) % P;
+        int Qt = (((Pt * xml) % P) * invXn1) % P;
+        int Qb = (((tp - out + P) % P) * invXlast) % P;
+        int comp = (((a1 * Qt) % P) + ((a2 * Qb) % P)) % P;
+        int target = w0;
+        if (k0 < half0) { target = v0; }
+        require(comp == target);
+    }
+}

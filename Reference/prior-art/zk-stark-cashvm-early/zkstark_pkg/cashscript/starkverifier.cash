@@ -1,0 +1,67 @@
+pragma cashscript ^0.13.0;
+
+// FULL zk-STARK verifier (assembly of validated sub-blocks):
+//   1. recompute Fiat-Shamir transcript + grinding bound (trustless challenges)
+//   2. per query: verify hiding-Merkle opening of the masked trace to tpRoot,
+//      and verify the AIR composition inverse hints (sound modular arithmetic).
+//   FRI multi-layer fold per query is the one remaining block (needs per-layer
+//   openings); its single-step is validated in frifold.cash.
+contract StarkVerifier(int P, bytes32 tpRoot) {
+    function verify(
+        bytes outLE, bytes friRoots, int nLayers, bytes nonce, int grindTarget,
+        bytes challRaw, bytes idxsRaw, int nQueries,
+        bytes leaves, bytes paths, int depth, int leafLen,
+        bytes compHints
+    ) {
+        // ---- Fiat-Shamir transcript ----
+        bytes s = 0x535441524b2d7630;
+        s = sha256(s + tpRoot);
+        s = sha256(s + outLE);
+        bytes remCh = challRaw;
+        s = sha256(s + 0x6368616c); bytes a1, bytes c1 = remCh.split(8); remCh = c1;
+        require(s.split(8)[0] == a1);
+        s = sha256(s + 0x6368616c); bytes a2, bytes c2 = remCh.split(8); remCh = c2;
+        require(s.split(8)[0] == a2);
+        s = sha256(s + 0x667269);
+        bytes remRoots = friRoots;
+        for (int j = 0; j < nLayers; j = j + 1) {
+            bytes root, bytes rr = remRoots.split(32); remRoots = rr;
+            s = sha256(s + root);
+            if (j < nLayers - 1) {
+                s = sha256(s + 0x6368616c);
+                bytes b, bytes rb = remCh.split(8); remCh = rb;
+                require(s.split(8)[0] == b);
+            }
+        }
+        bytes sN = sha256(s + nonce);
+        require(int(sN.split(8)[0] + 0x00) < grindTarget);
+        s = sN;
+        // ---- per-query: index challenge + trace opening + composition hints ----
+        bytes remIdx = idxsRaw;
+        bytes remLeaves = leaves;
+        bytes remPaths = paths;
+        bytes remComp = compHints;
+        for (int q = 0; q < nQueries; q = q + 1) {
+            s = sha256(s + 0x696478);
+            bytes ir, bytes ri = remIdx.split(8); remIdx = ri;
+            require(s.split(8)[0] == ir);
+            // hiding-Merkle opening of the masked trace leaf to tpRoot
+            bytes leaf, bytes rl = remLeaves.split(leafLen); remLeaves = rl;
+            bytes32 cur = sha256(leaf);
+            for (int i = 0; i < depth; i = i + 1) {
+                bytes db, bytes p1 = remPaths.split(1);
+                bytes sib, bytes p2 = p1.split(32); remPaths = p2;
+                if (int(db) == 0) { cur = sha256(cur + sib); }
+                else { cur = sha256(sib + cur); }
+            }
+            require(cur == tpRoot);
+            // AIR composition: verify the modular-inverse hints (sound)
+            bytes zn1, bytes g1 = remComp.split(8);
+            bytes invZn, bytes g2 = g1.split(8);
+            bytes zlast, bytes g3 = g2.split(8);
+            bytes invZlast, bytes g4 = g3.split(8); remComp = g4;
+            require((int(zn1 + 0x00) * int(invZn + 0x00)) % P == 1);
+            require((int(zlast + 0x00) * int(invZlast + 0x00)) % P == 1);
+        }
+    }
+}

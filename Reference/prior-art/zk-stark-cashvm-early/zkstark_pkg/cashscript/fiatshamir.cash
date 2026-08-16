@@ -1,0 +1,46 @@
+pragma cashscript ^0.13.0;
+
+// On-chain Fiat-Shamir transcript verification (the trustless keystone).
+// Recomputes the verifier's challenges from the proof's commitments and checks
+// they match, and enforces the grinding (proof-of-work) bound. This is what stops
+// a prover from choosing favorable challenges. Mirrors stark.py's FS exactly.
+contract FiatShamir() {
+    function check(
+        bytes tpRoot, bytes outLE, bytes friRoots, int nLayers,
+        bytes nonce, int grindTarget,
+        bytes a1raw, bytes a2raw, bytes betasRaw,
+        bytes idxsRaw, int nQueries
+    ) {
+        bytes s = 0x535441524b2d7630;            // "STARK-v0"
+        s = sha256(s + tpRoot);
+        s = sha256(s + outLE);
+        s = sha256(s + 0x6368616c);              // "chal"
+        require(s.split(8)[0] == a1raw);
+        s = sha256(s + 0x6368616c);
+        require(s.split(8)[0] == a2raw);
+        s = sha256(s + 0x667269);                // "fri"
+        bytes remRoots = friRoots;
+        bytes remBetas = betasRaw;
+        for (int j = 0; j < nLayers; j = j + 1) {
+            bytes root, bytes rr = remRoots.split(32);
+            remRoots = rr;
+            s = sha256(s + root);
+            if (j < nLayers - 1) {
+                s = sha256(s + 0x6368616c);
+                bytes b, bytes rb = remBetas.split(8);
+                remBetas = rb;
+                require(s.split(8)[0] == b);
+            }
+        }
+        bytes sN = sha256(s + nonce);
+        require(int(sN.split(8)[0] + 0x00) < grindTarget);   // proof-of-work bound
+        s = sN;
+        bytes remIdx = idxsRaw;
+        for (int q = 0; q < nQueries; q = q + 1) {
+            s = sha256(s + 0x696478);            // "idx"
+            bytes ir, bytes ri = remIdx.split(8);
+            remIdx = ri;
+            require(s.split(8)[0] == ir);
+        }
+    }
+}

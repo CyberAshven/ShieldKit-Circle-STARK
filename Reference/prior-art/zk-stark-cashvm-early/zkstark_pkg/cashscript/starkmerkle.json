@@ -1,0 +1,39 @@
+{
+  "contractName": "StarkMerkle",
+  "constructorInputs": [
+    { "name": "root", "type": "bytes32" }
+  ],
+  "abi": [
+    {
+      "name": "proveAll",
+      "inputs": [
+        { "name": "leaves", "type": "bytes" },
+        { "name": "paths", "type": "bytes" },
+        { "name": "nQueries", "type": "int" },
+        { "name": "depth", "type": "int" },
+        { "name": "leafLen", "type": "int" }
+      ]
+    }
+  ],
+  "bytecode": "OP_SWAP OP_ROT OP_0 OP_BEGIN OP_DUP OP_5 OP_PICK OP_LESSTHAN OP_DUP OP_TOALTSTACK OP_IF OP_2 OP_PICK OP_7 OP_PICK OP_SPLIT OP_DUP OP_5 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_OVER OP_SHA256 OP_0 OP_BEGIN OP_DUP OP_10 OP_PICK OP_LESSTHAN OP_DUP OP_TOALTSTACK OP_IF OP_5 OP_PICK OP_1 OP_SPLIT OP_DUP 20 OP_SPLIT OP_DUP OP_10 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_3 OP_PICK OP_BIN2NUM OP_0 OP_NUMEQUAL OP_IF OP_5 OP_PICK OP_2 OP_PICK OP_CAT OP_SHA256 OP_6 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_ELSE OP_OVER OP_6 OP_PICK OP_CAT OP_SHA256 OP_6 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_ENDIF OP_4 OP_PICK OP_1ADD OP_5 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_2DROP OP_2DROP OP_ENDIF OP_FROMALTSTACK OP_NOT OP_UNTIL OP_DROP OP_DUP OP_7 OP_PICK OP_EQUALVERIFY OP_3 OP_PICK OP_1ADD OP_4 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_2DROP OP_DROP OP_ENDIF OP_FROMALTSTACK OP_NOT OP_UNTIL OP_2DROP OP_2DROP OP_2DROP OP_DROP OP_1",
+  "source": "pragma cashscript ^0.13.0;\n\n// Verifier matching stark.py's hiding-Merkle scheme exactly:\n// leaf commitment = sha256(salt(16) || value(8)) ; leafLen passed as arg.\ncontract StarkMerkle(bytes32 root) {\n    function proveAll(bytes leaves, bytes paths, int nQueries, int depth, int leafLen) {\n        bytes remLeaves = leaves;\n        bytes remPaths = paths;\n        for (int q = 0; q < nQueries; q = q + 1) {\n            bytes leaf, bytes rl = remLeaves.split(leafLen);\n            remLeaves = rl;\n            bytes32 cur = sha256(leaf);\n            for (int i = 0; i < depth; i = i + 1) {\n                bytes dirByte, bytes r1 = remPaths.split(1);\n                bytes sib, bytes r2 = r1.split(32);\n                remPaths = r2;\n                if (int(dirByte) == 0) { cur = sha256(cur + sib); }\n                else { cur = sha256(sib + cur); }\n            }\n            require(cur == root);\n        }\n    }\n}\n",
+  "fingerprint": "96c18e286bbdf927fa36b64ecabe197d656532f22f460c417c3ae3482c335085",
+  "debug": {
+    "bytecode": "7c7b00657655799f766b63527957797f76557a757c6b7c6b7c6b7c6c6c6c78a80065765a799f766b635579517f7601207f765a7a757c6b7c6b7c6b7c6b7c6b7c6b7c6b7c6b7c6c6c6c6c6c6c6c6c537981009c63557952797ea8567a757c6b7c6b7c6b7c6b7c6c6c6c6c677856797ea8567a757c6b7c6b7c6b7c6b7c6c6c6c6c6854798b557a757c6b7c6b7c6b7c6c6c6c6d6d686c9166757657798853798b547a757c6b7c6b7c6c6c6d75686c91666d6d6d7551",
+    "sourceMap": "7:26:7:32;8:25:8:30;9:21:9:22;:8:21:9;:24:9:25;:28::36;;:24:::1;;;:49:21:9:0;10:35:10:44;;:51::58;;:35::59:1;11:24:11:26:0;:12::27:1;;;;;;;;;;;;;12:33:12:37:0;:26::38:1;13:25:13:26:0;:12:19:13;:28:13:29;:32::37;;:28:::1;;;:50:19:13:0;14:42:14:50;;:57::58;:42::59:1;15:38:15:40:0;:47::49;:38::50:1;16:27:16:29:0;:16::30:1;;;;;;;;;;;;;;;;;;;;;;;;;;;;17:24:17:31:0;;:20::32:1;:36::37:0;:20:::1;:39::67:0;:54::57;;:60::63;;:54:::1;:47::64;:41::65;;;;;;;;;;;;;;;;18:21:18:49:0;:36::39;:42::45;;:36:::1;:29::46;:23::47;;;;;;;;;;;;;;;;:21::49;13:43:13:44:0;;:::48:1;:39;;;;;;;;;;;;;:50:19:13;;;;:12;;;20:20:20:23:0;:27::31;;:12::33:1;9:42:9:43:0;;:::47:1;:38;;;;;;;;;;:49:21:9;;;;:8;;6:87:22:5;;;;",
+    "logs": [],
+    "requires": [
+      { "ip": 155, "line": 20 }
+    ],
+    "sourceTags": "128:143:fu;155:167:fu"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.13.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-06-06T05:50:03.366Z"
+}

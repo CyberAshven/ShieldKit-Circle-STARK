@@ -1,0 +1,8 @@
+# This folder is public prior-art only.
+*.wif
+*wallet*.json
+**/.local/
+Bastian*
+conversations/
+*.zip
+confidintial*

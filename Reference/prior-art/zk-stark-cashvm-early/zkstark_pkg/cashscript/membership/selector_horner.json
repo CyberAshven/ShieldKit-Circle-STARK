@@ -1,0 +1,41 @@
+{
+  "contractName": "SelectorHorner",
+  "constructorInputs": [
+    { "name": "P", "type": "int" },
+    { "name": "coeffsHash", "type": "bytes32" }
+  ],
+  "abi": [
+    {
+      "name": "eval",
+      "inputs": [
+        { "name": "coeffs", "type": "bytes" },
+        { "name": "polyIndex", "type": "int" },
+        { "name": "T", "type": "int" },
+        { "name": "x", "type": "int" },
+        { "name": "claimed", "type": "int" }
+      ]
+    }
+  ],
+  "bytecode": "OP_2 OP_PICK OP_SHA256 OP_ROT OP_EQUALVERIFY OP_9 OP_3 OP_ROLL OP_4 OP_PICK OP_MUL OP_OVER OP_MUL OP_0 OP_0 OP_BEGIN OP_DUP 40 OP_LESSTHAN OP_DUP OP_TOALTSTACK OP_IF OP_DUP OP_7 OP_PICK OP_LESSTHAN OP_IF OP_6 OP_PICK OP_1SUB OP_OVER OP_SUB OP_3 OP_PICK OP_OVER OP_6 OP_PICK OP_MUL OP_ADD OP_7 OP_PICK OP_OVER OP_SPLIT OP_NIP OP_6 OP_PICK OP_SPLIT OP_DROP OP_DUP OP_BIN2NUM OP_5 OP_PICK OP_12 OP_PICK OP_MUL OP_9 OP_PICK OP_MOD OP_OVER OP_ADD OP_9 OP_PICK OP_MOD OP_6 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_2DROP OP_2DROP OP_ENDIF OP_DUP OP_1ADD OP_NIP OP_ENDIF OP_FROMALTSTACK OP_NOT OP_UNTIL OP_DROP OP_7 OP_ROLL OP_NUMEQUALVERIFY OP_2DROP OP_2DROP OP_2DROP OP_1",
+  "source": "pragma cashscript ^0.13.0;\n\n// Sound binding of the public selector polynomials to the query point x.\n// The selector polys (is_round, sel_leaf, sel_level, sel_null, sel_pad, rc) depend ONLY\n// on the public circuit depth D, so the VERIFIER must compute them, not trust the prover.\n// Here: the prover supplies the coefficient vectors as witness; the contract (1) checks\n// their SHA256 equals the hash PINNED at construction (so they cannot be forged), then\n// (2) Horner-evaluates each at x. The resulting values are what the composition check must\n// use. This closes the \"prover supplied the selector values\" gap.\n//\n// One poly per call (keeps each input's script + witness small and re-usable). Caller runs\n// it 6 times (one per selector) or batches; the pinned hash covers ALL coeffs concatenated,\n// so a per-poly call also verifies the slice belongs to the pinned set via offset+full hash.\ncontract SelectorHorner(int P, bytes32 coeffsHash) {\n    // coeffs: little-endian 8-byte field elements, ALL 6 polys concatenated in fixed order\n    // (isr|sl|slv|sn|sp|rc), each T coeffs. polyIndex selects which T-block to evaluate.\n    // x: the query evaluation point. claimed: the asserted selector(x). T: coeffs per poly.\n    function eval(bytes coeffs, int polyIndex, int T, int x, int claimed) {\n        require(sha256(coeffs) == coeffsHash);                 // pin: coeffs are the public set\n        int wordLen = 9;   // 8 value bytes + 0x00 high byte -> always positive (Goldilocks > 2^63)\n        int start = polyIndex * T * wordLen;                   // byte offset of this poly's block\n        // Horner from the highest-degree coeff down: acc = acc*x + c[i]\n        int acc = 0;\n        for (int i = 0; i < 64; i = i + 1) {                   // T <= 64 (depth<=4 layout)\n            if (i < T) {\n                int hi = T - 1 - i;                            // descend\n                int off = start + hi * wordLen;\n                bytes le = coeffs.split(off)[1].split(wordLen)[0];\n                int c = int(le);                               // 8-byte LE -> int\n                acc = (((acc * x) % P) + c) % P;\n            }\n        }\n        require(acc == claimed);                               // verifier-computed selector value\n    }\n}\n",
+  "fingerprint": "2eb32ca55ba90471a72fba1f8fa5c1d61639bc43a3a86fb147f069efdaef7a6c",
+  "debug": {
+    "bytecode": "5279a87b8859537a54799578950000657601409f766b637657799f6356798c7894537978567995935779787f7756797f75768155795c79955979977893597997567a757c6b7c6b7c6b7c6b7c6c6c6c6c6d6d68768b77686c916675577a9d6d6d6d51",
+    "sourceMap": "19:23:19:29;;:16::30:1;:34::44:0;:8::46:1;20:22:20:23:0;21:20:21:29;;:32::33;;:20:::1;:36::43:0;:20:::1;23:18:23:19:0;24:21:24:22;:8:32:9;:24:24:25;:28::30;:24:::1;;;:43:32:9:0;25:16:25:17;:20::21;;:16:::1;:23:31:13:0;26:25:26:26;;:::30:1;:33::34:0;:25:::1;27:26:27:31:0;;:34::36;:39::46;;:34:::1;:26;28:27:28:33:0;;:40::43;:27::44:1;:::47;:54::61:0;;:27::62:1;:::65;29:28:29:30:0;:24::31:1;30:25:30:28:0;;:31::32;;:25:::1;:36::37:0;;:24:::1;:41::42:0;:23:::1;:46::47:0;;:22:::1;:16::48;;;;;;;;;;;;;;;;25:23:31:13;;;24:36:24:37:0;:::41:1;:32;:43:32:9;;:8;;;33:23:33:30:0;;:8::32:1;18:74:34:5;;;",
+    "logs": [],
+    "requires": [
+      { "ip": 6, "line": 19 },
+      { "ip": 94, "line": 33 }
+    ],
+    "sourceTags": "82:84:fu"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.13.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-06-09T23:56:02.619Z"
+}

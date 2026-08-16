@@ -34,3 +34,10 @@ Product profile (any amount, one set) lives in
 edit the sealed Fv1 0.1-ticket lane. Circle FRI prove/verify is shipped
 (`circle-fri-m31`, `sound: false`). Chipnet five-point genesis and successor
 compile, sign, and broadcast from the lab CLI.
+
+## Reference
+
+Public prior-art notes (Circle FRI, BCH packaging, verifier.cash Groth16
+leaderboard, XO, Voidify, etc.) live in [`Reference/`](Reference/).
+Private chat and lab keys are **not** in this tree. Start at
+[`Reference/00-INDEX.md`](Reference/00-INDEX.md).
