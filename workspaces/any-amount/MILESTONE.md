@@ -24,11 +24,26 @@ query per redeem. Standard pins **1** fold input. Consensus pins **36** (one
 
 Explorer: `https://chipnet.imaginary.cash/tx/2acb1196589b32fb1179f57dafc402dcb747f2698f364633d90dec180ab446e0`
 
-### Consensus (≤ 1 MB, JSON-RPC + local mine)
+### Consensus 36-fold (≤ 1 MB, JSON-RPC + local mine)
 
 Public Electrum and P2P `inv` reject `tx-size` above 100000 even with
 `acceptnonstdtxn=1`. Shipped land path: compile locally, then HTTP
 `sendrawtransaction` (`src/chain/broadcast-tx.ts`).
+
+| | |
+| --- | --- |
+| Successor | `b1415fafdc65e76d106956064667f94bc988a38da69e63c06acef1e8a1b9cb29` |
+| Size | 382203 bytes |
+| On-chain | 10 Merkle + bind-T + **36** folds + **36** `C=Q·Z` |
+| Prep | `ea53c0e26a1cf3800199713c01ff5005c8c2e286df69f9234519a2517d1211ac` |
+| Genesis | `169df22d347cfa7d7e2fb42152b83a764a4126a7b04ac05de078575ea4e86714` |
+| Kernels | `7ea959b2d976b400f29640c7a218ee4c69c16c40b7ad81fa5d5ca80cbbd9296a` |
+| Block | `0000000000000e4df903b409aee4e31f33210fb13ee75afe6d77691ddfd6c421` |
+| Height | 319402 |
+
+Explorer: `https://chipnet.imaginary.cash/tx/b1415fafdc65e76d106956064667f94bc988a38da69e63c06acef1e8a1b9cb29`
+
+### Prior: 10-fold consensus land
 
 | | |
 | --- | --- |
@@ -40,11 +55,7 @@ Public Electrum and P2P `inv` reject `tx-size` above 100000 even with
 | Block | `0000000026955667a7e7468d40043e66e0d8890bc21f7162a5d8595d02aaceca` |
 | Height | 319278 |
 
-Explorer: `https://chipnet.imaginary.cash/tx/18c74b49731c1914425ba10804233bb208c524e5af943c8bafc55751b007f3e6`
-
-`18c74b49…` is 36 C=QZ + **10** shard folds. The lock now compiles **36** fold
-kernels (measured **382203 B**). A new Chipnet 36-fold land is recorded below
-when JSON-RPC + mine succeed; until then do not treat `18c74b49…` as 36-fold.
+`18c74b49…` stays the 10-fold land. Do not relabel it as 36-fold.
 
 ## Earlier: 36-slot no-fold proof
 
@@ -70,10 +81,11 @@ Do **not** relabel `356630bd…` as fold.
 - Successor unlocking is packed AIR + redeem only (no spent rho/owner).
 - Fold-executing standard spend relayed by public Electrum.
 - Fold-executing consensus spend included by a Chipnet miner after JSON-RPC.
+- Consensus **36** 1-query fold kernels on Chipnet (`b1415faf…`, 382203 B).
 
 ## What they do **not** prove
 
-- Chipnet land of the compiled 36-fold lock (new txid). `18c74b49…` is 10-fold.
+- A theorem that the whole STARK is statistically ZK (published preimage is OTP-masked).
 - A theorem that the whole STARK is statistically ZK. Published note preimage is one-time-padded; FRI openings stay on public `onChainCells`.
 - Hidden pool-UTXO value (output is `STATE_BASE`). Note amounts are tagged SHA-256 commits; the public net is committed in `encodeStatement`.
 - Zcash / Monero / Voidify parity.

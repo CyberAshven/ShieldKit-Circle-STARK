@@ -8,7 +8,7 @@ distinct `C=Q·Z` slots (measured 95172 B before the fold input). A parallel
 **36** slots. Chained txs can go larger.
 
 **Milestones (Chipnet):** fold-executing standard `2acb1196…` (98831 B, 1 fold + 6 C=QZ);
-consensus lock now folds **all 36** queries (measured 382203 B). Prior Chipnet 10-fold land `18c74b49…` (301279 B) is not the 36-fold land. Earlier 36-slot
+consensus 36-fold Chipnet land `b1415faf…` (382203 B, height 319402). Prior 10-fold land `18c74b49…` (301279 B) is not that land. Earlier 36-slot
 **no-fold** proof `356630bd…` (270251 B). Details: [`MILESTONE.md`](MILESTONE.md).
 
 Published note preimage is one-time-padded. **Not** a Lean theorem, **not** mainnet, **not** better-than-XMR. The shipped lock **requires**
@@ -79,7 +79,18 @@ Block (3+ conf on local BCHN): `000000001abbed79d00f1d2d3e47c16a62114c40da6f559b
 
 Public miners will not *relay* a 270 KB tx. This one got in because it was submitted to the lab BCHN mempool and mined. ASICSeer solo is pointed at that BCHN (`bitcoincashd.startos:48332`). Stratum for more hash: `start9oslinux.local:3333` (or `192.168.0.55:3333`), user `bchtest:qrzq5f9ltv70u4su7d40agd4nlnp8qlgqcma6x2tvp`.
 
-**10-fold consensus successor landed on Chipnet** via BCHN JSON-RPC `sendrawtransaction`. Shipped land path: Electrum only if tx ≤ 100000; larger spends use HTTP `sendrawtransaction` (not Electrum, not P2P `inv`). Local BCHN size **301279**, 59 inputs, 2+ conf:
+**36-fold consensus successor landed on Chipnet** via BCHN JSON-RPC `sendrawtransaction` (not Electrum, not P2P `inv`). Size **382203**, 1+ conf:
+
+| Step | txid |
+| --- | --- |
+| Prep vout-0 | `ea53c0e26a1cf3800199713c01ff5005c8c2e286df69f9234519a2517d1211ac` |
+| Genesis | `169df22d347cfa7d7e2fb42152b83a764a4126a7b04ac05de078575ea4e86714` |
+| Kernels | `7ea959b2d976b400f29640c7a218ee4c69c16c40b7ad81fa5d5ca80cbbd9296a` |
+| Successor (382203 B, 36× C=Q·Z + **36** folds) | `b1415fafdc65e76d106956064667f94bc988a38da69e63c06acef1e8a1b9cb29` |
+
+Block (1+ conf): `0000000000000e4df903b409aee4e31f33210fb13ee75afe6d77691ddfd6c421` height **319402**.
+
+**Prior 10-fold consensus successor** (not the 36-fold land). Local BCHN size **301279**, 59 inputs:
 
 | Step | txid |
 | --- | --- |

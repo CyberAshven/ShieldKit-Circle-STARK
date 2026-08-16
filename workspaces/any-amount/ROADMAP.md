@@ -9,7 +9,7 @@ Chipnet Circle-FRI shielded covenant. Standard 1 fold + 6 C=QZ (`2acb1196…`). 
 
 ## Next, in order
 
-1. **36 on-chain folds** — lock+VM+measure done (382203 B). Chipnet JSON-RPC land of this lock still required (new txid, not `18c74b49…`).
+1. **36 on-chain folds** — lock+VM+measure done (382203 B). Chipnet land `b1415faf…` height 319402. `18c74b49…` remains the 10-fold land.
 2. **Conservation on chain** — done (`4414ff3`). seq+1 and reserve-field=0 on the lock; leak test on successor hex. Hidden reserve **value** residuals stay in `verifyFri`.
 3. **Replace Pedersen** — done. Production path is tagged SHA-256 (`hash-commit.ts`), bound in `checkAuthRelation`. `encodeStatement` commits the public net. Pedersen remains a comparison plugin.
 4. **Statistical ZK** — done for the published preimage (OTP + unlocking leak test). Viewing-key delivery / FRI-polynomial mask still later. Do not claim better-than-XMR.
