@@ -11,7 +11,8 @@ without fold stays recorded so it is not relabeled.
 
 | When | What | Commit / tx |
 | --- | --- | --- |
-| 2026-08-16 | FRI openings + packed Q offset by degree-0 mask; slot lock subtracts packed felt (standard **and** consensus compiles). Newton T still public. | this increment |
+| 2026-08-17 | Opening-mask lock landed: standard **98979 B** `617b1022…` + consensus **36-fold 383031 B** `b3ea8a75…` (JSON-RPC mempool; existing miner). | this land |
+| 2026-08-16 | FRI openings + packed Q offset by degree-0 mask; slot lock subtracts packed felt (standard **and** consensus compiles). Newton T still public. | `95c2311` |
 | 2026-08-16 | Consensus **36-fold** Chipnet land (382203 B) via JSON-RPC | `b1415faf…` @ height 319402 |
 | 2026-08-16 | Published preimage OTP (rho/owner/amount); viewing key not in encoding | `9d2c41a` |
 | 2026-08-16 | Production hash/PQ amount commit; public net committed | `f6653da` |
@@ -21,13 +22,44 @@ without fold stays recorded so it is not relabeled.
 | 2026-08-16 | Standard 1-fold + 6 C=QZ Electrum land | `2acb1196…` |
 | 2026-08-16 | 36-slot **no-fold** size proof | `356630bd…` |
 
-## Current: fold-executing lands
+## Current: opening-mask lock (2026-08-17)
+
+Same redeem as `95c2311`: packed Q / openings are `Q+c`; slot lock subtracts `c`.
+JSON-RPC `sendrawtransaction` into lab BCHN (`acceptnonstdtxn=1`). Existing pool miner; no new miner started.
+
+### Standard (≤ 100 KB)
+
+| | |
+| --- | --- |
+| Successor | `617b102276fb79122bdd7ca36f902ad65e753845fddb168c0bb1aeb97bbb2ccc` |
+| Size | 98979 bytes |
+| On-chain | 10 Merkle + bind-T + **1** fold + **6** `C=Q·Z` + opening mask |
+| Prep | `2173d8134a04418f257e0c906fa0e57c4ecc67a0e58ab7db369293d597056fe5` |
+| Genesis | `b63cfe0bfb8aea598bf94e8b8691c0c178c1535f978a10b28c200603a05f87be` |
+| Kernels | `3e49bb52810ebd378b9c07b92392b9871cbb9d45fd81f246d6e1f8b93e8b66ca` |
+
+Explorer: `https://chipnet.imaginary.cash/tx/617b102276fb79122bdd7ca36f902ad65e753845fddb168c0bb1aeb97bbb2ccc`
+
+### Consensus 36-fold (≤ 1 MB)
+
+| | |
+| --- | --- |
+| Successor | `b3ea8a75db4badfa1690bd9d8e98ce08565b360ddf8098e5ffade053adf643a3` |
+| Size | 383031 bytes |
+| On-chain | 10 Merkle + bind-T + **36** folds + **36** `C=Q·Z` + opening mask |
+| Prep | `b12cda84574e2fe427c745a83e518a3c084b11276c818184a7527943e55f8b9c` |
+| Genesis | `d5113df28bd3c0ab6fa48e34df8521a32366743c628157d8be86ebe55e97b762` |
+| Kernels | `7962f2cffa2d48d036c9d17461aba6ad28fe8bcf2bebb209f0dbe41784423bb7` |
+
+Explorer: `https://chipnet.imaginary.cash/tx/b3ea8a75db4badfa1690bd9d8e98ce08565b360ddf8098e5ffade053adf643a3`
+
+## Prior: fold-executing lands (pre-opening-mask lock)
 
 The shipped lock **requires** `fold-kernel.ts`. Density allows **1** folded
 query per redeem. Standard pins **1** fold input. Consensus pins **36** (one
 1-query kernel per FRI query). `algebraicC` / auth / grind stay in `verifyFri`.
 
-### Standard (≤ 100 KB, public Electrum)
+### Standard (≤ 100 KB, public Electrum) — pre-mask
 
 | | |
 | --- | --- |
@@ -39,7 +71,7 @@ query per redeem. Standard pins **1** fold input. Consensus pins **36** (one
 
 Explorer: `https://chipnet.imaginary.cash/tx/2acb1196589b32fb1179f57dafc402dcb747f2698f364633d90dec180ab446e0`
 
-### Consensus 36-fold (≤ 1 MB, JSON-RPC + local mine)
+### Consensus 36-fold (≤ 1 MB, JSON-RPC) — pre-mask
 
 Public Electrum and P2P `inv` reject `tx-size` above 100000 even with
 `acceptnonstdtxn=1`. Shipped land path: compile locally, then HTTP

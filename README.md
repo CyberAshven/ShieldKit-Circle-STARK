@@ -6,7 +6,7 @@ Rolling GitHub pre-release tag: **`v0.0.1`** (overwritten on each `@ABLalgorithm
 
 ## Latest
 
-FRI openings and packed Q are offset by a degree-0 mask; the **standard 100 KB and consensus 1 MB** slot locks subtract that felt before `C=Q·Z`. Published rho/owner/amount stay one-time-padded. Chipnet 36-fold land `b1415faf…` (height 319402) is the lock **before** this opening-mask compile. Scoreboard: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md). Accumulating lands: [`MILESTONE.md`](workspaces/any-amount/MILESTONE.md). Ciphertext vs proof: [`Reference/literature/notes/ciphertext-vs-circle-stark.md`](Reference/literature/notes/ciphertext-vs-circle-stark.md).
+FRI openings and packed Q are offset by a degree-0 mask; the **standard 100 KB and consensus 1 MB** slot locks subtract that felt before `C=Q·Z`. Opening-mask Chipnet spends (JSON-RPC): standard `617b1022…` (98979 B) and consensus `b3ea8a75…` (383031 B). Pre-mask 36-fold land `b1415faf…` stays recorded. Scoreboard: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md). Accumulating lands: [`MILESTONE.md`](workspaces/any-amount/MILESTONE.md). Ciphertext vs proof: [`Reference/literature/notes/ciphertext-vs-circle-stark.md`](Reference/literature/notes/ciphertext-vs-circle-stark.md).
 
 ## Start here (CLI navigator)
 

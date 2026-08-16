@@ -7,9 +7,7 @@ distinct `C=Q·Z` slots (measured 95172 B before the fold input). A parallel
 **consensus** path (one tx ≤ **1 MB**, unlockings still ≤ 10 KB) carries all
 **36** slots. Chained txs can go larger.
 
-**Milestones (Chipnet):** fold-executing standard `2acb1196…` (98831 B, 1 fold + 6 C=QZ);
-consensus 36-fold Chipnet land `b1415faf…` (382203 B, height 319402). Those txids are the lock **before** the packed opening-mask compile. Prior 10-fold land `18c74b49…` (301279 B) is not the 36-fold land. Earlier 36-slot
-**no-fold** proof `356630bd…` (270251 B). Details: [`MILESTONE.md`](MILESTONE.md). Current compile (standard and consensus) subtracts the packed mask felt in slot `C=Q·Z`.
+**Milestones (Chipnet):** opening-mask lock accepted by lab BCHN mempool + `getblocktemplate` (not a node reject): standard `617b1022…` (**98979 B**) and consensus `b3ea8a75…` (**383031 B**, 36 folds). ASICSeer solo URL is `bitcoincashd.startos:48332`. Waiting on the next mined block (tip was 319413). Pre-mask lands stay: `2acb1196…`, `b1415faf…` (319402), `18c74b49…`, `356630bd…`. Details: [`MILESTONE.md`](MILESTONE.md).
 
 Published note preimage is one-time-padded. **Not** a Lean theorem, **not** mainnet, **not** better-than-XMR. The shipped lock **requires**
 Circle fold kernels that foldPair **1** FS query **each** (2026 VM density: 2+
