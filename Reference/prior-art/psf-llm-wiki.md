@@ -28,7 +28,7 @@ Karpathy-style LLM wiki for Bitcoin Cash, the Permissionless Software Foundation
 - Proof sizes or soundness
 - Treating `bch-js` / PSF JS stack as our language policy (we write **TypeScript**, CashScript, or Rust)
 
-It sits next to `BCH_Knowledge_Base` (toorik, more CashScript-faq-from-Telegram) and `block-blog` (narrative Layla posts). The wiki is denser and interlinked; the blog is newer on Layla (July 2026 posts). If they disagree, prefer current CHIPs / libauth / toorik KB for contract facts, and this wiki for Cash Stack + CashTokens spec literacy.
+It sits next to `BCH_Knowledge_Base` (toorik CashScript FAQ) and `block-blog` (narrative Layla posts). The wiki is denser and interlinked; the blog is newer on Layla (July 2026 posts). If they disagree, prefer current CHIPs / libauth / toorik KB for contract facts, and this wiki for Cash Stack + CashTokens spec literacy.
 
 ## How to query
 

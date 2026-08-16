@@ -4,7 +4,7 @@
 
 - Docs: https://docs.tornado.ws/general/how-does-it-work.html
 - https://github.com/tornadocash/docs
-- Bastian/ABL used this as the **anonymity-set** reference, not as something to paste onto BCH.
+- Use this as the **anonymity-set** reference, not as something to paste onto BCH.
 
 Mechanism (same as Voidify Classic):
 

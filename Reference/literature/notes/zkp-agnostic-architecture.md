@@ -4,7 +4,7 @@ The pool is **not** “a Circle STARK.” It is a BCH covenant + note/nullifier/
 
 Name the layers correctly: AIR is the statement encoding; FRI/STIR/WHIR are proximity tests; Spartan is sumcheck+R1CS; Whirlaway is AIR+WHIR. See `zkp-family-map.md`.
 
-Bastian said this first: local vs global pool is a product choice; STARK vs SNARK is a verifier choice. Do not fuse them.
+Local vs global pool is a product choice; STARK vs SNARK is a verifier choice. Do not fuse them.
 
 Voidify is the existence proof of the *wrong* fusion done on purpose: Groth16 is **statically linked** into their Solana core program. That is fine on Solana (pairings exist, 256-byte proofs). Copying that fusion onto BCH would lock us to one family that BCH cannot verify cheaply today. Copy the **split**, not the linker.
 
@@ -110,7 +110,7 @@ Fusion breaks **transparent** input linkage. It does not replace membership proo
 
 Nostr is useful **because** BCH has no Solana-style program event listener. A relay subscription *is* that listener. OPTN P2P CashFusion already uses it in production-shaped code: replaceable kind 12230 announce, NIP-59/44 private round traffic, throwaway round keys.
 
-Lessons (OPTN + Bastian):
+Lessons (OPTN P2P CashFusion):
 
 - Server fusion sees the graph; P2P over Nostr is the listener + mailbox, not custody
 - Relayer/coordinator must not be required for withdrawal

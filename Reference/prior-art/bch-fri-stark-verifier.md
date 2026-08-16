@@ -56,9 +56,9 @@ Keep this repo as:
 - the checklist of **binding bugs**
 - the warning that demo size ≠ sound size
 
-## Standing review (from Bastian chat 2026-08-01)
+## Standing review (soundness hygiene)
 
-ABL forwarded an AI review (treat as a hypothesis, then reproduce):
+Treat these as hypotheses and reproduce them:
 
 - FRI-to-single-constant may make the final degree check vacuous
 - false-statement proof (`t[i] += 1`) may still verify

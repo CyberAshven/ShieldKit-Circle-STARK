@@ -23,8 +23,6 @@ ShieldKit already says Stwo is prior art, not protocol authority.
 
 - https://github.com/succinctlabs/sp1
 - RISC-V zkVM; prove ordinary Rust. Prover powered by **Plonky3**. Audited (Veridise, Cantina, Zellic, KALOS).
-- Named in the Bastian chat (2026-07-09).
-
 Typical production path on Ethereum: prove in SP1, **wrap the STARK into Groth16/PLONK** so the L1 verifier is a pairing check. That wrap is exactly the “ugly recursive SNARK” ABL objected to — and it reintroduces a trusted setup.
 
 On BCH, verifying SP1 *natively* means a Plonky3/FRI verifier in script (same size war as Goldilocks FRI). Verifying the wrap means Groth16 in script. Neither is Circle FRI + SHA-256.
@@ -37,7 +35,7 @@ Keep SP1 as: “how people write statements in Rust and then pick a *different* 
 - Spec: https://triton-vm.org/spec/
 - VM + AET/AIR + recursive STARK verifier *inside the same ISA*
 - Native hash is **Tip5** (STARK-friendly), not SHA-256
-- Bastian: Triton proofs were “huge”; ABL once called Triton the only STARK that “checked all marks”
+- Public size reports for Triton proofs are large relative to the 100 KB BCH envelope
 
 ### Why Triton is a bad fit if we stay on SHA-256
 
@@ -46,12 +44,11 @@ Keep SP1 as: “how people write statements in Rust and then pick a *different* 
 3. Proving SHA-256 *inside* Triton (to bind to BCH state) is a large AIR — the classic “SHA-256 is hostile inside ZK” tax that Poseidon was invented to avoid.
 4. Recursion is Triton’s selling point. We do not have a recursive verifier opcode, and recursion does not shrink the *first* on-chain proof unless we wrap (back to SNARKs).
 
-So: Triton can live as an optional off-chain experiment or a future plugin. It is **not** the SHA-256 Circle-FRI backend. The user’s instinct (“Triton might not be working for us”) is right for the current hash choice.
+So: Triton can live as an optional off-chain experiment or a future plugin. It is **not** the SHA-256 Circle-FRI backend.
 
 ## Neptune Cash
 
 - https://neptune.cash/
 - Privacy UTXO chain whose proving stack is in the Triton family
-- Named in the Bastian chat (2025-11-03)
 
 Steal: UTXO notes + STARK integrity as a *chain* design. Do not treat Neptune as a BCH covenant template. Their proof sizes are not our 100 KB envelope.

@@ -3,14 +3,13 @@
 ## Remotes
 
 - Upstream (joint): https://github.com/toorik2/ShieldKit-Circle-STARK
-- Your fork: https://github.com/CyberAshven/ShieldKit-Circle-STARK
-- Local: `repos/ShieldKit-Circle-STARK`
+- Fork: https://github.com/CyberAshven/ShieldKit-Circle-STARK
 - Product: Any-amount Chipnet lab (`workspaces/any-amount/`)
-- Personal git ref (legacy name, not the product): `@ABLalgorithm`
+- Working git ref (legacy name, not the product): `@ABLalgorithm`
 - Other branch: `@toorik2`
 - Provenance: ShieldKit-LABS commit `c92e1f81176f6d196410e70564c50c2bdbd02cb9`
 
-`git remote`: `origin` = your fork, `upstream` = toorik2.
+`git remote`: `origin` = CyberAshven, `upstream` = toorik2.
 
 ## What the repo is
 
@@ -18,7 +17,7 @@ A **public collaboration mirror** of one research lane:
 
 `research-lanes/bch-shielded-pool-design/`
 
-It is not a product release. The Telegram source package under `sources/telegram-2026-07-29/` is intentionally absent. Validation that still binds to that private package will not pass on a clean clone.
+It is not a product release. A LABS-only source package used by the complete lane validator is not in this public tree.
 
 ## Frozen product (do not silently widen)
 
@@ -73,7 +72,7 @@ P1 shell result that matters: under 35-byte P2SH32 fixture locks, the **10 KB pe
 
 Deposit changes only the note root. Withdrawal changes only the nullifier root. Reserve = outstanding tickets × ticket value, stored as the state UTXO's sats.
 
-Compare with the Chipnet diagram (`confidential-state-cell.md`): that demo used a 4×32 CEv1 carrier (control, lineage, state, recovery). Fv1 collapsed to a single 128-byte native commitment. Same *size class*, different layout.
+Compare with the Chipnet state-cell demo (`confidential-state-cell.md`): that demo used a 4×32 CEv1 carrier (control, lineage, state, recovery). Fv1 collapsed to a single 128-byte native commitment. Same *size class*, different layout.
 
 ## How to work here
 

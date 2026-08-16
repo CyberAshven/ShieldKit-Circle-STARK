@@ -8,27 +8,21 @@ Last updated 2026-08-16. Every entry below exists on disk or is a public URL tha
 | --- | --- | --- |
 | Public design invariants | `Reference/prior-art/design-invariants.md` | What we keep, cited to public URLs |
 | Language policy | `Reference/language-policy.md` | TS / CashScript / Rust; no new JS |
-| Early CashVM ZIP | `Reference/prior-art/zk-stark-cashvm-early/` | ABL Goldilocks FRI + CashScript folds |
+| Early CashVM ZIP | `Reference/prior-art/zk-stark-cashvm-early/` | Goldilocks FRI + CashScript folds |
 | verifier.cash (Groth16, not STARK) | `Reference/prior-art/verifier-cash.md` | BCH-native pairing verifier leaderboard; packaging lessons |
-| Joint Circle-STARK repo | `repos/ShieldKit-Circle-STARK` / Any-amount Chipnet lab | Collaboration mirror |
-| Goldilocks DEEP-ALI verifier | `repos/BCH-FRI-STARK-Verifier` | 0zkbrewer on-chain FRI |
-| BCH knowledge base | `repos/BCH_Knowledge_Base` | toorik CashScript / CashTokens |
-| ShieldKit product SDK | `repos/ShieldKit-SDK` | Pool toolkit, backend-agnostic product surface |
-| Block blog | `repos/block-blog` | BCH education / Layla / CashTokens |
-| PSF LLM wiki | `repos/psf-llm-wiki` | 125-page BCH/CashScript/CashTokens wiki |
-| Voidify gitbook | `repos/voidify-gitbook` | Nova + Classic + ceremony |
+| Any-amount Chipnet lab | `workspaces/any-amount/` | Product profile on this branch |
 
 ## Public remotes
 
 | Repo | URL | Local clone / fork |
 | --- | --- | --- |
-| ShieldKit-Circle-STARK (upstream) | https://github.com/toorik2/ShieldKit-Circle-STARK | `repos/ShieldKit-Circle-STARK` remote `upstream` |
-| ShieldKit-Circle-STARK (your fork) | https://github.com/CyberAshven/ShieldKit-Circle-STARK | remote `origin` |
-| BCH-FRI-STARK-Verifier | https://github.com/0zkbrewer/BCH-FRI-STARK-Verifier | cloned; you also have `CyberAshven/bch-fri-stark-verifier` |
-| BCH_Knowledge_Base | https://github.com/toorik2/BCH_Knowledge_Base | cloned; you also forked it |
-| ShieldKit-SDK | https://github.com/toorik2/ShieldKit-SDK | cloned; you also forked `shieldkit-sdk` |
-| Bastian confidential txs | https://github.com/bastiancarmy/bitcoin-cash-confidential-transactions | cited, not cloned |
-| Bastian proof-bound P2S | https://github.com/bastiancarmy/bitcoin-cash-proof-bound-p2s | cited |
+| ShieldKit-Circle-STARK (upstream) | https://github.com/toorik2/ShieldKit-Circle-STARK | remote `upstream` |
+| ShieldKit-Circle-STARK (fork) | https://github.com/CyberAshven/ShieldKit-Circle-STARK | remote `origin` |
+| BCH-FRI-STARK-Verifier | https://github.com/0zkbrewer/BCH-FRI-STARK-Verifier | Goldilocks FRI prior art |
+| BCH_Knowledge_Base | https://github.com/toorik2/BCH_Knowledge_Base | CashScript / CashTokens |
+| ShieldKit-SDK | https://github.com/toorik2/ShieldKit-SDK | Product toolkit |
+| Confidential transactions writeup | https://github.com/bastiancarmy/bitcoin-cash-confidential-transactions | cited, not cloned |
+| Proof-bound P2S | https://github.com/bastiancarmy/bitcoin-cash-proof-bound-p2s | cited |
 | Groth16 CashScript | https://github.com/mr-zwets/groth16_cashscript | SNARK comparator |
 | Bitcoin circle-stark (BTC script) | https://github.com/Bitcoin-Wildlife-Sanctuary/bitcoin-circle-stark | Circle Plonk in BTC script |
 | Stwo | https://github.com/starkware-libs/stwo | Circle STARK prover (prior art only) |
@@ -72,11 +66,11 @@ Related public papers (not Circle-FRI math):
 
 | What | Txid |
 | --- | --- |
-| Confidential Protocol State Cell demo (diagram) | `be8b9832a2a95bf9b09838cb085bc667e9eedacd2c71ae8422269816ca93737b0` |
+| Confidential Protocol State Cell demo | `be8b9832a2a95bf9b09838cb085bc667e9eedacd2c71ae8422269816ca93737b0` |
 | 0zkbrewer FRI demo fund | `b8952034f1123691149a2beb5320aeaf9da2a94d4f71225ff6a3dfa6db4ea341` |
 | 0zkbrewer FRI demo spend (92,191 bytes, 28 inputs) | `1f56490fb495e48a889f8327a006f9377478d9108b9bdad5c28724904c7e74b0` |
 
-## Notes written this session
+## Notes in this tree
 
 - [prior-art/design-invariants.md](prior-art/design-invariants.md)
 - [prior-art/shieldkit-circle-stark.md](prior-art/shieldkit-circle-stark.md)

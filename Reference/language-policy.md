@@ -33,4 +33,4 @@ So: yes, we should have Rust **for the prover**, like toorik, when we implement 
 3. CashScript first for covenants; measure; only then hand-lower.
 4. Rust only behind a crate with tests; pin toolchain.
 5. Never mainnet. Chipnet + Libauth 2026 VM.
-6. Bastian chat files are **not source code** and are **not committed** (see `AGENTS.md` Privacy).
+6. Local-only notes are not source code and are never committed.

@@ -2,7 +2,5 @@
 *.wif
 *wallet*.json
 **/.local/
-Bastian*
 conversations/
 *.zip
-confidintial*

@@ -1,8 +1,8 @@
-# Design invariants (public, no private chat)
+# Design invariants
 
 These are the design claims we keep. They were argued in 2025–2026 while CashVM was still catching up. **Layla (2026-05-15) made the script side real** (loops, functions, P2S, 128-byte commitments, 10 KB unlocking aligned with consensus). The *architecture* did not get less true.
 
-Cited against public sources, not against a private transcript.
+Cited against public sources.
 
 ## Split that stays
 
@@ -56,5 +56,3 @@ Did not change:
 | Block education | https://github.com/FullStack-Agents/block-blog |
 | Circle STARKs | ePrint 2024/278 |
 | ethSTARK | ePrint 2021/582 |
-
-Private Telegram text stays on disk under `Reference/conversations/bastian/` and is **gitignored**. Do not paste it into GitHub or this file.

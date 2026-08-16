@@ -1,8 +1,6 @@
 # Prior art: Confidential Protocol State Cell (Chipnet demo)
 
-Public Chipnet facts below. The original diagram image is not kept in this repo.
-
-ShieldKit mapped this as Telegram photo 7. The lane README records the same txid.
+Public Chipnet facts below.
 
 ## Public chain facts
 
@@ -46,12 +44,10 @@ That Chipnet demo is a **state carrier + encrypted delivery** prototype. It does
 
 Those appeared later as competing proposals. ShieldKit froze a *narrower* Fv1: fixed ticket, Circle FRI, no transfers.
 
-## Design rule this image supports
+## Design rule this demo supports
 
-The public write-up names "Note Membership Proof" and "State Transition Proof". They are not labeled "Circle STARK" or "Groth16". That is the STARK-agnostic pool: the covenant checks a proof against committed roots. The proof system behind those boxes is a backend.
+The public layout names a membership proof and a state-transition proof. They are not labeled "Circle STARK" or "Groth16". That is the STARK-agnostic pool: the covenant checks a proof against committed roots. The proof system behind those boxes is a backend.
 
 Current backend we are researching: Circle FRI.
 
-## Privacy
-
-The transaction is on Chipnet and the layout is transcribed in the public ShieldKit lane. Do not add wallet seeds or off-chain notes from the Bastian chat into this file.
+The transaction is on Chipnet. Do not add wallet seeds or off-chain notes to this file.

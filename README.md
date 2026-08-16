@@ -21,11 +21,8 @@ Initial mirror provenance: ShieldKit-LABS commit
 ShieldKit-LABS retains its copy of this lane. Synchronization between the two
 repositories should be explicit and reviewable rather than automatic.
 
-The Telegram-derived source package under
-`research-lanes/bch-shielded-pool-design/sources/telegram-2026-07-29/` is
-intentionally excluded from this public mirror.
-The complete LABS lane validator remains bound to that private source package,
-so it is not a clean-clone validation entrypoint for this public mirror.
+A LABS-only source package used by the complete lane validator is not
+in this public tree, so that validator is not a clean-clone entrypoint.
 
 ## Any-amount Chipnet lab
 
@@ -39,5 +36,5 @@ genesis still compiles; spends require FRI-kernel inputs. Digest-only fails.
 
 Public prior-art notes (Circle FRI, BCH packaging, verifier.cash Groth16
 leaderboard, XO, Voidify, etc.) live in [`Reference/`](Reference/).
-Private chat and lab keys are **not** in this tree. Start at
-[`Reference/00-INDEX.md`](Reference/00-INDEX.md).
+Start at [`Reference/00-INDEX.md`](Reference/00-INDEX.md). Notes here
+cite public URLs only.

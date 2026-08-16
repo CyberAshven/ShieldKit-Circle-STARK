@@ -1,13 +1,13 @@
 # Cardano eUTXO — why shards exist (and why they are not a local pool)
 
 Public: https://docs.cardano.org/about-cardano/learn/eutxo-explainer  
-Also cited on BCR 1724 (Bastian: sharding = lean into UTXO parallelism; Quantumroot says the same for BCH).
+Also cited on BCR 1724: sharding leans into UTXO parallelism. Quantumroot makes the same point for BCH.
 
 ## The contention fact
 
 In eUTXO / BCH, **one UTXO can be spent by only one transaction per block**. If the whole pool is one state cell, every deposit and withdraw races on that outpoint. Losers rebuild and retry. Cardano apps hit this on DEX/order-book UTXOs. Hydra (L2 heads) and “many UTXOs” are their throughput answers — they do **not** automatically share one anonymity set.
 
-Bastian’s shard selector (hash of category + outpoint + receiver → shard index) is a **contention** tool. ABLA’s correction in the old design talk: shards are fine **if** the ZKP still names a **unified** Merkle/accumulator. Per-shard note roots = several tiny pools.
+A shard selector (hash of category + outpoint + receiver → shard index) is a **contention** tool. Shards are fine **if** the ZKP still names a **unified** Merkle/accumulator. Per-shard note roots = several tiny pools.
 
 ## What we take
 

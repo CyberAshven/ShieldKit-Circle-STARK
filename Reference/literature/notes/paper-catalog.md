@@ -25,12 +25,12 @@ PDFs download into `Reference/literature/papers/` (gitignored). Re-fetch with th
 | `2019-550-spartan.pdf` | Setty — Spartan | https://eprint.iacr.org/2019/550.pdf | Sumcheck SNARK for R1CS; not AIR/FRI |
 | (repo) | Whirlaway | https://github.com/TomWambsgans/Whirlaway | SuperSpartan-for-AIR + WHIR PCS |
 
-## From the Bastian conversation (context, not Circle math)
+## Related public papers (not Circle-FRI math)
 
-| File | Paper | URL | Role in the chat |
+| File | Paper | URL | Role |
 | --- | --- | --- | --- |
-| `2020-548-bastian-cited.pdf` | Yu — Blockchain Stealth Address Schemes | https://eprint.iacr.org/2020/548.pdf | Stealth / Pedersen lineage |
-| `2025-1859-bastian-cited.pdf` | Dartois et al. — qt-Pegasis | https://eprint.iacr.org/2025/1859.pdf | Isogeny PQ side-quest |
+| `2020-548-stealth-address.pdf` | Yu — Blockchain Stealth Address Schemes | https://eprint.iacr.org/2020/548.pdf | Stealth / Pedersen lineage |
+| `2025-1859-qt-pegasis.pdf` | Dartois et al. — qt-Pegasis | https://eprint.iacr.org/2025/1859.pdf | Isogeny PQ comparator |
 | (arxiv) | Rodriguez-Alvarez et al. — ML-KEM storage | https://arxiv.org/pdf/2508.01694 | Why ML-KEM-768 |
 | `blockstream-confidential-transactions.pdf` | Maxwell / Poelstra — Confidential Transactions | https://blockstream.com/bitcoin17-final41.pdf | Pedersen CT ancestor |
 

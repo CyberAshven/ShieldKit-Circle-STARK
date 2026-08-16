@@ -5,10 +5,7 @@ absent, but Pedersen / Bulletproofs / pairing SNARKs can be **emulated**
 in CashScript (loops + BigInt + functions). They are expensive, not
 impossible. Copy the prompt block into any AI assistant, then hand it
 the reference list below (or the individual files it points to) as needed.
-Everything here is a public URL or a path that exists in this workspace as of
-this date — nothing from `Reference/conversations/bastian/` is included,
-because that folder is local-only/gitignored per [README.md](../README.md)
-and [design-invariants.md](prior-art/design-invariants.md).
+Everything here is a public URL or a path that exists in this tree.
 
 ---
 
@@ -165,8 +162,8 @@ read before assuming any opcode or byte limit.
 | Silent Reusable Payment Addresses (SRPA) (BCR thread) | https://bitcoincashresearch.org/t/silent-reusable-payment-addresses-srpa/1637 | Stealth-address layer — "who", not "how much"; complements but is not the pool |
 | Groth16 verifier in CashScript | https://github.com/mr-zwets/groth16_cashscript | Pairings **emulated** in script — proof that "no native opcode" ≠ "cannot verify" |
 | Quantumroot (PQ vault, not a mixer) | https://blog.bitjson.com/quantumroot/ and https://github.com/bitjson/quantumroot | Key-management layer, orthogonal to the pool's proof system |
-| Bastian Carmy — confidential transactions writeup (public repo) | https://github.com/bastiancarmy/bitcoin-cash-confidential-transactions | Public code; the private Telegram deep-dive about it stays local per README |
-| Bastian Carmy — proof-bound P2S (public repo) | https://github.com/bastiancarmy/bitcoin-cash-proof-bound-p2s | Public code, same caveat |
+| Confidential transactions writeup | https://github.com/bastiancarmy/bitcoin-cash-confidential-transactions | Public code |
+| Proof-bound P2S | https://github.com/bastiancarmy/bitcoin-cash-proof-bound-p2s | Public code |
 | 0zkbrewer — BCH-FRI-STARK-Verifier (Goldilocks DEEP-ALI FRI) | https://github.com/0zkbrewer/BCH-FRI-STARK-Verifier | Classical (non-circle) FRI verifier already running on Chipnet — direct prior art for the verifier shape |
 | toorik2 — ShieldKit-Circle-STARK (joint repo) | https://github.com/toorik2/ShieldKit-Circle-STARK | This project's own collaboration repo |
 | toorik2 — ShieldKit-SDK | https://github.com/toorik2/ShieldKit-SDK | Product toolkit for spinning up a shielded pool |
@@ -226,16 +223,5 @@ prompting an AI for general ZKP grounding rather than just the pool:
 - [Reference/prior-art/shielded-pool-scalability.md](prior-art/shielded-pool-scalability.md) — mixer/pool throughput and tree-growth analysis
 - [Reference/prior-art/utxo-native-pool.md](prior-art/utxo-native-pool.md) — Tornado + Voidify + Aztec synthesized into a BCH-UTXO-native design
 - [Reference/prior-art/any-amount-profile.md](prior-art/any-amount-profile.md) — one pool, arbitrary amount, product framing
-- [plans/2026-08-15-foundation-plan.md](../plans/2026-08-15-foundation-plan.md) — current working plan
-- [AGENTS.md](../AGENTS.md) — agent operating rules for this repo
 
----
-
-### Note on what's deliberately excluded
-
-`Reference/conversations/bastian/` (the Telegram export, transcript, and
-distilled notes with an outside collaborator) is real prior-art context but
-is gitignored and marked local-only by this project's own rules — it stays
-out of anything that leaves this machine, including prompts pasted into a
-hosted AI. If you need that context for local reasoning, read the files
-directly; don't paste them into a third-party AI chat.
+This prompt lists public URLs and in-tree paths only.

@@ -2,7 +2,7 @@
 
 Extracted from `Reference/zk-stark-cashvm early work ref.zip` to `prior-art/zk-stark-cashvm-early/zkstark_pkg/`.
 
-This is the ABL line that the Bastian chat calls "plain FRI, not DEEP-FRI or STIR".
+This is the early Goldilocks FRI-AIR line: classical FRI, not DEEP-FRI or STIR.
 
 ## What is in the ZIP
 

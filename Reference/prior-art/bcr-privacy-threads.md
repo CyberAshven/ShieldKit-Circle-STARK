@@ -1,11 +1,11 @@
 # Bitcoin Cash Research — privacy / ZKP / EC threads
 
-Public forum only. No private chat. Start here when someone says “we already discussed this on BCR.”
+Public forum. Start here for the community threads this lane tracks.
 
 | Thread | URL | Why it matters |
 | --- | --- | --- |
-| Confidential Transactions | https://bitcoincashresearch.org/t/confidential-transactions/1724 | Bastian’s public foundation: RPA front end, sharded state-cell pool, `proofBlob32` ABI, Phase 3 ZK+nullifiers, Plane A/B Chipnet |
-| SRPA | https://bitcoincashresearch.org/t/silent-reusable-payment-addresses-srpa/1637 | ABLA origin; Bastian: “ZEC global pool, local to the wallet” |
+| Confidential Transactions | https://bitcoincashresearch.org/t/confidential-transactions/1724 | Public write-up: RPA front end, sharded state-cell pool, `proofBlob32` ABI, Phase 3 ZK+nullifiers, Plane A/B Chipnet |
+| SRPA | https://bitcoincashresearch.org/t/silent-reusable-payment-addresses-srpa/1637 | Stealth receive; a global pool can still be local to the wallet |
 | Shielded addresses & ZKP opcode | https://bitcoincashresearch.org/t/bitcoin-cash-shielded-addresses-zkp-op-code/1476 | ABLA 2025-01; Jason: no `OP_CHECKZKP` for years; **contracts first**; 2026 loops/functions/P2S |
 | Native EC arithmetic CHIP | https://bitcoincashresearch.org/t/chip-2025-05-native-elliptic-curve-arithmetic-operations/1570 | `OP_ECADD` / `OP_ECMUL`; ABLA Jun 2026: Bulletproofs now, STARK later; Pedersen hiding vs binding |
 | TXv5 | https://bitcoincashresearch.org/t/chip-2025-01-txv5-transaction-version-5/1490 | Not live; size/factoring help for ZKP covenants |
@@ -13,7 +13,7 @@ Public forum only. No private chat. Start here when someone says “we already d
 
 CHIP drafts: https://github.com/lightswarm124/bch-ec-arithmetic · https://github.com/bitjson/bch-txv5 · https://github.com/bitjson/bch-p2s
 
-## What 1724 actually proposes (public, Bastian)
+## What 1724 actually proposes
 
 Not a consensus shielded pool. A **local-first** policy-UTXO pool:
 

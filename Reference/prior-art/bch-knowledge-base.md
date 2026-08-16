@@ -1,8 +1,6 @@
 # Prior art: toorik BCH_Knowledge_Base
 
 - Upstream: https://github.com/toorik2/BCH_Knowledge_Base
-- Your fork: https://github.com/CyberAshven/BCH_Knowledge_Base
-- Local: `repos/BCH_Knowledge_Base`
 
 This is the CashScript / CashTokens / UTXO knowledge base for the joint work. It is not a STARK repo.
 
@@ -12,7 +10,7 @@ This is the CashScript / CashTokens / UTXO knowledge base for the joint work. It
 - CashTokens: category identity, mutable vs minting, commitment size (40 B historically, **128 B after May 2026** — this is why `PoolStateFv1` is 128 bytes)
 - Multi-contract / pinned input positions
 - CashScript syntax and SDK transaction building
-- FAQ corpus from BCH Telegram channels (`faq/telegram/`)
+- FAQ corpus under `faq/`
 - Security notes under `best-practices/security/`
 
 ## Do not use it for

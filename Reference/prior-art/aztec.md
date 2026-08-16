@@ -9,7 +9,7 @@ Primary:
 - https://docs.aztec.network/developers/docs/foundational-topics/transactions
 - https://aztec.network/blog/aztecs-transaction-anatomy/
 - https://aztec.network/blog/the-best-of-both-worlds-how-aztec-blends-private-and-public-state
-- https://github.com/AztecProtocol/aztec-nr (named in the Bastian chat)
+- https://github.com/AztecProtocol/aztec-nr
 - https://github.com/AztecProtocol/awesome-aztec
 
 ## What to steal

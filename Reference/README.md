@@ -2,7 +2,8 @@
 
 Public prior-art and literature for Circle STARKs on Bitcoin Cash.
 
-Private conversation exports and lab keys are **not** in this repository.
+Cite public URLs and on-chain facts only. Do not add source-of-thought
+tags or local-only paths.
 
 ## Layout
 
