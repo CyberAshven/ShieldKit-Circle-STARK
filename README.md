@@ -27,7 +27,7 @@ intentionally excluded from this public mirror.
 The complete LABS lane validator remains bound to that private source package,
 so it is not a clean-clone validation entrypoint for this public mirror.
 
-## ABL any-amount Chipnet lab (`@ABLalgorithm`)
+## Any-amount Chipnet lab
 
 Product profile (any amount, one set) lives in
 [`workspaces/abla-any-amount/`](workspaces/abla-any-amount/). It does **not**
