@@ -34,6 +34,7 @@ export const AIR_OFF_IDX = 1101;
 export const AIR_OFF_CELLS = 1173;
 export const AIR_OFF_NTABLE = 1429;
 export const AIR_NEWTON_FELTS = 33;
+export const AIR_NEWTON_BYTES = AIR_NEWTON_FELTS * 4;
 
 const smallDomain = circleDomain(TRACE_LEN);
 const bigDomain = circleDomain(FRI_N);
@@ -90,7 +91,7 @@ export function newtonFromBlobAsm(xs: M31El[] = TRACE_XS): string {
       lines.push(`OP_FROMALTSTACK`, `OP_DUP`, `OP_TOALTSTACK`, pushFelt(xs[i]!), M31_SUB, M31_MUL);
     }
   }
-  lines.push(`OP_DROP`, `OP_NIP`);
+  lines.push(`OP_DROP`, `OP_NIP`, `OP_FROMALTSTACK`, `OP_DROP`);
   return lines.join("\n");
 }
 
@@ -248,7 +249,7 @@ export function fiatShamirQueryIndices(digest: Uint8Array, proof: FriProof): num
 export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | FriProof): Uint8Array {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
   const interp = statementNewton(statement);
-  const { qLde, nLde } = airQuotientLde(statement, smallDomain, bigDomain);
+  const { qLde, nLde, zLde } = airQuotientLde(statement, smallDomain, bigDomain);
   const digest = sha256(encodeStatement(statement));
   const packed = new Uint8Array(AIR_PACKED_SIZE);
   for (let r = 0; r < COMMITTED_LAYERS; r += 1) {
@@ -266,6 +267,13 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
   if (stmt.length !== AIR_STMT_LEN) throw new Error(`statement ${stmt.length} != ${AIR_STMT_LEN}`);
   packed.set(stmt, AIR_OFF_STMT);
   const qIdx = fiatShamirQueryIndices(digest, p);
+  const off = qIdx.findIndex((i) => zLde[i] !== 0n);
+  if (off < 0) throw new Error("all FS queries on-trace");
+  if (off !== 0) {
+    const tmp = qIdx[0]!;
+    qIdx[0] = qIdx[off]!;
+    qIdx[off] = tmp;
+  }
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     packed.set(encodeLe(qLde[qIdx[s]!]!), AIR_OFF_QTABLE + s * 4);
     packed.set(encodeLe(nLde[qIdx[s]!]!), AIR_OFF_NTABLE + s * 4);
@@ -331,29 +339,10 @@ export function compileNewtonFromBlobLock(): Uint8Array {
 }
 
 export function compileEvalTFromBlobLock(expected: M31El): Uint8Array {
-  const newton = newtonFromBlobAsm();
   return compileOrThrow(
     `
-OP_TOALTSTACK
-OP_TOALTSTACK
-OP_OVER
-OP_FROMALTSTACK
-OP_DUP
-OP_TOALTSTACK
-${newton}
-OP_FROMALTSTACK
-OP_DROP
-OP_TOALTSTACK
-OP_NIP
-OP_FROMALTSTACK
-${newton}
-OP_FROMALTSTACK
-OP_DROP
-OP_FROMALTSTACK
-OP_SWAP
-OP_FROMALTSTACK
-${M31_MUL}
-${M31_ADD}
+${defineNewtonFn()}
+${evalTFromBlobAsm()}
 ${pushFelt(expected)}
 OP_NUMEQUAL
 `,
@@ -367,20 +356,23 @@ function defineNewtonFn(): string {
   return `${hexPush(body)}\n<0>\nOP_DEFINE`;
 }
 
-/** Stack: even odd x y → T(x,y). Requires newton fn 0. */
-function evalTFromBlobAsm(): string {
+/** Stack: even odd x y → T(x,y). Requires newton fn 0. Alt-clean. */
+export function evalTFromBlobAsm(): string {
   return `
 OP_TOALTSTACK
-OP_2 OP_PICK
+OP_TOALTSTACK
 OP_OVER
+OP_FROMALTSTACK
+OP_DUP
+OP_TOALTSTACK
 <0> OP_INVOKE
 OP_FROMALTSTACK
-OP_DROP
+OP_SWAP
+OP_TOALTSTACK
 OP_TOALTSTACK
 OP_NIP
-<0> OP_INVOKE
 OP_FROMALTSTACK
-OP_DROP
+<0> OP_INVOKE
 OP_FROMALTSTACK
 OP_SWAP
 OP_FROMALTSTACK
@@ -467,33 +459,184 @@ OP_DROP
 `;
 }
 
+function padNewton(vals: M31El[]): M31El[] {
+  const out = vals.slice();
+  while (out.length < AIR_NEWTON_FELTS) out.push(0n);
+  return out.slice(0, AIR_NEWTON_FELTS);
+}
+
+function lagrangeNewtonBlobs(k: number): { even: Uint8Array; odd: Uint8Array } {
+  const interp = interpolateCircle(
+    smallDomain,
+    Array.from({ length: TRACE_LEN }, (_, i) => (i === k ? 1n : 0n)),
+  );
+  return {
+    even: encodeFeltBlob(padNewton(interp.even)),
+    odd: encodeFeltBlob(padNewton(interp.odd)),
+  };
+}
+
+/** Stack: L0 L23 Tp Tgp Tg2 action → N = L0·cons + L23·seq */
+export function airNumeratorAsm(): string {
+  return `
+OP_3 OP_PICK
+OP_3 OP_PICK
+OP_SWAP
+${M31_SUB}
+OP_DUP
+<1>
+${M31_SUB}
+OP_2 OP_PICK
+OP_1
+OP_NUMEQUAL
+OP_IF
+  OP_3 OP_PICK
+  OP_2 OP_PICK
+  OP_SWAP
+  ${M31_SUB}
+OP_ELSE
+  OP_3 OP_PICK
+  OP_2 OP_PICK
+  <0>
+  OP_SWAP
+  ${M31_SUB}
+  OP_SWAP
+  ${M31_SUB}
+OP_ENDIF
+OP_TOALTSTACK
+OP_TOALTSTACK
+OP_2DROP
+OP_2DROP
+OP_DROP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_3 OP_PICK
+OP_OVER
+${M31_MUL}
+OP_TOALTSTACK
+OP_DROP
+OP_ROT
+OP_DROP
+${M31_MUL}
+OP_FROMALTSTACK
+${M31_ADD}
+`;
+}
+
 /**
- * C=Q·Z at packed slot `s`. Stack in: packed blob. Stack out: same blob.
- * i = idx[s], z = [i]G_1024, check qTable[s] * Z(z.x) == nTable[s].
+ * Slot-0 C=Q·Z with N recomputed from the public interpolant T.
+ * Stack in: packed blob.
+ * i = idx[0], z = [i]G_1024, Z(z.x) ≠ 0, N = L0·cons + L23·seq from T,
+ * then nTable[0] == N and qTable[0]·Z == N.
  */
 export function slot0CqzAsm(): string {
-  const g = `${pushFelt(G1024.x)}\n${pushFelt(G1024.y)}`;
+  const l0 = lagrangeNewtonBlobs(0);
+  const l23 = lagrangeNewtonBlobs(23);
+  const g64 = `${pushFelt(G64.x)}\n${pushFelt(G64.y)}`;
   return `
+${defineNewtonFn()}
 ${packedMagicAsm()}
 OP_DUP
 <${AIR_OFF_IDX}> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_DROP
 ${BE16_UNSIGNED}
-OP_TOALTSTACK
+OP_SWAP
 OP_DUP
 <${AIR_OFF_QTABLE}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
 OP_BIN2NUM
 OP_TOALTSTACK
+OP_DUP
 <${AIR_OFF_NTABLE}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
 OP_BIN2NUM
+OP_TOALTSTACK
+OP_DUP
+<${AIR_OFF_STMT + 8}> OP_SPLIT OP_NIP
+<1> OP_SPLIT OP_DROP
+OP_BIN2NUM
+OP_TOALTSTACK
+OP_DUP
+<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_TOALTSTACK
+<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
 OP_FROMALTSTACK
-OP_FROMALTSTACK
-${g}
+OP_SWAP
+OP_TOALTSTACK
+OP_TOALTSTACK
+${pushFelt(G1024.x)}
+${pushFelt(G1024.y)}
 ${SCALAR_MUL_FAST}
-OP_DROP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_2SWAP
+OP_OVER
 ${vanishingUnrolledAsm(VANISH_XS)}
+OP_DUP
+OP_0
+OP_NUMNOTEQUAL
+OP_VERIFY
+OP_TOALTSTACK
+OP_2OVER
+OP_3 OP_PICK
+OP_3 OP_PICK
+${evalTFromBlobAsm()}
+OP_TOALTSTACK
+OP_2DUP
+${g64}
+${CIRCLE_ADD}
+OP_5 OP_PICK
+OP_5 OP_PICK
+OP_3 OP_PICK
+OP_3 OP_PICK
+${evalTFromBlobAsm()}
+OP_TOALTSTACK
+OP_2DUP
+${g64}
+${CIRCLE_ADD}
+OP_7 OP_PICK
+OP_7 OP_PICK
+OP_3 OP_PICK
+OP_3 OP_PICK
+${evalTFromBlobAsm()}
+OP_TOALTSTACK
+OP_2DROP
+OP_2DROP
+OP_2DUP
+${hexPush(l0.even)}
+${hexPush(l0.odd)}
+OP_2SWAP
+${evalTFromBlobAsm()}
+OP_TOALTSTACK
+OP_2DUP
+${hexPush(l23.even)}
+${hexPush(l23.odd)}
+OP_2SWAP
+${evalTFromBlobAsm()}
+OP_TOALTSTACK
+OP_2DROP
+OP_2DROP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_ROT
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_TOALTSTACK
+${airNumeratorAsm()}
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_3 OP_PICK
+OP_NUMEQUALVERIFY
 OP_SWAP
 ${M31_MUL}
 OP_NUMEQUALVERIFY

@@ -13,6 +13,7 @@ import { evaluateBch2026 } from "../src/chain/vm-verifier.ts";
 import { encodeFeltBlob } from "../src/chain/m31-asm.ts";
 import {
   compileCircleAddLock,
+  compileCqzKernel,
   compileEvalTFromBlobLock,
   compileEvalTLock,
   compileSlot0CqzLock,
@@ -214,6 +215,17 @@ describe("M31 / Newton / circle on 2026 VM", () => {
       Uint8Array.of(...pushNum(z0.x), ...pushNum(z0.y)),
     );
     assert.equal(tBaked.accepted, true, tBaked.error ?? "evalT baked");
+    const evenB = encodeFeltBlob(
+      [...interp.even, ...Array.from({ length: Math.max(0, 33 - interp.even.length) }, () => 0n)].slice(0, 33),
+    );
+    const oddB = encodeFeltBlob(
+      [...interp.odd, ...Array.from({ length: Math.max(0, 33 - interp.odd.length) }, () => 0n)].slice(0, 33),
+    );
+    const tBlob = evalPadded(
+      compileEvalTFromBlobLock(tExpect),
+      Uint8Array.of(...pushData(evenB), ...pushData(oddB), ...pushNum(z0.x), ...pushNum(z0.y)),
+    );
+    assert.equal(tBlob.accepted, true, tBlob.error ?? "evalT blob");
     const newt = statementNewton(d.statement);
     assert.ok(newt.even.length >= 16, `even ${newt.even.length}`);
     assert.equal(TRACE_XS.length, newt.even.length);
@@ -244,6 +256,15 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     bad[AIR_OFF_NTABLE] = 1;
     const ev = evalPadded(compileSlot0CqzLock(), pushData(bad));
     assert.equal(ev.accepted, false, "tampered qTable[0] must fail");
+    const cooked = new Uint8Array(packed);
+    const i0 = (packed[AIR_OFF_IDX]! << 8) | packed[AIR_OFF_IDX + 1]!;
+    const slot = nqzAt(d.statement, i0);
+    const q2 = add(slot.q, 1n);
+    cooked.set(encodeLe(q2), AIR_OFF_QTABLE);
+    cooked.set(encodeLe(mul(q2, slot.z)), AIR_OFF_NTABLE);
+    const cook = evalPadded(compileSlot0CqzLock(), pushData(cooked));
+    assert.equal(cook.accepted, false, "cooked nTable = Q'·Z must fail N-from-T");
+    assert.ok(compileCqzKernel().length <= 10_000, `cqz kernel ${compileCqzKernel().length}`);
   });
 
   it("unsigned BE16 decode: 0x0193 is 403, not signed 147", () => {

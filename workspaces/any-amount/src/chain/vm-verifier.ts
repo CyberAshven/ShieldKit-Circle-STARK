@@ -4,7 +4,7 @@
  * (OP_SHA256 + OP_BEGIN/OP_UNTIL). A digest / OP_RETURN is not Verify.
  */
 import { createTestAuthenticationProgramBch, createVirtualMachineBch2026 } from "@bitauth/libauth";
-import { encodeLe } from "../backends/circle/m31.ts";
+import { add, encodeLe, mul } from "../backends/circle/m31.ts";
 import { decodeFriProof, verifyFri, type FriProof } from "../backends/circle/fri.ts";
 import { FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
 import { compileFriQueryKernel, compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS, FRI_QUERY_KERNEL } from "./fri-kernel.ts";
@@ -17,7 +17,7 @@ import {
   friShardUnlockings,
   proofShardReport,
 } from "./fri-openings.ts";
-import { AIR_OFF_NTABLE, AIR_OFF_QTABLE, encodeAirPacked } from "./air-cqz.ts";
+import { AIR_OFF_IDX, AIR_OFF_NTABLE, AIR_OFF_QTABLE, encodeAirPacked, nqzAt } from "./air-cqz.ts";
 import {
   compilePoolCovenant,
   FIVE_POINT_PAA1,
@@ -403,6 +403,27 @@ export function evaluateDummyKernels(args: {
   return evaluatePoolSuccessorVm({
     ...args,
     kernelUnlockings: dummyFriShardUnlockings(),
+  });
+}
+
+/** Honest Merkle kernels; qTable[0] and nTable[0] cooked so q'·Z = n' (old C=QZ would pass). */
+export function evaluateCookedNTable(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const honest = encodeAirPacked(args.statement, args.proof);
+  const cooked = new Uint8Array(honest);
+  const i = (cooked[AIR_OFF_IDX]! << 8) | cooked[AIR_OFF_IDX + 1]!;
+  const { z, q } = nqzAt(args.statement, i);
+  const q2 = add(q, 1n);
+  cooked.set(encodeLe(q2), AIR_OFF_QTABLE);
+  cooked.set(encodeLe(mul(q2, z)), AIR_OFF_NTABLE);
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: cooked,
+    statement: args.statement,
   });
 }
 

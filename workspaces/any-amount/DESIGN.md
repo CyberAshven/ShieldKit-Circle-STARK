@@ -123,7 +123,7 @@ Fv1 is the joint **size gate** with toorik (fixed ticket, smaller AIR). It is a 
 
 ### What is still closed?
 
-On-chain `C=Q·Z` for all 36 FS slots (only slot 0 is in the executed kernel). Recompute `N` from the public interpolant so `nTable` cannot be cooked. Hidden-amount EC on the UTXO. OPTN upstream wiring, Quantumroot addresses, ML-KEM delivery. See `STATUS.md`.
+On-chain `C=Q·Z` for all 36 FS slots (only slot 0 is in the executed kernel). Re-derive Newton even/odd from statement cells so the interpolant cannot be cooked. Hidden-amount EC on the UTXO. OPTN upstream wiring, Quantumroot addresses, ML-KEM delivery. See `STATUS.md`.
 
 ### P2S or P2SH?
 
