@@ -187,12 +187,29 @@ function lagrangeAt(k: number, small: CirclePoint[], p: CirclePoint): M31El {
  * Vanishes on the trace iff conservation and sequence hold; off-domain N is
  * not the zero function, so Q=N/Z is a non-trivial quotient.
  */
+/**
+ * Cells that may appear on-chain (NFT/kernel-bound). Never reserves, delta,
+ * noteCommitment limbs, amount-commit, or nullifier — those stay in verifyFri.
+ */
+export function onChainCells(statement: PoolStatement): M31El[] {
+  const cells: M31El[] = Array.from({ length: TRACE_LEN }, () => 0n);
+  cells[3] = statement.action === "DEPOSIT" ? 1n : 2n;
+  cells[18] = m31FromBytes(sha256(encodeStatement(statement)));
+  cells[19] = m31FromBytes(statement.oldState.noteRoot);
+  cells[20] = m31FromBytes(statement.newState.noteRoot);
+  cells[21] = m31FromBytes(statement.oldState.nullifierRoot);
+  cells[22] = m31FromBytes(statement.newState.nullifierRoot);
+  cells[23] = reserveFelt(statement.oldState.sequence);
+  cells[24] = reserveFelt(statement.newState.sequence);
+  return cells;
+}
+
 export function airNumeratorLde(
   statement: PoolStatement,
   smallDomain: CirclePoint[],
   bigDomain: CirclePoint[],
 ): M31El[] {
-  const cells = publicCells(statement);
+  const cells = onChainCells(statement);
   const tInterp = interpolateCircle(smallDomain, cells);
   const gen = smallDomain[1]!;
   const deposit = statement.action === "DEPOSIT";

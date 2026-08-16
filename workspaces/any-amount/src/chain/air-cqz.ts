@@ -13,7 +13,7 @@ import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitaut
 import { encodeStatement, type PoolStatement } from "../pool/statement.ts";
 import { encodePublicPaa1 } from "../pool/state.ts";
 import { concatBytes, sha256, writeU32BE } from "../pool/bytes.ts";
-import { airQuotientLde, publicCells } from "../backends/circle/air.ts";
+import { airQuotientLde, onChainCells } from "../backends/circle/air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
@@ -235,7 +235,7 @@ export function vanishingUnrolledAsm(xs: M31El[] = TRACE_XS): string {
 }
 
 export function statementNewton(statement: PoolStatement): { even: M31El[]; odd: M31El[] } {
-  const interp = interpolateCircle(smallDomain, publicCells(statement));
+  const interp = interpolateCircle(smallDomain, onChainCells(statement));
   return { even: interp.even, odd: interp.odd };
 }
 
@@ -278,9 +278,8 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
     packed[AIR_OFF_IDX + s * 2] = (qIdx[s]! >> 8) & 0xff;
     packed[AIR_OFF_IDX + s * 2 + 1] = qIdx[s]! & 0xff;
   }
-  const cells = publicCells(statement);
+  const cells = onChainCells(statement);
   while (cells.length < TRACE_LEN) cells.push(0n);
-  for (const i of [0, 1, 2, 4, 5, 6, 7, 16, 17]) cells[i] = 0n;
   packed.set(encodeFeltBlob(cells.slice(0, TRACE_LEN)), AIR_OFF_CELLS);
   return packed;
 }

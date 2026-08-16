@@ -9,7 +9,7 @@ and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 
 - Soundness worksheet: TRACE=64, blowup=16, FRI_N=1024, queries=36, grind=20, rate 2/B → **128 conjectural bits**. `sound: true`. Old n=32/q=8 fails the build.
 - Prover FRIs the residual quotient \(Q=C/Z\) (honest residuals vanish so \(Q=0\)). `plugin.verify` / `verifyFri` take **no private witness**: `proof.auth` carries the note preimage, so a fake nullifier + valid membership path is rejected (`nullifier preimage`). Query check is \(C(z)=Q(z)Z(z)\), not \(T(z)=\) public interpolant.
-- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): pool five-point PAA1 cell. Successor unlocking is packed AIR (FS digest + public PAA1) + redeem only — spent leaf, path, rho, owner, nullifier, `publicAmountSats`, and AIR cells for reserve/delta/noteCommitment are **not** published. Membership/nullifier/amounts stay in `verifyFri`. Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Input 12 runs slot-0 `C=Q·Z` at a **recomputed** Fiat–Shamir index (spender `idx[0]` ignored) and binds packed stmt `noteRoot`/`seq` to the NFT. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. Remaining 35 FS slots and FRI *fold* stay on `verifyFri` (0zkbrewer #2: this is one bound prefix, not a full on-chain FRI fold).
+- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): packed T/N/Q interpolate `onChainCells` (action, digest, roots, seq only). Reserves/delta/note limbs are not in that interpolant; `verifyFri` still checks `publicCells` + `algebraicC` + auth. Successor unlocking is packed AIR + redeem only. Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Input 12 runs slot-0 `C=Q·Z` at a **recomputed** Fiat–Shamir index (spender `idx[0]` ignored) and binds packed stmt `noteRoot`/`seq` to the NFT. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. Remaining 35 FS slots and FRI *fold* stay on `verifyFri` (0zkbrewer #2: this is one bound prefix, not a full on-chain FRI fold).
 - Proof ~64 KB, **10 shards**, 252 Merkle openings, unlocking max 6414, Chipnet successor **63992 bytes**.
 - Any-amount one set; Pedersen-hidden note amounts. On-chain PAA1 zeros the reserve field; pool UTXO is `STATE_BASE` only. Reserve conservation is in the AIR / `verifyFri`. `runMixSuccessor` still updates machine reserve, noteRoot, and nullifierRoot.
 - Comparison table in `COMPARISON.md` (checkable axes only).
@@ -27,15 +27,15 @@ and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 
 Lab address stays in gitignored `.local/lab-wallet.json`.
 
-**This lock** (amount cells omitted from packed AIR), Electrum-accepted 2026-08-16:
+**This lock** (`onChainCells` interpolant — T cannot recover reserves), Electrum-accepted 2026-08-16:
 
 | Step | txid |
 | --- | --- |
-| Genesis P2SH32 PAA1 | `7d7c09f880985fa1a19741d979cce8d7330c12f05aa5a957b52eb5bfc1a423c5` |
-| 12 verifier-kernel carriers | `a9993890888ddd994291e61799e0a5135647b1acbc0bec3868bc0722da6d2709` |
-| Mix successor (66555 B, unlocking 2240) | `b4d663124a1488d4fed12554826481cbf4940e13c17a3cb9c93a9fff174d46cc` |
+| Genesis P2SH32 PAA1 | `f8d363c0bc0b85e2d41cd76e12abcf1d8f58b06d767f3aa755089cd392273134` |
+| 12 verifier-kernel carriers | `f2bd9454598f565ad4e623d5b40e119d0eabd77200fc85ed17af4b7daca6d47b` |
+| Mix successor (66555 B, unlocking 2240) | `333701976ed045e778a69b8a11c798ed070c773701aec8093714097426c94be2` |
 
-`8ccad3b8…` still packed reserve/delta felts; `52b46dab…` published the spent preimage. Neither is this lock.
+`b4d66312…` / `8ccad3b8…` still interpolated full `publicCells` into Newton T. `52b46dab…` published the spent preimage.
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 

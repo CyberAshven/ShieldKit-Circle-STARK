@@ -11,8 +11,21 @@ import { writeI64BE, writeU64BE } from "../src/pool/bytes.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
 import { encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
-import { AIR_OFF_CELLS, AIR_PACKED_SIZE } from "../src/chain/air-cqz.ts";
+import {
+  AIR_NEWTON_BYTES,
+  AIR_OFF_EVEN,
+  AIR_OFF_ODD,
+  AIR_OFF_QTABLE,
+  AIR_PACKED_SIZE,
+  nqzAt,
+  TRACE_XS,
+} from "../src/chain/air-cqz.ts";
 import { bytesToFelt4 } from "../src/backends/circle/felt-hash.ts";
+import { decodeFeltBlob } from "../src/chain/m31-asm.ts";
+import { evalNewton } from "../src/backends/circle/interpolate.ts";
+import { add, encodeLe, mul } from "../src/backends/circle/m31.ts";
+import { circleDomain } from "../src/backends/circle/fri.ts";
+import { TRACE_LEN } from "../src/backends/circle/params.ts";
 
 function parsePushes(script: Uint8Array): Uint8Array[] {
   const out: Uint8Array[] = [];
@@ -120,7 +133,8 @@ describe("pool e2e mix", () => {
     assert.ok(mixChangedRootsAndReserve(mix));
     assert.equal(circleFriPlugin.verify(mix.statement, mix.proof).ok, true);
 
-    const spent = decodeFriProof(mix.proof).auth;
+    const decoded = decodeFriProof(mix.proof);
+    const spent = decoded.auth;
     const measured = compileCovenantSuccessor({
       wallet: createLabWallet(),
       feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 250_000 },
@@ -165,27 +179,29 @@ describe("pool e2e mix", () => {
       "new reserve u64 must not appear",
     );
     const packed = pushes[0]!;
-    const feltAt = (i: number): bigint => {
-      const o = AIR_OFF_CELLS + i * 4;
-      return (
-        BigInt(packed[o]!) |
-        (BigInt(packed[o + 1]!) << 8n) |
-        (BigInt(packed[o + 2]!) << 16n) |
-        (BigInt(packed[o + 3]!) << 24n)
-      );
+    const even = decodeFeltBlob(packed.slice(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES));
+    const odd = decodeFeltBlob(packed.slice(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES));
+    const domain = circleDomain(TRACE_LEN);
+    const recoverT = (i: number): bigint => {
+      const p = domain[i]!;
+      const e = evalNewton(even, TRACE_XS, p.x);
+      const o = evalNewton(odd, TRACE_XS, p.x);
+      return add(e, mul(p.y, o));
     };
     const absDelta =
       mix.statement.publicAmountSats < 0n ? -mix.statement.publicAmountSats : mix.statement.publicAmountSats;
-    assert.equal(feltAt(0), 0n, "cell0 old reserve must be omitted");
-    assert.equal(feltAt(1), 0n, "cell1 new reserve must be omitted");
-    assert.equal(feltAt(2), 0n, "cell2 absDelta must be omitted");
-    assert.notEqual(mix.statement.oldState.reserveSats, 0n);
-    assert.notEqual(mix.statement.newState.reserveSats, 0n);
-    assert.notEqual(absDelta, 0n);
-    const noteLimbs = bytesToFelt4(mix.statement.noteCommitment);
-    assert.ok(noteLimbs.some((n) => n !== 0n), "spent note commitment is nonzero");
-    for (let i = 0; i < 4; i += 1) {
-      assert.equal(feltAt(4 + i), 0n, `noteCommitment limb ${i} must be omitted`);
+    const secrets = [
+      mix.statement.oldState.reserveSats % 2147483647n,
+      mix.statement.newState.reserveSats % 2147483647n,
+      absDelta % 2147483647n,
+      ...bytesToFelt4(mix.statement.noteCommitment),
+    ];
+    for (const i of [0, 1, 2, 4, 5, 6, 7]) {
+      assert.ok(!secrets.includes(recoverT(i)), `T(domain[${i}]) must not recover reserve/delta/note limb`);
     }
+    const q0 = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
+    const slot = nqzAt(mix.statement, decoded.queries[0]!.index);
+    assert.deepEqual(q0, encodeLe(slot.q));
+    assert.equal(decoded.queries[0]!.layers[0]!.value, slot.q);
   });
 });
