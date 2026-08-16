@@ -26,7 +26,9 @@ and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 ## Chipnet
 
 Lab address stays in gitignored `.local/lab-wallet.json`.
-Mix successor on Chipnet (2026-08-16), Electrum-accepted, **10-kernel sharded FRI**:
+2026-08-16 rebroadcast of **this** lock (path-depth + dummyNoL0): Electrum lists an unconfirmed kernel-change UTXO (vout 10, 39.5M sats) whose spend is rejected `Missing inputs` (orphan/stale mempool ancestry). Faucets are captcha HTML, not an API. VM eval of the same bytecode is the on-chain bar (`vm-onchain.log`).
+
+Older Electrum-accepted txs below are a **previous** lock (not this kernel):
 
 | Step | txid |
 | --- | --- |
@@ -34,6 +36,6 @@ Mix successor on Chipnet (2026-08-16), Electrum-accepted, **10-kernel sharded FR
 | 10 FRI-kernel carriers | `23ec0c8d2e689e71df52025b5af2d1073999307ddcdc6998c40d706863998f0b` |
 | Withdraw successor (64111 B, 252 openings) | `86bd413fad8606207f26eb69cb6391db27e966f76dd2202f3e4cbd62424792d9` |
 
-Earlier 937 B / 1777 B / 64 KB cells without spent-note preimage / kernel-root bind / C=QZ kernel are **not** this lock. Dummy 8-leaf kernel openings against this statement’s `layerRoots` fail input 1. Swapping dummy roots + `qTable` into the pool unlocking fails input 11. Cooking `nTable[0]=Q'·Z` fails because the lock recomputes `N` from `T`. The lock rejects a fake nullifier. `verifyFri` checks \(N=QZ\) of the Lagrange AIR numerator (honest Q is not identically 0). On-chain C=QZ is still only slot 0.
+Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`

@@ -33,7 +33,7 @@ Output 0 must keep:
 
 Layla (2026-05-15) made NFT commitments **128 bytes**. That is why `PAA1` is 128 bytes, not a 40-byte hash of the state.
 
-The continuing lock is five-point **plus** required kernel inputs (`TXINPUTCOUNT >= 12`: inputs 1..10 SHA-256 paired-Merkle FRI, input 11 slot-0 `C=Q·Z`). A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Proof witness shards across those inputs (10 KB unlocking / 100 KB tx). Kernels read the packed AIR prefix (roots + FS indices + Q/N tables) from the **pool** unlocking — not a root the kernel spender chooses.
+The continuing lock is five-point **plus** required kernel inputs (`TXINPUTCOUNT >= 13`: inputs 1..10 SHA-256 paired-Merkle FRI at FRI_N path depth, input 11 bind-T, input 12 slot-0 `C=Q·Z`). A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Proof witness shards across those inputs (10 KB unlocking / 100 KB tx). Kernels read the packed AIR prefix (roots + FS indices + Q/N tables) from the **pool** unlocking — not a root the kernel spender chooses. Recursion is not used.
 
 ## Why not OP_RETURN (authoring)
 

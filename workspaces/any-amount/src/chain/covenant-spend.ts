@@ -9,7 +9,39 @@ import {
 } from "@bitauth/libauth";
 import { encodePublicPaa1, encodeState, STATE_BASE_SATS, type AnyAmountState } from "../pool/state.ts";
 import { createLabWallet, privateKeyOf, type LabWallet } from "./wallet.ts";
-import { broadcast, connectChipnet, listUnspent } from "./electrum.ts";
+import { broadcast, connectChipnet, getTx, listUnspent } from "./electrum.ts";
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+async function broadcastWithRetry(client: Awaited<ReturnType<typeof connectChipnet>>, rawHex: string): Promise<string> {
+  let last: Error | undefined;
+  for (let i = 0; i < 5; i += 1) {
+    try {
+      return await broadcast(client, rawHex);
+    } catch (e) {
+      last = e instanceof Error ? e : new Error(String(e));
+      const msg = last.message.toLowerCase();
+      if (!msg.includes("missing") && !msg.includes("orphan") && !msg.includes("bad-txns-inputs")) {
+        throw last;
+      }
+      await sleep(1500 * (i + 1));
+    }
+  }
+  throw last ?? new Error("broadcast retry exhausted");
+}
+
+async function waitForTx(client: Awaited<ReturnType<typeof connectChipnet>>, txid: string): Promise<void> {
+  for (let i = 0; i < 8; i += 1) {
+    try {
+      await getTx(client, txid);
+      return;
+    } catch {
+      await sleep(1000);
+    }
+  }
+}
 import {
   compilePoolCovenant,
   p2sUnlocking,
@@ -406,8 +438,9 @@ export async function broadcastCovenantGenesis(
     let prepTxid: string | undefined;
     if (picked.tx_pos !== 0) {
       const prep = compileSelfSendVout0(wallet, picked);
-      prepTxid = await broadcast(client, binToHex(prep.raw));
+      prepTxid = await broadcastWithRetry(client, binToHex(prep.raw));
       picked = { tx_hash: prep.txid, tx_pos: 0, value: prep.value };
+      await waitForTx(client, prep.txid);
     }
     const measured = compileCovenantSpend({
       wallet,
@@ -416,7 +449,7 @@ export async function broadcastCovenantGenesis(
       proof,
       lockKind,
     });
-    const txid = await broadcast(client, binToHex(measured.raw));
+    const txid = await broadcastWithRetry(client, binToHex(measured.raw));
     return { ...measured, broadcast: txid, prepTxid, categoryHex: picked.tx_hash };
   } finally {
     client.close();
