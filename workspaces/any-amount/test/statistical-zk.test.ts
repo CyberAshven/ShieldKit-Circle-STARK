@@ -10,7 +10,9 @@ import {
   wDeposit,
   wWithdraw,
 } from "../src/backends/circle/fri.ts";
-import { freshViewingKey, unmaskAuth, viewingCommit } from "../src/backends/circle/witness-mask.ts";
+import { freshViewingKey, openingMaskFelt, unmaskAuth, viewingCommit } from "../src/backends/circle/witness-mask.ts";
+import { nqzAt } from "../src/chain/air-cqz.ts";
+import { add, encodeLe } from "../src/backends/circle/m31.ts";
 import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
@@ -99,6 +101,15 @@ describe("statistical ZK of the published witness", () => {
       statement: w.statement,
     });
     assert.equal(vm.accepted, true, vm.error ?? "honest VM");
+    const c = openingMaskFelt(decoded.viewingCommit!);
+    for (const q of decoded.queries) {
+      const rawQ = nqzAt(w.statement, q.index).q;
+      assert.notEqual(q.layers[0]!.value, rawQ, "opening is not plaintext Q");
+      assert.equal(q.layers[0]!.value, add(rawQ, c));
+    }
+    const rawQ0 = nqzAt(w.statement, decoded.queries[0]!.index).q;
+    const poolUnlock = tx.inputs[0]!.unlockingBytecode;
+    assert.equal(containsBytes(poolUnlock, encodeLe(add(rawQ0, c))), true, "packed Q is masked");
   });
 
   it("wrong viewing key does not open the preimage", () => {

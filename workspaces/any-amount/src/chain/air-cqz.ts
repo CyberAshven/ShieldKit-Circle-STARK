@@ -22,6 +22,7 @@ import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
 import { add, encodeLe, M31, mul, sub, type M31El } from "../backends/circle/m31.ts";
+import { openingMaskFelt } from "../backends/circle/witness-mask.ts";
 import { circleDomain } from "../backends/circle/fri.ts";
 import { COMMITTED_LAYERS, FRI_FINAL, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
 import { encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
@@ -38,6 +39,8 @@ export const AIR_STMT_LEN = 433;
 export const AIR_OFF_DIGEST = AIR_OFF_STMT;
 export const AIR_OFF_PUB_OLD = AIR_OFF_STMT + 32;
 export const AIR_OFF_PUB_NEW = AIR_OFF_STMT + 32 + 128;
+/** Degree-0 opening mask felt (LE). 524+32+128+128=812; Q table still at 957. */
+export const AIR_OFF_OPEN_MASK = 812;
 export const AIR_OFF_QTABLE = 957;
 export const AIR_OFF_IDX = 1101;
 export const AIR_OFF_CELLS = 1173;
@@ -277,8 +280,10 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
   packed.set(encodePublicPaa1(statement.oldState), AIR_OFF_PUB_OLD);
   packed.set(encodePublicPaa1(statement.newState), AIR_OFF_PUB_NEW);
   const qIdx = fiatShamirQueryIndices(digest, p);
+  const openMask = p.viewingCommit ? openingMaskFelt(p.viewingCommit) : 0n;
+  packed.set(encodeLe(openMask), AIR_OFF_OPEN_MASK);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
-    packed.set(encodeLe(qLde[qIdx[s]!]!), AIR_OFF_QTABLE + s * 4);
+    packed.set(encodeLe(add(qLde[qIdx[s]!]!, openMask)), AIR_OFF_QTABLE + s * 4);
     packed.set(encodeLe(nLde[qIdx[s]!]!), AIR_OFF_NTABLE + s * 4);
     packed[AIR_OFF_IDX + s * 2] = (qIdx[s]! >> 8) & 0xff;
     packed[AIR_OFF_IDX + s * 2 + 1] = qIdx[s]! & 0xff;
@@ -660,6 +665,11 @@ OP_DUP
 <${qOff}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
 OP_BIN2NUM
+OP_OVER
+<${AIR_OFF_OPEN_MASK}> OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
+OP_BIN2NUM
+${M31_SUB}
 OP_TOALTSTACK
 OP_DUP
 <${nOff}> OP_SPLIT OP_NIP

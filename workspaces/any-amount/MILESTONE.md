@@ -1,10 +1,25 @@
 # Chipnet milestones
 
 **Network:** BCH Chipnet only. Not mainnet.  
-**Unlockings / redeem:** ≤ 10 KB (Velma).
+**Unlockings / redeem:** ≤ 10 KB (Velma).  
+This file **accumulates**. Old txids stay. New rows are added; they do not replace earlier lands.
 
 Two fold-executing successors are on Chipnet. An earlier 36-slot spend
 without fold stays recorded so it is not relabeled.
+
+## Log (newest first)
+
+| When | What | Commit / tx |
+| --- | --- | --- |
+| 2026-08-16 | FRI openings + packed Q offset by degree-0 mask; slot lock subtracts packed felt (standard **and** consensus compiles). Newton T still public. | this increment |
+| 2026-08-16 | Consensus **36-fold** Chipnet land (382203 B) via JSON-RPC | `b1415faf…` @ height 319402 |
+| 2026-08-16 | Published preimage OTP (rho/owner/amount); viewing key not in encoding | `9d2c41a` |
+| 2026-08-16 | Production hash/PQ amount commit; public net committed | `f6653da` |
+| 2026-08-16 | On-chain seq+1 and PAA1 reserve field = 0; no rho/owner in successor | `4414ff3` |
+| 2026-08-16 | Consensus lock compiles 36 folds | `ade9999` |
+| 2026-08-16 | 10-fold consensus Chipnet land | `18c74b49…` @ 319278 |
+| 2026-08-16 | Standard 1-fold + 6 C=QZ Electrum land | `2acb1196…` |
+| 2026-08-16 | 36-slot **no-fold** size proof | `356630bd…` |
 
 ## Current: fold-executing lands
 
@@ -85,7 +100,7 @@ Do **not** relabel `356630bd…` as fold.
 
 ## What they do **not** prove
 
-- A theorem that the whole STARK is statistically ZK (published preimage is OTP-masked).
+- A theorem that FRI openings hide the statement (degree-0 offset is recoverable from packed Newton T).
 - A theorem that the whole STARK is statistically ZK. Published note preimage is one-time-padded; FRI openings stay on public `onChainCells`.
 - Hidden pool-UTXO value (output is `STATE_BASE`). Note amounts are tagged SHA-256 commits; the public net is committed in `encodeStatement`.
 - Zcash / Monero / Voidify parity.

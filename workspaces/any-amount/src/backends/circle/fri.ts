@@ -16,12 +16,13 @@ import {
   maskAuth,
   unmaskAuth,
   viewingCommit,
+  openingMaskFelt,
   VIEWING_PAD_LEN,
 } from "./witness-mask.ts";
 import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
 import { foldPair } from "./fold.ts";
 import { addPoints, CIRCLE_GEN, scalarMul, type CirclePoint } from "./group.ts";
-import { add, encodeLe, M31, mul, type M31El } from "./m31.ts";
+import { add, encodeLe, M31, mul, sub, type M31El } from "./m31.ts";
 import { MerkleTree } from "./merkle.ts";
 import {
   COMMITTED_LAYERS,
@@ -192,8 +193,11 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}): Fr
   const digest = sha256(encodeStatement(statement));
   const small = circleDomain(TRACE_LEN);
   const big = circleDomain(FRI_N);
+  const viewingKey = freshViewingKey();
+  const vCommit = viewingCommit(viewingKey);
   const { qLde } = airQuotientLde(statement, small, big);
-  const tLde = qLde;
+  const openMask = openingMaskFelt(vCommit);
+  const tLde = qLde.map((q) => add(q, openMask));
   const traceTree = new MerkleTree(tLde);
 
   let domain = big;
@@ -246,7 +250,6 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}): Fr
     };
   });
 
-  const viewingKey = freshViewingKey();
   return {
     version: FRI_VERSION,
     grindNonce,
@@ -256,7 +259,7 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}): Fr
     queries,
     auth: trace.auth,
     viewingKey,
-    viewingCommit: viewingCommit(viewingKey),
+    viewingCommit: vCommit,
     authMasked: false,
   };
 }
@@ -264,10 +267,14 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}): Fr
 /** FRI of a caller-supplied quotient LDE (mutation / cheat tests). Still carries auth. */
 export function proveFromTLde(statement: PoolStatement, tLde: M31El[], auth: FriAuth): FriProof {
   const digest = sha256(encodeStatement(statement));
+  const viewingKey = freshViewingKey();
+  const vCommit = viewingCommit(viewingKey);
+  const openMask = openingMaskFelt(vCommit);
+  const masked = tLde.map((q) => add(q, openMask));
   const big = circleDomain(FRI_N);
-  const traceTree = new MerkleTree(tLde);
+  const traceTree = new MerkleTree(masked);
   let domain = big;
-  let evals = tLde.slice();
+  let evals = masked.slice();
   const trees: MerkleTree[] = [];
   const layers: M31El[][] = [];
   while (evals.length > FRI_FINAL) {
@@ -305,11 +312,10 @@ export function proveFromTLde(statement: PoolStatement, tLde: M31El[], auth: Fri
     return {
       index: start,
       layers: qLayers,
-      traceValue: tLde[start]!,
+      traceValue: masked[start]!,
       tracePath: traceTree.path(start),
     };
   });
-  const viewingKey = freshViewingKey();
   return {
     version: FRI_VERSION,
     grindNonce,
@@ -319,7 +325,7 @@ export function proveFromTLde(statement: PoolStatement, tLde: M31El[], auth: Fri
     queries,
     auth,
     viewingKey,
-    viewingCommit: viewingCommit(viewingKey),
+    viewingCommit: vCommit,
     authMasked: false,
   };
 }
@@ -404,7 +410,8 @@ export function verifyFri(
     }
     const nAt = nLde[query.index]!;
     const zAt = zLde[query.index]!;
-    if (mul(query.traceValue, zAt) !== nAt) {
+    const openMask = proof.viewingCommit ? openingMaskFelt(proof.viewingCommit) : 0n;
+    if (mul(sub(query.traceValue, openMask), zAt) !== nAt) {
       return { ok: false, reason: "N != Q*Z" };
     }
     if (query.layers[0]!.value !== query.traceValue) {
@@ -638,7 +645,7 @@ export function proofByteLength(p: FriProof): number {
 }
 
 export { add, bytesToHex, COMMITTED_LAYERS, FRI_LOG_N, FRI_N, FRI_QUERIES, TRACE_LEN };
-export { freshViewingKey, unmaskAuth, viewingCommit, VIEWING_PAD_LEN } from "./witness-mask.ts";
+export { freshViewingKey, unmaskAuth, viewingCommit, openingMaskFelt, VIEWING_PAD_LEN } from "./witness-mask.ts";
 export type { FriWitness, FriAuth };
 export { airQuotientLde, algebraicC, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wDeposit, wWithdraw } from "./air.ts";
 export { interpolateCircle, evalCirclePoly } from "./interpolate.ts";

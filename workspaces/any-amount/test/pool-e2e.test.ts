@@ -24,6 +24,7 @@ import { bytesToFelt4 } from "../src/backends/circle/felt-hash.ts";
 import { decodeFeltBlob } from "../src/chain/m31-asm.ts";
 import { evalNewton } from "../src/backends/circle/interpolate.ts";
 import { add, encodeLe, mul } from "../src/backends/circle/m31.ts";
+import { openingMaskFelt } from "../src/backends/circle/witness-mask.ts";
 import { circleDomain } from "../src/backends/circle/fri.ts";
 import { TRACE_LEN } from "../src/backends/circle/params.ts";
 
@@ -202,7 +203,9 @@ describe("pool e2e mix", () => {
     }
     const q0 = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
     const slot = nqzAt(mix.statement, decoded.queries[0]!.index);
-    assert.deepEqual(q0, encodeLe(slot.q));
-    assert.equal(decoded.queries[0]!.layers[0]!.value, slot.q);
+    const maskedQ = add(slot.q, openingMaskFelt(decoded.viewingCommit!));
+    assert.deepEqual(q0, encodeLe(maskedQ));
+    assert.equal(decoded.queries[0]!.layers[0]!.value, maskedQ);
+    assert.notEqual(decoded.queries[0]!.layers[0]!.value, slot.q);
   });
 });

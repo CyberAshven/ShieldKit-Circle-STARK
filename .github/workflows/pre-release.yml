@@ -13,16 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Force-update chipnet-lab tag
+      - name: Force-update v0.0.1 pre-release tag
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f v0.0.1 HEAD
           git tag -f chipnet-lab HEAD
+          git push --force origin refs/tags/v0.0.1
           git push --force origin refs/tags/chipnet-lab
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: chipnet-lab
-          name: chipnet-lab
+          tag_name: v0.0.1
+          name: v0.0.1
           prerelease: true
+          make_latest: false
           target_commitish: ${{ github.sha }}
-          body: Chipnet-only pre-release of Any-amount lab. Not ZK. Not mainnet. Not a merge to main.
+          body: |
+            Rolling Chipnet-only pre-release. Same number (v0.0.1) is overwritten on every `@ABLalgorithm` push until real versioning starts.
+            Not mainnet. Not a merge to toorik2/main. Not a theorem that the STARK is ZK.
