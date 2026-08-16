@@ -22,6 +22,7 @@ import {
   evaluateDigestOnlyPool,
   evaluateDummyKernels,
   evaluateDummyConsistent,
+  evaluateDummyNoL0,
   evaluateDummyUnbound,
   evaluateCookedLaterSlot,
   evaluateCookedNTable,
@@ -160,6 +161,12 @@ const fakeNfVm = evaluatePoolSuccessorVm({
   },
   proof: fakeNfProof,
 });
+const dummyNoL0 = evaluateDummyNoL0({
+  oldState: w.statement.oldState,
+  newState: w.statement.newState,
+  proof: raw,
+  statement: w.statement,
+});
 const dummyUnbound = evaluateDummyUnbound({
   oldState: w.statement.oldState,
   newState: w.statement.newState,
@@ -214,6 +221,7 @@ const vmLog = {
   sequence99: { accepted: seq99.accepted, error: seq99.error },
   fakeMembership: { accepted: fakeMem.accepted, error: fakeMem.error },
   fakeNullifier: { accepted: fakeNfVm.accepted, error: fakeNfVm.error },
+  dummyNoL0: { accepted: dummyNoL0.accepted, error: dummyNoL0.error },
   dummyUnbound: { accepted: dummyUnbound.accepted, error: dummyUnbound.error },
   dummyConsistent: { accepted: dummyConsistent.accepted, error: dummyConsistent.error },
   dummyKernels: { accepted: dummyKernels.accepted, error: dummyKernels.error },

@@ -168,6 +168,18 @@ export function dummyFriShardUnlockingsUnbound(): Uint8Array[] {
   return shardFriOpenings(dummyFriOpeningsUnbound()).map(encodeFriBatchUnlocking);
 }
 
+/** Dummy 8-leaf openings that never use actual layer 0 (only 17–22). */
+export function dummyFriOpeningsNoL0(count = FRI_KERNEL_INPUTS): FriOpening[] {
+  return dummyFriOpenings(count).map((o, k) => ({
+    ...o,
+    layerIndex: FRI_LAYER_UNBOUND + 1 + (k % (COMMITTED_LAYERS - 1)),
+  }));
+}
+
+export function dummyFriShardUnlockingsNoL0(): Uint8Array[] {
+  return shardFriOpenings(dummyFriOpeningsNoL0()).map(encodeFriBatchUnlocking);
+}
+
 export function proofShardReport(proof: Uint8Array | FriProof): {
   openings: number;
   shards: number;

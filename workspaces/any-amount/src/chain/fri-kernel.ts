@@ -124,26 +124,36 @@ OP_IF
       OP_1
     OP_ENDIF
   OP_UNTIL
+  OP_1
 OP_ELSE
   OP_2DROP
+  OP_0
 OP_ENDIF
 `;
 
 /**
  * Batch kernel: stack is (left right steps layerIndex)×N then N.
+ * At least one opening must be actual layer 0 (index 0 or 16) so a spend
+ * that only uses 17–22 cannot skip the Q bind.
  */
 export const FRI_QUERY_KERNEL = `
+OP_0
+OP_SWAP
 OP_BEGIN
   OP_DUP
   OP_0 OP_GREATERTHAN
   OP_IF
     OP_1SUB
     OP_TOALTSTACK
+    OP_TOALTSTACK
     ${FRI_ONE_OPENING}
+    OP_FROMALTSTACK
+    OP_BOOLOR
     OP_FROMALTSTACK
     OP_0
   OP_ELSE
     OP_DROP
+    OP_VERIFY
     OP_1
   OP_ENDIF
 OP_UNTIL

@@ -22,6 +22,7 @@ import {
   evaluateDigestOnlyPool,
   evaluateDummyKernels,
   evaluateDummyConsistent,
+  evaluateDummyNoL0,
   evaluateDummyUnbound,
   evaluateCookedLaterSlot,
   evaluateCookedNTable,
@@ -34,7 +35,7 @@ import {
   proofFitsEnvelope,
 } from "../src/chain/vm-verifier.ts";
 import { collectFriOpenings, dummyFriOpenings } from "../src/chain/fri-openings.ts";
-import { encodeAirPacked } from "../src/chain/air-cqz.ts";
+import { AIR_OFF_QTABLE, AIR_PACKED_SIZE, encodeAirPacked } from "../src/chain/air-cqz.ts";
 import { NOTE_MERKLE_WALK, encodeWalkSteps } from "../src/chain/note-merkle.ts";
 import { cashAssemblyToBin } from "@bitauth/libauth";
 import { pushData } from "../src/chain/covenant-p2s.ts";
@@ -175,13 +176,17 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
     assert.equal(fakeNfVm.accepted, false, fakeNfVm.error ?? "fake nullifier must fail pool lock");
 
     const dummy = dummyFriOpenings(1)[0]!;
+    const walkPacked = new Uint8Array(AIR_PACKED_SIZE);
+    walkPacked.set(dummy.root, 0);
+    walkPacked.set(dummy.left, AIR_OFF_QTABLE);
     const dummyOk = evaluateFriQueryOpening({
       left: dummy.left,
       right: dummy.right,
       root: dummy.root,
       parentPath: dummy.parentPath,
       parentIndex: dummy.parentIndex,
-      layerIndex: dummy.layerIndex === 0 ? 1 : dummy.layerIndex,
+      layerIndex: 0,
+      packed: walkPacked,
     });
     assert.equal(dummyOk.accepted, true, dummyOk.error ?? "dummy tree must walk its own root");
     const dummyVsHonest = evaluateFriQueryOpening({
@@ -220,6 +225,13 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
     });
     assert.equal(honestOpen.accepted, true, honestOpen.error ?? "honest leaf must be in qTable");
 
+    const dummyNoL0 = evaluateDummyNoL0({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+    });
+    assert.equal(dummyNoL0.accepted, false, dummyNoL0.error ?? "dummy-no-L0 17-22 must fail");
     const dummyUnbound = evaluateDummyUnbound({
       oldState: w.statement.oldState,
       newState: w.statement.newState,

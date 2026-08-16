@@ -11,7 +11,6 @@ import {
   compileFriQueryKernel,
   compileFriQueryLockP2sh32,
   FRI_KERNEL_INPUTS,
-  FRI_LAYER_UNBOUND,
   FRI_QUERY_KERNEL,
 } from "./fri-kernel.ts";
 import {
@@ -24,8 +23,10 @@ import {
 } from "./air-cqz.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import {
+  collectFriOpenings,
   dummyFriOpenings,
   dummyFriShardUnlockings,
+  dummyFriShardUnlockingsNoL0,
   dummyFriShardUnlockingsUnbound,
   encodeLayerRootsPrefix,
   friShardUnlockings,
@@ -401,37 +402,57 @@ export function evaluateProofOnVm(proof: FriProof | Uint8Array): {
 } {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
   const packed = packedForOpening(p);
+  const shards = friShardUnlockings(p);
   let unlockingMax = 0;
-  let nEval = 0;
-  let boundQ = false;
-  for (const q of p.queries) {
-    for (let r = 0; r < q.layers.length; r += 1) {
-      const layer = q.layers[r]!;
-      const n = FRI_N >> r;
-      const i = q.index % n;
-      const lo = i < n / 2;
-      let layerIndex = r;
-      if (r === 0) {
-        if (boundQ) layerIndex = FRI_LAYER_UNBOUND;
-        else boundQ = true;
-      }
-      const ev = evaluateFriQueryOpening({
-        left: encodeLe(lo ? layer.value : layer.partner),
-        right: encodeLe(lo ? layer.partner : layer.value),
-        root: p.layerRoots[r]!,
-        parentPath: layer.path,
-        parentIndex: parentIndexOf(i, n),
-        layerIndex,
-        packed,
-      });
-      unlockingMax = Math.max(unlockingMax, ev.unlockingBytes);
-      nEval += 1;
-      if (!ev.accepted) {
-        return { accepted: false, failed: ev.error ?? `query ${q.index} L${r}`, queryEvals: nEval, unlockingMax };
-      }
+  for (let s = 0; s < shards.length; s += 1) {
+    const ev = evaluateFriShard(packed, shards[s]!);
+    unlockingMax = Math.max(unlockingMax, ev.unlockingBytes);
+    if (!ev.accepted) {
+      return {
+        accepted: false,
+        failed: ev.error ?? `shard ${s}`,
+        queryEvals: collectFriOpenings(p).length,
+        unlockingMax,
+      };
     }
   }
-  return { accepted: true, failed: null, queryEvals: nEval, unlockingMax };
+  return { accepted: true, failed: null, queryEvals: collectFriOpenings(p).length, unlockingMax };
+}
+
+function evaluateFriShard(packed: Uint8Array, unlocking: Uint8Array): VmEval {
+  const vm = createVirtualMachineBch2026(true);
+  const carrierUnlock = pushData(packed);
+  const carrierLock = Uint8Array.of(0x75, 0x51);
+  const sourceOutputs = [
+    { lockingBytecode: carrierLock, valueSatoshis: 1000n },
+    { lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: 1000n },
+  ];
+  const transaction = {
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x22),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: carrierUnlock,
+      },
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x44),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: unlocking,
+      },
+    ],
+    outputs: [{ lockingBytecode: carrierLock, valueSatoshis: 1000n }],
+  };
+  const result = vm.verify({ sourceOutputs, transaction });
+  return {
+    accepted: result === true,
+    error: result === true ? null : String(result),
+    unlockingBytes: unlocking.length,
+    lockingBytes: compileFriQueryLockP2sh32().length,
+  };
 }
 
 export function evaluateFalseRoot(proof: FriProof | Uint8Array): VmEval {
@@ -528,6 +549,36 @@ export function evaluateCookedLaterSlot(args: {
     ...args,
     airPacked: cooked,
     statement: args.statement,
+  });
+}
+
+/**
+ * Dummy 8-leaf openings with only layerIndex 17–22 (no actual layer 0),
+ * dummy roots, honest T, qTable[0]=nTable[0]=N/Z at FS(dummy roots).
+ */
+export function evaluateDummyNoL0(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const honest = encodeAirPacked(args.statement, args.proof);
+  const dummy = dummyFriOpenings(8);
+  const packed = new Uint8Array(honest);
+  for (let r = 0; r < COMMITTED_LAYERS; r += 1) packed.set(dummy[0]!.root, r * 32);
+  const decoded = decodeFriProof(args.proof);
+  const dummyRoots = Array.from({ length: COMMITTED_LAYERS }, () => dummy[0]!.root);
+  const i0 = fiatShamirQueryIndices(sha256(encodeStatement(args.statement)), {
+    ...decoded,
+    layerRoots: dummyRoots,
+  })[0]!;
+  const slot = nqzAt(args.statement, i0);
+  packed.set(encodeLe(slot.q), AIR_OFF_QTABLE);
+  packed.set(encodeLe(slot.n), AIR_OFF_NTABLE);
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: packed,
+    kernelUnlockings: dummyFriShardUnlockingsNoL0(),
   });
 }
 
