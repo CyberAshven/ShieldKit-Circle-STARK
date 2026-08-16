@@ -1,10 +1,9 @@
 /**
- * Confidential amounts — BCR 1570 / 1724 Phase 3.
+ * Comparison-only Pedersen profile — BCR 1570.
  * C = v·G + r·H. Homomorphic: C(v1,r1)+C(v2,r2)=C(v1+v2,r1+r2).
  *
- * On-chain cheap verify waits on CHIP 2025-05 (ECADD/ECMUL). Until then the
- * Circle FRI AIR can carry (v, r) privately and the commitment bytes publicly.
- * This module is that profile — not ML-KEM, not Quantumroot.
+ * Not the production note-amount commit (see hash-commit.ts). Discrete-log,
+ * not PQ. On-chain EC verify still waits on CHIP 2025-05.
  */
 import { sha256 } from "../pool/bytes.ts";
 

@@ -20,7 +20,7 @@ import { onCircle } from "../src/backends/circle/group.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, commitNote, nullifierOf, type Note } from "../src/pool/notes.ts";
 import { emptyState } from "../src/pool/state.ts";
-import { commitAmount } from "../src/amounts/pedersen.ts";
+import { commitAmount } from "../src/amounts/hash-commit.ts";
 import { encodeStatement } from "../src/pool/statement.ts";
 
 
@@ -157,7 +157,7 @@ describe("Circle FRI prove/verify", () => {
       owner: note.ownerSecret,
       amountSats: note.amountSats,
       publicDeltaSats: 9_000n,
-      amountCommit: new Uint8Array(32),
+      amountCommit: commitAmount(note.amountSats, note.rho),
       createdLeaf: new Uint8Array(32),
       createdIndex: 0,
       createdPath: [],
@@ -200,11 +200,11 @@ describe("Circle FRI prove/verify", () => {
   });
 });
 
-describe("Pedersen binds the public amount", () => {
-  it("deposit commit is not the zero commit", () => {
-    const { statement } = depositNote(777n);
+describe("hash amount commit binds the note", () => {
+  it("deposit commit is the tagged SHA-256 of (amount, rho)", () => {
+    const { statement, note } = depositNote(777n);
     assert.notDeepEqual(statement.amountCommitOut, new Uint8Array(32));
-    assert.ok(commitAmount(777n, 1n) !== 0n);
+    assert.deepEqual(statement.amountCommitOut, commitAmount(777n, note.rho));
   });
 
   it("withdraw openings conserve note = public + change amounts", () => {

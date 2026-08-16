@@ -1,6 +1,7 @@
 import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
 import { IncrementalMerkle, commitNote, nullifierOf, type Note } from "../../pool/notes.ts";
 import { eq32, isZero32, sha256, ZERO32 } from "../../pool/bytes.ts";
+import { commitAmount } from "../../amounts/hash-commit.ts";
 import { add, el, inv, mul, sub, type M31El } from "./m31.ts";
 import { bytesToFelt4 } from "./felt-hash.ts";
 import { evalCirclePoly, interpolateCircle } from "./interpolate.ts";
@@ -88,6 +89,13 @@ export function checkAuthRelation(
   }
   const opened = openedNote(auth);
   if (!eq32(auth.leaf, commitNote(opened))) return { ok: false, reason: "leaf preimage" };
+  const openedCommit = commitAmount(opened.amountSats, opened.rho);
+  if (!eq32(auth.amountCommit, openedCommit)) return { ok: false, reason: "amount commit" };
+  if (statement.action === "DEPOSIT") {
+    if (!eq32(statement.amountCommitOut, openedCommit)) return { ok: false, reason: "deposit amount commit" };
+  } else if (!eq32(statement.amountCommitIn, openedCommit)) {
+    return { ok: false, reason: "withdraw amount commit" };
+  }
 
   const root = membershipRoot(statement);
   if (!eq32(auth.root, root)) return { ok: false, reason: "auth root != public noteRoot" };

@@ -1,14 +1,8 @@
 import { IncrementalMerkle, NullifierSet, commitNote, freshRho, nullifierOf, type Note } from "./notes.ts";
 import { type AnyAmountState } from "./state.ts";
 import type { ActionKind, PoolStatement } from "./statement.ts";
-import { commitAmount } from "../amounts/pedersen.ts";
-import { isZero32, writeU256BE, ZERO32 } from "./bytes.ts";
-
-function blindOf(note: Note): bigint {
-  let n = 0n;
-  for (const b of note.rho) n = (n << 8n) | BigInt(b);
-  return n;
-}
+import { commitAmount } from "../amounts/hash-commit.ts";
+import { isZero32, ZERO32 } from "./bytes.ts";
 
 export type PoolMachine = {
   state: AnyAmountState;
@@ -41,7 +35,7 @@ export function applyDeposit(
     nullifier: new Uint8Array(32),
     payoutLockingDigest: new Uint8Array(32),
     amountCommitIn: new Uint8Array(ZERO32),
-    amountCommitOut: writeU256BE(commitAmount(note.amountSats, blindOf(note))),
+    amountCommitOut: commitAmount(note.amountSats, note.rho),
   };
   checkPublicTransition(statement);
   return { machine: { ...machine, state: newState }, statement, index, path };
@@ -106,10 +100,10 @@ export function applyWithdraw(
     noteCommitment: leftover > 0n ? commitNote(change!) : new Uint8Array(32),
     nullifier: nf,
     payoutLockingDigest,
-    amountCommitIn: writeU256BE(commitAmount(note.amountSats, blindOf(note))),
+    amountCommitIn: commitAmount(note.amountSats, note.rho),
     amountCommitOut:
       leftover > 0n && change
-        ? writeU256BE(commitAmount(change.amountSats, blindOf(change)))
+        ? commitAmount(change.amountSats, change.rho)
         : new Uint8Array(ZERO32),
   };
   checkPublicTransition(statement);
@@ -150,7 +144,7 @@ export function actionOf(delta: bigint): ActionKind {
 
 /**
  * One-set mix: many notes in, many notes out, one public net delta.
- * Individual amounts stay in Pedersen leaves — only the net hits the UTXO.
+ * Individual amounts stay in hash-committed leaves — only the net hits the UTXO.
  */
 export function applyAggregate(
   machine: PoolMachine,
@@ -190,7 +184,7 @@ export function applyAggregate(
     payoutLockingDigest: new Uint8Array(32),
     amountCommitIn: last?.statement.amountCommitIn ?? new Uint8Array(ZERO32),
     amountCommitOut: deposited[0]
-      ? writeU256BE(commitAmount(deposited[0].note.amountSats, blindOf(deposited[0].note)))
+      ? commitAmount(deposited[0].note.amountSats, deposited[0].note.rho)
       : new Uint8Array(ZERO32),
   };
   return { machine: next, statement, deposited, change };

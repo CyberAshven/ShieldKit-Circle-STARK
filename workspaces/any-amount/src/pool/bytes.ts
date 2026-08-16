@@ -63,6 +63,22 @@ export function writeI64BE(value: bigint): Uint8Array {
   return writeU64BE(asU);
 }
 
+export function writeU64LE(value: bigint): Uint8Array {
+  if (value < 0n || value > 0xffffffffffffffffn) throw new Error("u64 out of range");
+  const out = new Uint8Array(8);
+  let n = value;
+  for (let i = 0; i < 8; i += 1) {
+    out[i] = Number(n & 0xffn);
+    n >>= 8n;
+  }
+  return out;
+}
+
+export function writeI64LE(value: bigint): Uint8Array {
+  const asU = value < 0n ? (1n << 64n) + value : value;
+  return writeU64LE(asU);
+}
+
 export function readU16BE(bytes: Uint8Array, offset: number): number {
   return (bytes[offset]! << 8) | bytes[offset + 1]!;
 }

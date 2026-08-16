@@ -37,6 +37,7 @@ describe("plugin split", () => {
     const families = d.side.map((s) => s.family);
     assert.ok(families.includes("quantumroot-lmots"));
     assert.ok(families.includes("ml-kem-768"));
+    assert.ok(families.includes("sha256-tagged-amount"));
     assert.ok(families.includes("pedersen-secp-profile"));
     assert.ok(!d.zkp.some((z) => z.family === "ml-kem-768"));
     assert.ok(!d.zkp.some((z) => z.family === "quantumroot-lmots"));

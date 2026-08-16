@@ -1,5 +1,5 @@
-import { concatBytes, sha256, writeU256BE, ZERO32 } from "./bytes.ts";
-import { commitAmount } from "../amounts/pedersen.ts";
+import { concatBytes, sha256, ZERO32 } from "./bytes.ts";
+import { commitAmount } from "../amounts/hash-commit.ts";
 
 export const MERKLE_DEPTH = 16;
 
@@ -16,15 +16,9 @@ export type Note = {
   ownerSecret: Uint8Array;
 };
 
-function blindOf(note: Note): bigint {
-  let n = 0n;
-  for (const b of note.rho) n = (n << 8n) | BigInt(b);
-  return n;
-}
-
-/** Leaf hides the amount: SHA-256(Pedersen(v,r) || rho || owner). */
+/** Leaf hides the amount: SHA-256(hashCommit(v, rho) || rho || owner). */
 export function commitNote(note: Note): Uint8Array {
-  const c = writeU256BE(commitAmount(note.amountSats, blindOf(note)));
+  const c = commitAmount(note.amountSats, note.rho);
   return sha256(concatBytes(c, note.rho, note.ownerSecret));
 }
 

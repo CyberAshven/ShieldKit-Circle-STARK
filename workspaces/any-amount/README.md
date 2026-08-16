@@ -13,7 +13,7 @@ size gate. This workspace is the product profile: one set, any amount.
 | `circle-fri-m31` backend | Live AIR + residual-quotient Circle FRI. `plugin.verify` needs no private witness. Worksheet **128 conjectural bits**. |
 | CashToken 128-byte `PAA1` state + 5-point successor | Live. Lock binds instance id, noteRoot (equal or append), nfRoot. Rewritten `noteRoot` fails the 2026 VM. |
 | Chipnet genesis / successor | `pool chipnet-covenant` / `pool chipnet-mix` when funded. Consensus-size lands use JSON-RPC `sendrawtransaction`, not Electrum/P2P. Not an OP_RETURN digest. |
-| Hidden amounts / confidential assets | Pedersen in the note leaf. PAA1 NFT reserve bytes are 0. Successor unlocking is packed AIR + redeem only (no spent rho/owner). Pool UTXO **sats** stay public (`STATE_BASE`). |
+| Hidden amounts / confidential assets | Tagged SHA-256 note-amount commit (AIR-bound). Public net is committed in `encodeStatement`, not written as a raw i64. PAA1 NFT reserve bytes are 0. Successor unlocking is packed AIR + redeem only (no spent rho/owner/amount preimage). Pool UTXO **sats** stay public (`STATE_BASE`). Pedersen is a comparison plugin only. Not statistical ZK. |
 | On-chain Circle FRI prefix | Pool lock + **10** Merkle kernels + bind-T + fold + `C=Q·Z`. Standard: **1** fold + **6** slots, **98841 B** compile / Chipnet `2acb1196…`. Consensus: **36** folds + **36** slots, **382203 B** compile (≤ 1 MB). Prior Chipnet 10-fold land `18c74b49…` is not the 36-fold land. Unlocking **and** redeem ≤ **10 KB**. **Not** statistical ZK. |
 | OPTN builtin register | **Not done.** Zero-touch: addon talks to `http://127.0.0.1:17432` if `pool serve` is running. |
 

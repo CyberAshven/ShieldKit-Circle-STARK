@@ -10,11 +10,20 @@ export type SidePlugin = {
   status: "slot" | "lab";
 };
 
+/** Production amount-hiding: tagged SHA-256. Not a discrete-log Pedersen. */
+export const hashAmountPlugin: SidePlugin = {
+  family: "sha256-tagged-amount",
+  layer: "amount-hiding",
+  requiredForPool: false,
+  status: "lab",
+};
+
+/** Comparison-only EC profile. Not the production note commit. */
 export const pedersenAmountPlugin: SidePlugin = {
   family: "pedersen-secp-profile",
   layer: "amount-hiding",
   requiredForPool: false,
-  status: "lab",
+  status: "slot",
 };
 
 export const mlkemDeliveryPlugin: SidePlugin = {
@@ -45,6 +54,6 @@ export function describePlugins(): unknown {
     covenant: "P2S (2026) / P2SH32 (P1 shells) — not P2PKH",
     userLock: "P2PKH today; Quantumroot later",
     zkp: zkpPlugins.map((p) => ({ family: p.family, sound: p.sound, vkId: p.vkId })),
-    side: [pedersenAmountPlugin, mlkemDeliveryPlugin, quantumrootKeyPath, nostrBusPlugin],
+    side: [hashAmountPlugin, pedersenAmountPlugin, mlkemDeliveryPlugin, quantumrootKeyPath, nostrBusPlugin],
   };
 }

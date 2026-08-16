@@ -52,7 +52,8 @@ is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount
 | Plugin | Job | Not |
 | --- | --- | --- |
 | **Circle FRI (SHA-256)** | Membership, nullifier, transition. Hash STARK. PQ family. | Addresses |
-| **Pedersen / Bulletproofs** | Confidential *amounts* (BCR 1570). Needs EC CHIP on-chain or lives inside the STARK. | Delivery |
+| **Tagged SHA-256 amount** | Production confidential *note* amounts. Circle FRI binds the commit. | Delivery |
+| **Pedersen / Bulletproofs** | Comparison-only (BCR 1570). Discrete-log; not production. | Delivery |
 | **ML-KEM-768** | Plane B *who* / note packets (BCR 1724). | The covenant |
 | **Quantumroot** | PQ *keys* after ECDSA dies. | The pool set |
 | **Nostr 44/59/17** | Event bus (CashFusion-style listener). | State |
@@ -62,8 +63,8 @@ is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount
 ## Profiles
 
 - **Fv1** (joint, sealed): 0.1 ticket, public amount, PAF1. Size gate with toorik. Do not widen it on `main`.
-- **any-amount** (this workspace): type the number, `public_amount` visible until the Pedersen profile hides it.
-- **hidden-amount**: same covenant + Pedersen (or STARK-encoded amounts). Later.
+- **any-amount** (this workspace): type the number. Note amounts are a tagged SHA-256 commit; the public net is committed in `encodeStatement`. Pool UTXO stays `STATE_BASE`.
+- **hidden-amount UTXO**: same covenant + hidden pool output value (later CHIP). Not this increment.
 
 P2PKH is **not** the shielded pool. The pool is the **covenant UTXO**.
 
@@ -78,13 +79,13 @@ P2PKH is **not** the shielded pool. The pool is the **covenant UTXO**.
 | Blowup / rate | 16 / `2/B` (quotient of the residual interpolant) |
 | Fold | Circle FRI fold (2024/278) with `x=0` fallback to `y`; partners are Merkle siblings |
 | Binding | **Off-chain** `publicCells`: reserves, delta, action, digest, roots. **On-chain** `onChainCells`: action, digest, roots, seq only (no reserve/delta). |
-| `sound` | Worksheet **128 conjectural bits**. Not a Lean theorem. On-chain is a FRI **prefix** (1 or 10 folded queries, not all 36). |
+| `sound` | Worksheet **128 conjectural bits**. Not a Lean theorem. On-chain foldPair is **1** query per kernel (standard 1; consensus **36**). |
 
-An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserve, false note commitment, or false nullifier is rejected there. The off-chain FRI target is the residual quotient \(Q=C/Z\). The on-chain lock binds the new `PAA1` cell, walks packed Merkle openings, binds Newton `T` to `onChainCells`, foldPairs **1** query per fold kernel (standard: 1 kernel; consensus: 10), and checks `C=Q·Z` per slot kernel (default **6** distinct slots so the spend stays under **100 KB** relay; **36** on the 1 MB consensus path). Unlocking and redeem are **10 KB** after Velma. Remaining query folds, `algebraicC`, auth, and grind stay in `verifyFri`. Never mainnet. Amount conservation is `verifyFri` / `algebraicC`, not the NFT reserve field (that field is zero).
+An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserve, false note commitment, or false nullifier is rejected there. The off-chain FRI target is the residual quotient \(Q=C/Z\). The on-chain lock binds the new `PAA1` cell, walks packed Merkle openings, binds Newton `T` to `onChainCells`, foldPairs **1** query per fold kernel (standard: 1 kernel; consensus: **36**), and checks `C=Q·Z` per slot kernel (default **6** distinct slots so the spend stays under **100 KB** relay; **36** on the 1 MB consensus path). Unlocking and redeem are **10 KB** after Velma. Remaining query folds, `algebraicC`, auth, and grind stay in `verifyFri`. Never mainnet. Amount conservation is `verifyFri` / `algebraicC`, not the NFT reserve field (that field is zero).
 
 ## Confidential amounts
 
-`amountCommitIn` / `amountCommitOut` are 32-byte Pedersen-style scalars (`C = v·G + r·H` over the secp256k1 scalar field, hash-to-scalar generators). They are first-class statement fields. Public deltas stay visible. Real on-chain EC points wait on CHIP 2025-05 or move inside the AIR.
+`amountCommitIn` / `amountCommitOut` are 32-byte tagged SHA-256 commits (`SHA-256(PAA1-HASH-AMT-v1 || amount_i64le || rho)`). `checkAuthRelation` requires them to match the opened note. `encodeStatement` writes `commitPublicNet` instead of the raw public i64. Pool UTXO sats stay `STATE_BASE`. The old Pedersen module remains a comparison plugin only.
 
 Partial withdraw mints a **new change note**: leftover amount, same `ownerSecret`, **fresh `rho`**, new Merkle index. Reusing `rho` would make `nullifierOf(change) == nullifierOf(spent)` and the next spend dies (`nullifier already used`).
 
@@ -123,7 +124,7 @@ Toorik’s ShieldKit-SDK `designs/fri` splits **Rust `fri-prover` / `fri-worker`
 
 ### Why not Fv1 0.1?
 
-Fv1 is the joint **size gate** with toorik (fixed ticket, smaller AIR). It is a better first *measurement*, not the product. The product is one set, any amount (Nova / Zcash / Aztec amounts). `public_amount` stays visible until the Pedersen/hidden profile. Do not widen sealed `PoolActionFv1` on `main`.
+Fv1 is the joint **size gate** with toorik (fixed ticket, smaller AIR). It is a better first *measurement*, not the product. The product is one set, any amount (Nova / Zcash / Aztec amounts). Note amounts are hash-committed; the public net is committed in the statement. Do not widen sealed `PoolActionFv1` on `main`.
 
 ### Why a fresh rho on change?
 

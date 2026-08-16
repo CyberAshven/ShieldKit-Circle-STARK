@@ -1,4 +1,5 @@
-import { bytesToHex, concatBytes, sha256, writeI64BE, writeU256BE, ZERO32 } from "./bytes.ts";
+import { bytesToHex, concatBytes, sha256, writeU256BE } from "./bytes.ts";
+import { commitPublicNet } from "../amounts/hash-commit.ts";
 import { encodeState, type AnyAmountState } from "./state.ts";
 
 export type ActionKind = "DEPOSIT" | "WITHDRAW";
@@ -12,7 +13,7 @@ export type PoolStatement = {
   noteCommitment: Uint8Array;
   nullifier: Uint8Array;
   payoutLockingDigest: Uint8Array;
-  /** Pedersen-style amount commits (BCR 1570), 32-byte BE scalars. */
+  /** Tagged SHA-256 amount commits (32 bytes). Not Pedersen. */
   amountCommitIn: Uint8Array;
   amountCommitOut: Uint8Array;
 };
@@ -22,7 +23,7 @@ export function encodeStatement(s: PoolStatement): Uint8Array {
   return concatBytes(
     new TextEncoder().encode("PAA1STMT"),
     actionByte,
-    writeI64BE(s.publicAmountSats),
+    commitPublicNet(s.publicAmountSats, s.payoutLockingDigest),
     encodeState(s.oldState),
     encodeState(s.newState),
     s.noteCommitment,

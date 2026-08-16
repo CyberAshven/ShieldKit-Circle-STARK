@@ -73,9 +73,9 @@ Do **not** relabel `356630bd…` as fold.
 
 ## What they do **not** prove
 
-- On-chain fold of all 36 FRI queries.
+- Chipnet land of the compiled 36-fold lock (new txid). `18c74b49…` is 10-fold.
 - Statistical ZK / witness masking.
-- Hidden pool-UTXO value (output is `STATE_BASE`; note amounts are Pedersen).
+- Hidden pool-UTXO value (output is `STATE_BASE`). Note amounts are tagged SHA-256 commits; the public net is committed in `encodeStatement`.
 - Zcash / Monero / Voidify parity.
 
 Earlier standard 6-slot spends without the current fold lock:
