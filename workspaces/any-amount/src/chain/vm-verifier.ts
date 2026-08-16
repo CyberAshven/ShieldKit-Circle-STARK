@@ -7,7 +7,13 @@ import { createTestAuthenticationProgramBch, createVirtualMachineBch2026 } from 
 import { add, encodeLe, mul } from "../backends/circle/m31.ts";
 import { decodeFriProof, verifyFri, type FriProof } from "../backends/circle/fri.ts";
 import { FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
-import { compileFriQueryKernel, compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS, FRI_QUERY_KERNEL } from "./fri-kernel.ts";
+import {
+  compileFriQueryKernel,
+  compileFriQueryLockP2sh32,
+  FRI_KERNEL_INPUTS,
+  FRI_LAYER_UNBOUND,
+  FRI_QUERY_KERNEL,
+} from "./fri-kernel.ts";
 import {
   compileCqzLockP2sh32,
   compileSlotsLockP2sh32,
@@ -24,7 +30,16 @@ import {
   friShardUnlockings,
   proofShardReport,
 } from "./fri-openings.ts";
-import { AIR_OFF_EVEN, AIR_OFF_IDX, AIR_OFF_NTABLE, AIR_OFF_QTABLE, encodeAirPacked, nqzAt } from "./air-cqz.ts";
+import {
+  AIR_OFF_EVEN,
+  AIR_OFF_IDX,
+  AIR_OFF_NTABLE,
+  AIR_OFF_QTABLE,
+  AIR_PACKED_SIZE,
+  encodeAirPacked,
+  nqzAt,
+} from "./air-cqz.ts";
+import { COMMITTED_LAYERS } from "../backends/circle/params.ts";
 import {
   compilePoolCovenant,
   FIVE_POINT_PAA1,
@@ -106,6 +121,19 @@ export function evaluateBch2026(locking: Uint8Array, unlocking: Uint8Array): VmE
   };
 }
 
+/** Roots + qTable so an isolated kernel can membership-check layer-0 leaves. */
+function packedForOpening(p: FriProof, layerRoots?: Uint8Array[]): Uint8Array {
+  const packed = new Uint8Array(AIR_PACKED_SIZE);
+  const roots = layerRoots ?? p.layerRoots;
+  for (let r = 0; r < COMMITTED_LAYERS; r += 1) {
+    packed.set(roots[r] ?? new Uint8Array(32), r * 32);
+  }
+  for (let s = 0; s < p.queries.length && s < FRI_QUERIES; s += 1) {
+    packed.set(encodeLe(p.queries[s]!.layers[0]!.value), AIR_OFF_QTABLE + s * 4);
+  }
+  return packed;
+}
+
 export function evaluateFriQueryOpening(args: {
   left: Uint8Array;
   right: Uint8Array;
@@ -113,11 +141,12 @@ export function evaluateFriQueryOpening(args: {
   parentPath: Uint8Array[];
   parentIndex: number;
   layerIndex?: number;
+  packed?: Uint8Array;
 }): VmEval {
   const vm = createVirtualMachineBch2026(true);
   const layer = args.layerIndex ?? 0;
   const roots = Array.from({ length: 7 }, (_, i) => (i === layer ? args.root : new Uint8Array(32)));
-  const carrierUnlock = encodeLayerRootsPrefix(roots);
+  const carrierUnlock = args.packed ? pushData(args.packed) : encodeLayerRootsPrefix(roots);
   const carrierLock = Uint8Array.of(0x75, 0x51);
   const sourceOutputs = [
     { lockingBytecode: carrierLock, valueSatoshis: 1000n },
@@ -367,21 +396,29 @@ export function evaluateProofOnVm(proof: FriProof | Uint8Array): {
   unlockingMax: number;
 } {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
+  const packed = packedForOpening(p);
   let unlockingMax = 0;
   let nEval = 0;
+  let boundQ = false;
   for (const q of p.queries) {
     for (let r = 0; r < q.layers.length; r += 1) {
       const layer = q.layers[r]!;
       const n = FRI_N >> r;
       const i = q.index % n;
       const lo = i < n / 2;
+      let layerIndex = r;
+      if (r === 0) {
+        if (boundQ) layerIndex = FRI_LAYER_UNBOUND;
+        else boundQ = true;
+      }
       const ev = evaluateFriQueryOpening({
         left: encodeLe(lo ? layer.value : layer.partner),
         right: encodeLe(lo ? layer.partner : layer.value),
         root: p.layerRoots[r]!,
         parentPath: layer.path,
         parentIndex: parentIndexOf(i, n),
-        layerIndex: r,
+        layerIndex,
+        packed,
       });
       unlockingMax = Math.max(unlockingMax, ev.unlockingBytes);
       nEval += 1;
@@ -402,6 +439,8 @@ export function evaluateFalseRoot(proof: FriProof | Uint8Array): VmEval {
   const lo = i < n / 2;
   const bad = new Uint8Array(p.layerRoots[0]!);
   bad[0] ^= 1;
+  const packed = packedForOpening(p);
+  packed.set(bad, 0);
   return evaluateFriQueryOpening({
     left: encodeLe(lo ? layer.value : layer.partner),
     right: encodeLe(lo ? layer.partner : layer.value),
@@ -409,6 +448,7 @@ export function evaluateFalseRoot(proof: FriProof | Uint8Array): VmEval {
     parentPath: layer.path,
     parentIndex: parentIndexOf(i, n),
     layerIndex: 0,
+    packed,
   });
 }
 
@@ -484,6 +524,27 @@ export function evaluateCookedLaterSlot(args: {
     ...args,
     airPacked: cooked,
     statement: args.statement,
+  });
+}
+
+/**
+ * Dummy 8-leaf openings + dummy layerRoots, honest T / qTable = N/Z.
+ * Skeptic dummy-consistent spend: Merkle walks the dummy tree; C=QZ sees honest Q.
+ */
+export function evaluateDummyConsistent(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const honest = encodeAirPacked(args.statement, args.proof);
+  const dummy = dummyFriOpenings(8);
+  const packed = new Uint8Array(honest);
+  for (let r = 0; r < COMMITTED_LAYERS; r += 1) packed.set(dummy[0]!.root, r * 32);
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: packed,
+    kernelUnlockings: dummyFriShardUnlockings(),
   });
 }
 

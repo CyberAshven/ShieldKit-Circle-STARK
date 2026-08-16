@@ -1,4 +1,5 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
+import { AIR_OFF_QTABLE } from "./air-cqz.ts";
 
 /** Fixed kernel-input count in the pool lock (must be known at genesis). */
 export const FRI_KERNEL_INPUTS = 10;
@@ -6,10 +7,27 @@ export const FRI_KERNEL_INPUTS = 10;
 /**
  * One paired-Merkle opening.
  * Stack: left right steps layerIndex
- * Expected root is layerRoots[layerIndex] from input 0 unlocking
- * (this statement's proof), not a spender-pushed kernel root.
+ * layerIndex 0..6 → layerRoots[i]; layer 0 also binds the opened felt to qTable[0].
+ * layerIndex 16..22 → layerRoots[i-16] with no qTable bind (other honest Q queries).
  */
+export const FRI_LAYER_UNBOUND = 16;
+
 export const FRI_ONE_OPENING = `
+OP_DUP
+<${FRI_LAYER_UNBOUND}>
+OP_GREATERTHANOREQUAL
+OP_IF
+  <${FRI_LAYER_UNBOUND}>
+  OP_SUB
+  OP_0
+OP_ELSE
+  OP_DUP
+  OP_0
+  OP_EQUAL
+OP_ENDIF
+OP_TOALTSTACK
+OP_DUP
+OP_TOALTSTACK
 <32> OP_MUL
 <0> OP_INPUTBYTECODE
 <1> OP_SPLIT
@@ -23,6 +41,7 @@ OP_NIP
 OP_DROP
 OP_TOALTSTACK
 OP_TOALTSTACK
+OP_2DUP
 OP_SHA256
 OP_SWAP
 OP_SHA256
@@ -54,6 +73,36 @@ OP_BEGIN
 OP_UNTIL
 OP_FROMALTSTACK
 OP_EQUALVERIFY
+OP_FROMALTSTACK
+OP_DROP
+OP_FROMALTSTACK
+OP_IF
+  <0> OP_INPUTBYTECODE
+  <1> OP_SPLIT OP_NIP
+  <2> OP_SPLIT OP_NIP
+  <${AIR_OFF_QTABLE}> OP_SPLIT OP_NIP
+  <4> OP_SPLIT OP_DROP
+  <0x00> OP_CAT
+  OP_BIN2NUM
+  OP_TOALTSTACK
+  <0x00> OP_CAT
+  OP_BIN2NUM
+  OP_SWAP
+  <0x00> OP_CAT
+  OP_BIN2NUM
+  OP_FROMALTSTACK
+  OP_2 OP_PICK
+  OP_OVER
+  OP_NUMEQUAL
+  OP_SWAP
+  OP_2 OP_PICK
+  OP_NUMEQUAL
+  OP_BOOLOR
+  OP_VERIFY
+  OP_2DROP
+OP_ELSE
+  OP_2DROP
+OP_ENDIF
 `;
 
 /**

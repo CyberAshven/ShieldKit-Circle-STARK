@@ -21,6 +21,7 @@ import {
   evaluateBch2026,
   evaluateDigestOnlyPool,
   evaluateDummyKernels,
+  evaluateDummyConsistent,
   evaluateCookedLaterSlot,
   evaluateCookedNTable,
   evaluateCookedT,
@@ -31,7 +32,8 @@ import {
   evaluatePoolSuccessorVm,
   proofFitsEnvelope,
 } from "../src/chain/vm-verifier.ts";
-import { dummyFriOpenings } from "../src/chain/fri-openings.ts";
+import { collectFriOpenings, dummyFriOpenings } from "../src/chain/fri-openings.ts";
+import { encodeAirPacked } from "../src/chain/air-cqz.ts";
 import { NOTE_MERKLE_WALK, encodeWalkSteps } from "../src/chain/note-merkle.ts";
 import { cashAssemblyToBin } from "@bitauth/libauth";
 import { pushData } from "../src/chain/covenant-p2s.ts";
@@ -178,7 +180,7 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
       root: dummy.root,
       parentPath: dummy.parentPath,
       parentIndex: dummy.parentIndex,
-      layerIndex: dummy.layerIndex,
+      layerIndex: dummy.layerIndex === 0 ? 1 : dummy.layerIndex,
     });
     assert.equal(dummyOk.accepted, true, dummyOk.error ?? "dummy tree must walk its own root");
     const dummyVsHonest = evaluateFriQueryOpening({
@@ -191,6 +193,39 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
     });
     assert.equal(dummyVsHonest.accepted, false, dummyVsHonest.error ?? "dummy vs honest root must fail");
 
+    const honestPacked = encodeAirPacked(w.statement, raw);
+    const dummyPacked = new Uint8Array(honestPacked);
+    for (let r = 0; r < 7; r += 1) dummyPacked.set(dummy.root, r * 32);
+    const dummyVsQ = evaluateFriQueryOpening({
+      left: dummy.left,
+      right: dummy.right,
+      root: dummy.root,
+      parentPath: dummy.parentPath,
+      parentIndex: dummy.parentIndex,
+      layerIndex: 0,
+      packed: dummyPacked,
+    });
+    assert.equal(dummyVsQ.accepted, false, dummyVsQ.error ?? "dummy leaf vs honest qTable must fail");
+    const firstL0 = collectFriOpenings(proof).find((o) => o.layerIndex === 0);
+    assert.ok(firstL0, "need a layer-0 opening");
+    const honestOpen = evaluateFriQueryOpening({
+      left: firstL0!.left,
+      right: firstL0!.right,
+      root: firstL0!.root,
+      parentPath: firstL0!.parentPath,
+      parentIndex: firstL0!.parentIndex,
+      layerIndex: 0,
+      packed: honestPacked,
+    });
+    assert.equal(honestOpen.accepted, true, honestOpen.error ?? "honest leaf must be in qTable");
+
+    const dummyConsistent = evaluateDummyConsistent({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+    });
+    assert.equal(dummyConsistent.accepted, false, dummyConsistent.error ?? "dummy-consistent must fail");
     const dummyKernels = evaluateDummyKernels({
       oldState: w.statement.oldState,
       newState: w.statement.newState,

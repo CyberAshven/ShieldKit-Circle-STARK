@@ -33,6 +33,7 @@ import {
   BE16_UNSIGNED,
   encodeAirPacked,
   fiatShamirQueryIndices,
+  fsIndex0Asm,
   G1024,
   G64,
   newtonEvalJs,
@@ -237,7 +238,6 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     assert.equal(mul(slotNqz.q, slotNqz.z), slotNqz.n, "JS slot0 Q*Z=N");
     const qPacked = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
     assert.deepEqual(qPacked, encodeLe(slotNqz.q));
-    assert.notEqual(slotNqz.z, 0n);
   });
 
   it("fused slot-0 C=Q·Z accepts honest packed blob and rejects tampered Q", () => {
@@ -331,7 +331,7 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     assert.equal(fast.accepted, true, fast.error ?? "fast [403]G");
   });
 
-  it("fused slot-0 C=Q·Z accepts FS index with high bit set", () => {
+  it("fsIndex0Asm matches JS Fiat–Shamir slot 0", () => {
     const note: Note = {
       amountSats: 8_000n,
       rho: crypto.getRandomValues(new Uint8Array(32)),
@@ -343,13 +343,29 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     );
     const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
     const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
-    const hi = 403;
-    packed[AIR_OFF_IDX] = (hi >> 8) & 0xff;
-    packed[AIR_OFF_IDX + 1] = hi & 0xff;
-    const slot = nqzAt(d.statement, hi);
-    packed.set(encodeLe(slot.q), AIR_OFF_QTABLE);
-    packed.set(encodeLe(slot.n), AIR_OFF_NTABLE);
+    const digest = sha256(encodeStatement(d.statement));
+    const i0 = fiatShamirQueryIndices(digest, proof)[0]!;
+    const lock = cashAssemblyToBin(`${fsIndex0Asm()}\nOP_NIP\n<${i0}>\nOP_NUMEQUAL`);
+    if (typeof lock === "string") throw new Error(lock);
+    const ev = evalPadded(lock, pushData(packed));
+    assert.equal(ev.accepted, true, ev.error ?? `fsIndex0 expected ${i0}`);
+  });
+
+  it("slot-0 recomputes FS index; cooked spender idx is ignored", () => {
+    const note: Note = {
+      amountSats: 8_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
+    const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
+    packed[AIR_OFF_IDX] = (403 >> 8) & 0xff;
+    packed[AIR_OFF_IDX + 1] = 403 & 0xff;
     const ok = evalPadded(compileSlot0CqzLock(), pushData(packed));
-    assert.equal(ok.accepted, true, ok.error ?? `slot0 idx=${hi} Q*Z=N`);
+    assert.equal(ok.accepted, true, ok.error ?? "cooked idx must not change recomputed FS slot-0");
   });
 });

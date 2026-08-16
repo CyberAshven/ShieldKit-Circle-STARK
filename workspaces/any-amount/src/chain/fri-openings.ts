@@ -2,7 +2,7 @@ import { encodeLe } from "../backends/circle/m31.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { MerkleTree } from "../backends/circle/merkle.ts";
 import { COMMITTED_LAYERS, FRI_N } from "../backends/circle/params.ts";
-import { compileFriQueryKernel, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
+import { compileFriQueryKernel, FRI_KERNEL_INPUTS, FRI_LAYER_UNBOUND } from "./fri-kernel.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import { AIR_PACKED_SIZE, AIR_OFF_ROOTS } from "./air-cqz.ts";
 
@@ -47,19 +47,25 @@ export function encodeLayerRootsPrefix(layerRoots: Uint8Array[]): Uint8Array {
 export function collectFriOpenings(proof: Uint8Array | FriProof): FriOpening[] {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
   const out: FriOpening[] = [];
+  let boundQ = false;
   for (const q of p.queries) {
     for (let r = 0; r < q.layers.length; r += 1) {
       const layer = q.layers[r]!;
       const n = FRI_N >> r;
       const i = q.index % n;
       const lo = i < n / 2;
+      let layerIndex = r;
+      if (r === 0) {
+        if (boundQ) layerIndex = FRI_LAYER_UNBOUND;
+        else boundQ = true;
+      }
       out.push({
         left: encodeLe(lo ? layer.value : layer.partner),
         right: encodeLe(lo ? layer.partner : layer.value),
         parentPath: layer.path,
         parentIndex: parentIndexOf(i, n),
         root: p.layerRoots[r]!,
-        layerIndex: r,
+        layerIndex,
       });
     }
   }

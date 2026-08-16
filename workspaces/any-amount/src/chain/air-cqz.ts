@@ -267,13 +267,6 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
   if (stmt.length !== AIR_STMT_LEN) throw new Error(`statement ${stmt.length} != ${AIR_STMT_LEN}`);
   packed.set(stmt, AIR_OFF_STMT);
   const qIdx = fiatShamirQueryIndices(digest, p);
-  const off = qIdx.findIndex((i) => zLde[i] !== 0n);
-  if (off < 0) throw new Error("all FS queries on-trace");
-  if (off !== 0) {
-    const tmp = qIdx[0]!;
-    qIdx[0] = qIdx[off]!;
-    qIdx[off] = tmp;
-  }
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     packed.set(encodeLe(qLde[qIdx[s]!]!), AIR_OFF_QTABLE + s * 4);
     packed.set(encodeLe(nLde[qIdx[s]!]!), AIR_OFF_NTABLE + s * 4);
@@ -527,11 +520,76 @@ ${M31_ADD}
 `;
 }
 
+/** Packed new/old noteRoot+seq must match pool NFT (input 0 / output 0). */
+export function bindPackedStmtToPaa1Asm(): string {
+  return `
+OP_DUP
+<${AIR_OFF_STMT + 145 + 64}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+<0> OP_OUTPUTTOKENCOMMITMENT
+<64> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
+OP_DUP
+<${AIR_OFF_STMT + 17 + 64}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+<0> OP_UTXOTOKENCOMMITMENT
+<64> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
+OP_DUP
+<${AIR_OFF_STMT + 145 + 8}> OP_SPLIT OP_NIP
+<8> OP_SPLIT OP_DROP
+<0> OP_OUTPUTTOKENCOMMITMENT
+<8> OP_SPLIT OP_NIP
+<8> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
+OP_DUP
+<${AIR_OFF_STMT + 17 + 8}> OP_SPLIT OP_NIP
+<8> OP_SPLIT OP_DROP
+<0> OP_UTXOTOKENCOMMITMENT
+<8> OP_SPLIT OP_NIP
+<8> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
+`;
+}
+
+/** Stack: packed → packed, i. i = first Fiat–Shamir query of this packed transcript. */
+export function fsIndex0Asm(): string {
+  return `
+OP_DUP
+<${AIR_OFF_STMT}> OP_SPLIT OP_NIP
+<${AIR_STMT_LEN}> OP_SPLIT OP_DROP
+OP_SHA256
+OP_OVER
+<${AIR_OFF_TRACE}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_CAT
+OP_OVER
+<${AIR_OFF_ROOTS}> OP_SPLIT OP_NIP
+<224> OP_SPLIT OP_DROP
+OP_CAT
+OP_SHA256
+OP_OVER
+<${AIR_OFF_NONCE}> OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
+OP_CAT
+<0x71756572696573> OP_CAT
+OP_SHA256
+<0x71> OP_CAT
+<0x00> OP_CAT
+OP_SHA256
+<2> OP_SPLIT OP_DROP
+${BE16_UNSIGNED}
+<${FRI_N}> OP_MOD
+`;
+}
+
 /**
  * Slot-0 C=Q·Z with N recomputed from the public interpolant T.
  * Stack in: packed blob.
- * i = idx[0], z = [i]G_1024, Z(z.x) ≠ 0, N = L0·cons + L23·seq from T,
- * then nTable[0] == N and qTable[0]·Z == N.
+ * i is recomputed from the packed transcript (not spender idx).
+ * qTable[0]·Z([i]G)=N from T.
  */
 export function slot0CqzAsm(): string {
   const l0 = lagrangeNewtonBlobs(0);
@@ -540,10 +598,7 @@ export function slot0CqzAsm(): string {
   return `
 ${defineNewtonFn()}
 ${packedMagicAsm()}
-OP_DUP
-<${AIR_OFF_IDX}> OP_SPLIT OP_NIP
-<2> OP_SPLIT OP_DROP
-${BE16_UNSIGNED}
+${fsIndex0Asm()}
 OP_SWAP
 OP_DUP
 <${AIR_OFF_QTABLE}> OP_SPLIT OP_NIP
@@ -578,10 +633,6 @@ OP_FROMALTSTACK
 OP_2SWAP
 OP_OVER
 ${vanishingUnrolledAsm(VANISH_XS)}
-OP_DUP
-OP_0
-OP_NUMNOTEQUAL
-OP_VERIFY
 OP_TOALTSTACK
 OP_2OVER
 OP_3 OP_PICK
@@ -1063,6 +1114,7 @@ export const BIND_T_KERNEL = `
 <2> OP_SPLIT OP_NIP
 ${defineNewtonFn()}
 ${packedMagicAsm()}
+${bindPackedStmtToPaa1Asm()}
 OP_DUP
 <${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
 <${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
@@ -1091,6 +1143,7 @@ OP_DROP
 <1> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_NIP
 OP_NIP
+${bindPackedStmtToPaa1Asm()}
 ${slot0CqzAsm()}
 OP_1
 `;

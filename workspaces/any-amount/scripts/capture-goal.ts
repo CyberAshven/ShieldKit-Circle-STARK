@@ -21,6 +21,7 @@ import { emptyState } from "../src/pool/state.ts";
 import {
   evaluateDigestOnlyPool,
   evaluateDummyKernels,
+  evaluateDummyConsistent,
   evaluateCookedLaterSlot,
   evaluateCookedNTable,
   evaluateCookedT,
@@ -158,6 +159,12 @@ const fakeNfVm = evaluatePoolSuccessorVm({
   },
   proof: fakeNfProof,
 });
+const dummyConsistent = evaluateDummyConsistent({
+  oldState: w.statement.oldState,
+  newState: w.statement.newState,
+  proof: raw,
+  statement: w.statement,
+});
 const dummyKernels = evaluateDummyKernels({
   oldState: w.statement.oldState,
   newState: w.statement.newState,
@@ -200,6 +207,7 @@ const vmLog = {
   sequence99: { accepted: seq99.accepted, error: seq99.error },
   fakeMembership: { accepted: fakeMem.accepted, error: fakeMem.error },
   fakeNullifier: { accepted: fakeNfVm.accepted, error: fakeNfVm.error },
+  dummyConsistent: { accepted: dummyConsistent.accepted, error: dummyConsistent.error },
   dummyKernels: { accepted: dummyKernels.accepted, error: dummyKernels.error },
   swappedDummy: { accepted: swappedDummy.accepted, error: swappedDummy.error },
   cookedNTable: { accepted: cookedNTable.accepted, error: cookedNTable.error },
