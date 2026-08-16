@@ -13,7 +13,7 @@ CashScript / Rust.
 - Soundness worksheet: TRACE=64, blowup=16, FRI_N=1024, queries=36, grind=20, rate 2/B → **128 conjectural bits**. `sound: true`. Old n=32/q=8 fails the build.
 - Prover FRIs \(Q=N/Z\) of the `onChainCells` interpolant (action/digest/roots/seq). Honest \(N\) vanishes on-trace so off-trace \(Q\) is not the zero polynomial. `plugin.verify` / `verifyFri` take **no private witness**: `proof.auth` carries the note preimage, so a fake nullifier + valid membership path is rejected (`nullifier preimage`). Amount conservation is `algebraicC(publicCells)` inside `verifyFri`, not in packed T.
 - BCH 2026 VM (libauth CashAssembly, not OP_RETURN): packed T/N/Q interpolate `onChainCells` (action, digest, roots, seq only). Reserves/delta/note limbs are not in that interpolant; `verifyFri` still checks `publicCells` + `algebraicC` + auth. Successor unlocking is packed AIR + redeem only. Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Inputs 12..17 run distinct slot `C=Q·Z` (slots 0–5) at recomputed Fiat–Shamir indices. Consensus spends use slots 0–35. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. The 100 KB spend checks slots 0–5 on chain; slots 6–35 compile on the 1 MB path. FRI *fold* stays on `verifyFri` (0zkbrewer #2: this is one bound prefix, not a full on-chain FRI fold).
-- Proof 64278 B, **10 shards**, 252 Merkle openings, slot redeem **5618**, unlocking max **5853**, Chipnet 6-slot successor **95172 B** / pool unlocking **2437 B**. 1-slot successor was 66555 B.
+- Proof 64278 B, **10 shards**, 252 Merkle openings, slot redeem **5618**, unlocking max **5853**, Chipnet 6-slot successor **95172 B** / pool unlocking **2437 B**. Consensus compile **270251 B** / pool unlocking **3637 B** (36-slot redeem). 1-slot successor was 66555 B.
 - Any-amount one set; Pedersen-hidden note amounts. On-chain PAA1 zeros the reserve field; pool UTXO is `STATE_BASE` only. Reserve conservation is `verifyFri` / `algebraicC`, not packed T. `runMixSuccessor` still updates machine reserve, noteRoot, and nullifierRoot.
 - Comparison table in `COMPARISON.md` (checkable axes only).
 
@@ -38,6 +38,15 @@ Lab address stays in gitignored `.local/lab-wallet.json`.
 | Genesis P2SH32 PAA1 | `1234194d719291b31e9bcfec3cf80885954a8946f8e00fdb0a72438c0048e2f6` |
 | 17 verifier-kernel carriers (10 FRI + bind-T + 6 slots) | `5c3d6102eebe58ce8217c1328b2326a24a0b53bc0eabb05293fbe95f614567ca` |
 | Mix successor (95172 B, unlocking 2437, 6× C=Q·Z) | `b6069db772455de4b247bbd50e1dea14244900e7517739157a1a9d53deeb9a7f` |
+
+Second 6-slot land (same lock, new mix), Electrum-accepted 2026-08-16:
+
+| Step | txid |
+| --- | --- |
+| Self-send vout-0 prep | `e42d0adaae8ec89690b90857f7a0ce07c41c3a8d6b4ff1ba372b043dee347826` |
+| Genesis P2SH32 PAA1 | `b92f1a952c0a44582bd6b23db557b8b4e300ab78d18705eee4badf676eb6bf03` |
+| 17 verifier-kernel carriers | `d65f679cc177fe223fda78f83cfc0cb6eee218403513e5f7ff9a32c9518d8ccb` |
+| Mix successor (95172 B, unlocking 2437) | `a408709c8fca1eca942548437ea9cdee054aa909215705a2c83842e54b7679d1` |
 
 Previous 1-slot lock, Electrum-accepted 2026-08-16:
 

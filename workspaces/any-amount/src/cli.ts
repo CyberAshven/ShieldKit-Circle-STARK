@@ -139,7 +139,7 @@ async function saveMachine(machine: PoolMachine, notebook: HeldNote[]): Promise<
 
 async function main(): Promise<void> {
   const cmd = process.argv[2] ?? "help";
-  if (cmd === "help" || cmd === "-h") {
+  if (cmd === "help" || cmd === "-h" || cmd === "--help") {
     console.log(help);
     return;
   }
