@@ -33,7 +33,15 @@ Output 0 must keep:
 
 Layla (2026-05-15) made NFT commitments **128 bytes**. That is why `PAA1` is 128 bytes, not a 40-byte hash of the state.
 
-The continuing lock is five-point **plus** required kernel inputs (`TXINPUTCOUNT >= 14` on the 6-slot path: inputs 1..10 SHA-256 paired-Merkle FRI at FRI_N path depth, input 11 bind-T, input 12 Circle fold, inputs 13..18 slot `C=Q·Z`). Unlocking of the pool input is the packed AIR (FS digest + public PAA1) plus redeem — not spent-leaf/rho/owner/`publicAmountSats`. A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Recursion is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount output.
+The continuing lock is five-point **plus** required kernel inputs. Standard
+6-slot path: inputs 1..10 SHA-256 paired-Merkle FRI at FRI_N path depth,
+input 11 bind-T, input 12 Circle fold (1 query), inputs 13..18 slot `C=Q·Z`
+(plus a fee input). Consensus 36-slot path: same 10 Merkle + bind-T, then
+**10** fold kernels (shards 0–9) and **36** slot kernels (59 inputs including
+fee on the landed 301279 B tx). Unlocking of the pool input is the packed AIR
+(FS digest + public PAA1) plus redeem — not spent-leaf/rho/owner/`publicAmountSats`.
+A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Recursion
+is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount output.
 
 ## Why not OP_RETURN (authoring)
 
@@ -70,9 +78,9 @@ P2PKH is **not** the shielded pool. The pool is the **covenant UTXO**.
 | Blowup / rate | 16 / `2/B` (quotient of the residual interpolant) |
 | Fold | Circle FRI fold (2024/278) with `x=0` fallback to `y`; partners are Merkle siblings |
 | Binding | **Off-chain** `publicCells`: reserves, delta, action, digest, roots. **On-chain** `onChainCells`: action, digest, roots, seq only (no reserve/delta). |
-| `sound` | Worksheet **128 conjectural bits**. Not a Lean theorem. On-chain is a FRI **prefix**, not the full fold. |
+| `sound` | Worksheet **128 conjectural bits**. Not a Lean theorem. On-chain is a FRI **prefix** (1 or 10 folded queries, not all 36). |
 
-An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserve, false note commitment, or false nullifier is rejected there. The off-chain FRI target is the residual quotient \(Q=C/Z\). The on-chain lock binds the new `PAA1` cell, walks packed Merkle openings, binds Newton `T` to `onChainCells`, and checks `C=Q·Z` per slot kernel (default **6** distinct slots so the spend stays under **100 KB** relay). A parallel **consensus** profile compiles **36** slot kernels into **one** tx ≤ **1 MB** (Chipnet miner). Unlocking and redeem are **10 KB** after Velma (the old ~1650-byte script-and-input box is gone). It does **not** yet do the full FRI fold. Never mainnet. Amount conservation is `verifyFri` / `algebraicC`, not the NFT reserve field (that field is zero).
+An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserve, false note commitment, or false nullifier is rejected there. The off-chain FRI target is the residual quotient \(Q=C/Z\). The on-chain lock binds the new `PAA1` cell, walks packed Merkle openings, binds Newton `T` to `onChainCells`, foldPairs **1** query per fold kernel (standard: 1 kernel; consensus: 10), and checks `C=Q·Z` per slot kernel (default **6** distinct slots so the spend stays under **100 KB** relay; **36** on the 1 MB consensus path). Unlocking and redeem are **10 KB** after Velma. Remaining query folds, `algebraicC`, auth, and grind stay in `verifyFri`. Never mainnet. Amount conservation is `verifyFri` / `algebraicC`, not the NFT reserve field (that field is zero).
 
 ## Confidential amounts
 
@@ -123,7 +131,7 @@ Fv1 is the joint **size gate** with toorik (fixed ticket, smaller AIR). It is a 
 
 ### What is still closed?
 
-On-chain `C=Q·Z` for all 36 FS slots (density bound: one slot kernel + T-bind kernel). Bind every Newton pair, not only AIR cells. Hidden-amount EC on the UTXO. OPTN upstream wiring, Quantumroot addresses, ML-KEM delivery. See `STATUS.md`.
+On-chain fold of all 36 FS queries (density: 1 query per fold redeem; consensus lands 10). `algebraicC` / reserve conservation on-chain without publishing reserves. Hidden-amount EC on the UTXO. OPTN upstream wiring, Quantumroot addresses, ML-KEM delivery. See `STATUS.md`.
 
 ### P2S or P2SH?
 

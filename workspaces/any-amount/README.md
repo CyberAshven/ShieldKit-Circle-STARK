@@ -12,9 +12,9 @@ size gate. This workspace is the product profile: one set, any amount.
 | `hash-lab-v0` backend | Live. Merkle notes **off-chain**; covenant is a **lab-gated conservation cell**. **Not private.** |
 | `circle-fri-m31` backend | Live AIR + residual-quotient Circle FRI. `plugin.verify` needs no private witness. Worksheet **128 conjectural bits**. |
 | CashToken 128-byte `PAA1` state + 5-point successor | Live. Lock binds instance id, noteRoot (equal or append), nfRoot. Rewritten `noteRoot` fails the 2026 VM. |
-| Chipnet genesis / successor | `pool chipnet-covenant` / `pool chipnet-mix` when funded. Not an OP_RETURN digest. |
-| Hidden amounts / confidential assets | Pedersen in the note leaf. PAA1 NFT reserve bytes are 0. Pool UTXO **sats** stay public. |
-| On-chain FRI prefix | Pool lock + **10** Merkle kernels + bind-T + **6** `C=Q·Z` slots in the 100 KB spend (all **36** in the 1 MB consensus spend). Unlocking **and** redeem ≤ **10 KB**. **Not** full fold / ZK. |
+| Chipnet genesis / successor | `pool chipnet-covenant` / `pool chipnet-mix` when funded. Consensus-size lands use JSON-RPC `sendrawtransaction`, not Electrum/P2P. Not an OP_RETURN digest. |
+| Hidden amounts / confidential assets | Pedersen in the note leaf. PAA1 NFT reserve bytes are 0. Successor unlocking is packed AIR + redeem only (no spent rho/owner). Pool UTXO **sats** stay public (`STATE_BASE`). |
+| On-chain Circle FRI prefix | Pool lock + **10** Merkle kernels + bind-T + fold + `C=Q·Z`. Standard: **1** fold + **6** slots, **98831 B** on Chipnet (`2acb1196…`). Consensus: **10** folds + **36** slots, **301279 B** on Chipnet (`18c74b49…`). Unlocking **and** redeem ≤ **10 KB**. **Not** 36/36 folds, **not** ZK. |
 | OPTN builtin register | **Not done.** Zero-touch: addon talks to `http://127.0.0.1:17432` if `pool serve` is running. |
 
 ## Why the lock binds the NFT cell
@@ -35,8 +35,11 @@ npx tsx src/cli.ts faucet
 npx tsx src/cli.ts pool create
 npx tsx src/cli.ts pool deposit --sats 12000
 npx tsx src/cli.ts pool withdraw --sats 5000
+npx tsx src/cli.ts pool measure-tx
 npx tsx src/cli.ts serve
 ```
+
+Chipnet fold txs and the JSON-RPC land path: [`MILESTONE.md`](MILESTONE.md), [`STATUS.md`](STATUS.md).
 
 Wallet files stay under `.local/` (gitignored). Never pass a seed on the command line.
 

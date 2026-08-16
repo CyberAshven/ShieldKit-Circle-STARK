@@ -6,7 +6,7 @@ than XMR / Zcash / Aztec / Voidify / Tornado.
 | Axis | This lab (any-amount) | Monero | Zcash | Aztec | Voidify | Tornado Cash |
 | --- | --- | --- | --- | --- | --- | --- |
 | Trusted setup | None (hash STARK / Circle FRI) | None (rings + BP) | Historic Groth16; Orchard Halo2 | Honk / Plonk-ish setup | Groth16 + ceremony | Groth16 + ceremony |
-| On-chain verify | BCH 2026 VM: packed AIR + 10 Merkle kernels + bind-T + **6** (100 KB) or **36** (1 MB) slot `C=Q·Z`. Digest / dummy / cross-statement fail. Fold kernel is in-tree; Chipnet fold land is not this milestone. | Consensus ring/BP | Consensus SNARK | L2 rollup circuits | Solana Groth16 verifier ELF | Ethereum Groth16 verifier |
+| On-chain verify | BCH 2026 VM: packed AIR + 10 Merkle + bind-T + **1** fold + **6** C=QZ (100 KB, Chipnet `2acb1196…`) or **10** folds + **36** C=QZ (1 MB, Chipnet `18c74b49…`). Digest / dummy / wrong-fold-index / cross-statement fail. Not 36/36 folds. | Consensus ring/BP | Consensus SNARK | L2 rollup circuits | Solana Groth16 verifier ELF | Ethereum Groth16 verifier |
 | Any-amount | Yes (one set) | Yes | Yes | Yes | Nova-style amounts | Classic fixed tickets |
 | Amount hiding | **Note** amounts: Pedersen commit. **Pool UTXO**: public `STATE_BASE` (not Zcash/Monero/Voidify hidden output value). Successor unlocking does not publish spent leaf / rho / owner. | Yes (BP) | Yes | Yes | Yes (Nova/Groth16) | No (ticket size public) |
 | Anon-set growth | Incremental Merkle (depth 16); mix successor updates noteRoot + nullifierRoot + reserve | Ring size (not a growing set) | Note commitment tree | Note tree | Pool tree | Pool tree per ticket |

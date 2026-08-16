@@ -7,9 +7,9 @@ distinct `C=Q·Z` slots (measured 95172 B before the fold input). A parallel
 **consensus** path (one tx ≤ **1 MB**, unlockings still ≤ 10 KB) carries all
 **36** slots. Chained txs can go larger.
 
-**Milestone (agreed Chipnet proof):** 36-slot successor
-`356630bd10c6bf9b3d4bbd6d1835ed3baed430641f168c2ad1e1f534a3080898`
-(270251 B). Details: [`MILESTONE.md`](MILESTONE.md).
+**Milestones (Chipnet):** fold-executing standard `2acb1196…` (98831 B, 1 fold + 6 C=QZ);
+fold-executing consensus `18c74b49…` (301279 B, 10 folds + 36 C=QZ). Earlier 36-slot
+**no-fold** proof `356630bd…` (270251 B). Details: [`MILESTONE.md`](MILESTONE.md).
 
 This is **not** ZK, **not** Lean, **not** mainnet. The shipped lock **requires**
 Circle fold kernels that foldPair **1** FS query **each** (2026 VM density: 2+
