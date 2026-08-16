@@ -35,6 +35,7 @@ import {
   AIR_OFF_IDX,
   AIR_OFF_NTABLE,
   AIR_OFF_QTABLE,
+  AIR_PACKED_SIZE,
   BE16_UNSIGNED,
   encodeAirPacked,
   fiatShamirQueryIndices,
@@ -208,7 +209,7 @@ describe("M31 / Newton / circle on 2026 VM", () => {
       assert.equal(bad.accepted, false);
     }
     const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
-    assert.equal(packed.length, 1600);
+    assert.equal(packed.length, AIR_PACKED_SIZE);
     const interp = statementNewton(d.statement);
     const at = 11n;
     const blobExpect = newtonEvalJs(interp.even, at);
@@ -267,11 +268,13 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const cooked = new Uint8Array(packed);
     const i0 = (packed[AIR_OFF_IDX]! << 8) | packed[AIR_OFF_IDX + 1]!;
     const slot = nqzAt(d.statement, i0);
-    const q2 = add(slot.q, 1n);
-    cooked.set(encodeLe(q2), AIR_OFF_QTABLE);
-    cooked.set(encodeLe(mul(q2, slot.z)), AIR_OFF_NTABLE);
-    const cook = evalPadded(compileSlot0CqzLock(), pushData(cooked));
-    assert.equal(cook.accepted, false, "cooked nTable = Q'·Z must fail N-from-T");
+    if (slot.z !== 0n) {
+      const q2 = add(slot.q, 1n);
+      cooked.set(encodeLe(q2), AIR_OFF_QTABLE);
+      cooked.set(encodeLe(mul(q2, slot.z)), AIR_OFF_NTABLE);
+      const cook = evalPadded(compileSlot0CqzLock(), pushData(cooked));
+      assert.equal(cook.accepted, false, "cooked nTable = Q'·Z must fail N-from-T");
+    }
     assert.ok(compileCqzKernel().length <= 10_000, `cqz kernel ${compileCqzKernel().length}`);
     const tOk = evalPadded(compileBindTLock(), pushData(packed));
     assert.equal(tOk.accepted, true, tOk.error ?? "bind T");

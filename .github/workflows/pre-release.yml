@@ -1,0 +1,28 @@
+name: pre-release
+
+on:
+  push:
+    branches:
+      - '@ABLalgorithm'
+
+permissions:
+  contents: write
+
+jobs:
+  chipnet-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Force-update chipnet-lab tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f chipnet-lab HEAD
+          git push --force origin refs/tags/chipnet-lab
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: chipnet-lab
+          name: chipnet-lab
+          prerelease: true
+          target_commitish: ${{ github.sha }}
+          body: Chipnet-only pre-release of Any-amount lab. Not ZK. Not mainnet. Not a merge to main.

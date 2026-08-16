@@ -5,6 +5,27 @@ export const M31_MUL = `OP_MUL <${M31_P}> OP_MOD`;
 export const M31_ADD = `OP_ADD <${M31_P}> OP_MOD`;
 /** a b → (a − b) mod p  (add p before MOD so a < b is safe). */
 export const M31_SUB = `OP_SUB <${M31_P}> OP_ADD <${M31_P}> OP_MOD`;
+/** 2^{-1} mod M31. 2 · 2^30 ≡ 1 (mod 2^31 − 1). */
+export const M31_TWO_INV = 1073741824;
+
+/**
+ * Fermat inverse a^{p-2} = a^{2^31-3}. Bit 30 of p-2 is 1, bit 1 is 0, the rest are 1.
+ * Stack: a → a^{-1}. Zero is rejected.
+ */
+export const M31_INV = `
+OP_DUP
+OP_0
+OP_NUMEQUAL
+OP_NOT
+OP_VERIFY
+OP_DUP
+${Array.from({ length: 30 }, (_, k) => {
+  const bit = 29 - k;
+  const square = `OP_DUP\n${M31_MUL}`;
+  return bit === 1 ? square : `${square}\nOP_OVER\n${M31_MUL}`;
+}).join("\n")}
+OP_NIP
+`;
 
 export function pushM31(n: bigint | number): string {
   return `<${typeof n === "bigint" ? n.toString() : n}>`;

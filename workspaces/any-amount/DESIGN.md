@@ -33,7 +33,7 @@ Output 0 must keep:
 
 Layla (2026-05-15) made NFT commitments **128 bytes**. That is why `PAA1` is 128 bytes, not a 40-byte hash of the state.
 
-The continuing lock is five-point **plus** required kernel inputs (`TXINPUTCOUNT >= 13`: inputs 1..10 SHA-256 paired-Merkle FRI at FRI_N path depth, input 11 bind-T, input 12 slot-0 `C=Q·Z`). Unlocking of the pool input is the packed AIR (FS digest + public PAA1) plus redeem — not spent-leaf/rho/owner/`publicAmountSats`. A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Recursion is not used.
+The continuing lock is five-point **plus** required kernel inputs (`TXINPUTCOUNT >= 13` on the 6-slot path: inputs 1..10 SHA-256 paired-Merkle FRI at FRI_N path depth, input 11 bind-T, inputs 12..17 slot `C=Q·Z`). Unlocking of the pool input is the packed AIR (FS digest + public PAA1) plus redeem — not spent-leaf/rho/owner/`publicAmountSats`. A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Recursion is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount output. The fold kernel (`fold-kernel.ts`) is compiled in-tree and is **not** yet a required input on the landed lock.
 
 ## Why not OP_RETURN (authoring)
 

@@ -8,6 +8,8 @@ import { add, encodeLe, mul } from "../backends/circle/m31.ts";
 import { decodeFriProof, verifyFri, type FriProof } from "../backends/circle/fri.ts";
 import { FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
 import {
+  compileFriMerkleOnlyKernel,
+  compileFriMerkleOnlyLockP2sh32,
   compileFriQueryKernel,
   compileFriQueryLockP2sh32,
   FRI_KERNEL_INPUTS,
@@ -98,7 +100,7 @@ export function encodeFriQueryUnlocking(args: {
     push(steps),
     layerPush,
     Uint8Array.of(0x51),
-    push(compileFriQueryKernel()),
+    push(compileFriMerkleOnlyKernel()),
   ]);
 }
 
@@ -155,7 +157,7 @@ export function evaluateFriQueryOpening(args: {
   const carrierLock = Uint8Array.of(0x75, 0x51);
   const sourceOutputs = [
     { lockingBytecode: carrierLock, valueSatoshis: 1000n },
-    { lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: 1000n },
+    { lockingBytecode: compileFriMerkleOnlyLockP2sh32(), valueSatoshis: 1000n },
   ];
   const transaction = {
     version: 2,
@@ -181,7 +183,7 @@ export function evaluateFriQueryOpening(args: {
     accepted: result === true,
     error: result === true ? null : String(result),
     unlockingBytes: encodeFriQueryUnlocking(args).length,
-    lockingBytes: compileFriQueryLockP2sh32().length,
+    lockingBytes: compileFriMerkleOnlyLockP2sh32().length,
   };
 }
 
@@ -695,6 +697,22 @@ export function evaluateSwappedDummyKernels(args: {
     ...args,
     kernelUnlockings: dummyFriShardUnlockings(),
     airPacked: swapped,
+    statement: args.statement,
+  });
+}
+
+/** Packed FS index flipped so foldPair uses the wrong domain point. */
+export function evaluateWrongFoldIndex(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const packed = encodeAirPacked(args.statement, args.proof);
+  packed[AIR_OFF_IDX] ^= 1;
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: packed,
     statement: args.statement,
   });
 }

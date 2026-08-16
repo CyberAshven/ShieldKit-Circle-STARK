@@ -33,6 +33,8 @@ export type FriOpening = {
   parentIndex: number;
   root: Uint8Array;
   layerIndex: number;
+  /** Fiat–Shamir domain index for this query (same on all 7 layers). */
+  queryIndex: number;
 };
 
 /** One PUSHDATA2 of the 1200-byte AIR packed blob (roots at offset 0). */
@@ -66,6 +68,7 @@ export function collectFriOpenings(proof: Uint8Array | FriProof): FriOpening[] {
         parentIndex: parentIndexOf(i, n),
         root: p.layerRoots[r]!,
         layerIndex,
+        queryIndex: q.index,
       });
     }
   }
@@ -82,7 +85,15 @@ export function shardFriOpenings(openings: FriOpening[]): FriOpening[][] {
   if (openings.length === 0) throw new Error("no FRI openings");
   const n = FRI_KERNEL_INPUTS;
   const shards: FriOpening[][] = Array.from({ length: n }, () => []);
-  for (let i = 0; i < openings.length; i += 1) shards[i % n]!.push(openings[i]!);
+  const grouped = openings.length >= COMMITTED_LAYERS && openings.length % COMMITTED_LAYERS === 0;
+  if (grouped) {
+    const nQ = openings.length / COMMITTED_LAYERS;
+    for (let q = 0; q < nQ; q += 1) {
+      shards[q % n]!.push(...openings.slice(q * COMMITTED_LAYERS, (q + 1) * COMMITTED_LAYERS));
+    }
+  } else {
+    for (let i = 0; i < openings.length; i += 1) shards[i % n]!.push(openings[i]!);
+  }
   for (let s = 0; s < n; s += 1) {
     if (shards[s]!.length === 0) shards[s] = [openings[openings.length - 1]!];
     const packed = shardUnlockingBytes(shards[s]!);
@@ -147,6 +158,7 @@ export function dummyFriOpenings(count = FRI_KERNEL_INPUTS): FriOpening[] {
       parentIndex: Math.floor(i / 2),
       root: tree.root,
       layerIndex: k % COMMITTED_LAYERS,
+      queryIndex: 0,
     });
   }
   return out;
@@ -194,6 +206,7 @@ export function dummyFriOpeningsWide(count = 1): FriOpening[] {
       parentIndex: Math.floor(i / 2),
       root: tree.root,
       layerIndex: 0,
+      queryIndex: 0,
     });
   }
   return out;

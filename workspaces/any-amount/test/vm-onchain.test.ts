@@ -34,6 +34,7 @@ import {
   evaluateMissingProofPool,
   evaluateOnChainVerify,
   evaluatePoolSuccessorVm,
+  evaluateWrongFoldIndex,
   proofFitsEnvelope,
 } from "../src/chain/vm-verifier.ts";
 import { collectFriOpenings, dummyFriOpenings, dummyFriOpeningsWide } from "../src/chain/fri-openings.ts";
@@ -294,6 +295,7 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
       statement: w.statement,
     });
     assert.equal(cookedT.accepted, false, cookedT.error ?? "cooked T must fail bind");
+    void evaluateWrongFoldIndex;
     void evaluateCookedLaterSlot;
 
     const redeem = compilePoolCovenant();

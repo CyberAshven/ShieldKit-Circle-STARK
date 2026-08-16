@@ -1,13 +1,17 @@
 /**
- * Packed AIR prefix + M31/Newton/circle snippets for on-chain N=Q·Z.
- * Layout (1200-byte payload, always PUSHDATA2):
- *   0    7×32 layerRoots
- *   224  traceRoot
- *   256  grindNonce u32be
- *   260  Newton even (32 felts)
- *   388  Newton odd
- *   516  encodeStatement (433)
- *   949  Q table (36×4)
+ * Packed AIR prefix + M31/Newton/circle snippets for on-chain N=Q·Z + fold.
+ * Layout (PUSHDATA2):
+ *   0     7×32 layerRoots
+ *   224   traceRoot
+ *   256   grindNonce u32be
+ *   260   Newton even
+ *   392   Newton odd
+ *   524   FS digest + two public PAA1 cells
+ *   957   Q table (36×4)
+ *   1101  FS indices
+ *   1173  on-chain cells
+ *   1429  N table
+ *   1576  FRI final (8 felts)
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { encodeStatement, type PoolStatement } from "../pool/statement.ts";
@@ -19,10 +23,10 @@ import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
 import { add, encodeLe, M31, mul, sub, type M31El } from "../backends/circle/m31.ts";
 import { circleDomain } from "../backends/circle/fri.ts";
-import { COMMITTED_LAYERS, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
+import { COMMITTED_LAYERS, FRI_FINAL, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
 import { encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
 
-export const AIR_PACKED_SIZE = 1600;
+export const AIR_PACKED_SIZE = 1608;
 export const AIR_OFF_ROOTS = 0;
 export const AIR_OFF_TRACE = 224;
 export const AIR_OFF_NONCE = 256;
@@ -38,6 +42,7 @@ export const AIR_OFF_QTABLE = 957;
 export const AIR_OFF_IDX = 1101;
 export const AIR_OFF_CELLS = 1173;
 export const AIR_OFF_NTABLE = 1429;
+export const AIR_OFF_FINAL = 1576;
 export const AIR_NEWTON_FELTS = 33;
 export const AIR_NEWTON_BYTES = AIR_NEWTON_FELTS * 4;
 
@@ -281,6 +286,9 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
   const cells = onChainCells(statement);
   while (cells.length < TRACE_LEN) cells.push(0n);
   packed.set(encodeFeltBlob(cells.slice(0, TRACE_LEN)), AIR_OFF_CELLS);
+  for (let i = 0; i < FRI_FINAL; i += 1) {
+    packed.set(encodeLe(p.final[i] ?? 0n), AIR_OFF_FINAL + i * 4);
+  }
   return packed;
 }
 

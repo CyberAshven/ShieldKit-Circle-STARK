@@ -16,8 +16,10 @@ npx tsx src/cli.ts --help
 | --- | --- |
 | Off-chain Circle FRI prover + verifier | TypeScript `proveFri` / `verifyFri`. False reserve / fake note / fake nullifier fail. |
 | Optional Rust prove worker | `crates/circle-fri-worker` — old n=32 wire; TS is the shipped path. |
-| On-chain 2026 lock | P2SH32 five-point `PAA1` + 10 FRI Merkle kernels + bind-T + slot `C=Q·Z` (default 1 slot / 100 KB; consensus profile 36 slots / 1 MB). |
-| Not in this pre-release | Full FRI fold, ZK, Lean, mainnet, OPTN builtin register. |
+| On-chain 2026 lock | P2SH32 five-point `PAA1` + 10 FRI Merkle kernels + bind-T + **6** slot `C=Q·Z` (100 KB) or **36** (1 MB). |
+| Chipnet proof | 36-slot successor **270251 B** `356630bd10c6bf9b3d4bbd6d1835ed3baed430641f168c2ad1e1f534a3080898` — see [`workspaces/any-amount/MILESTONE.md`](workspaces/any-amount/MILESTONE.md). |
+| On-chain fold | Dedicated fold kernel is in-tree (`fold-kernel.ts`). Isolated `foldPair` / λ / redeem-size tests pass. Full successor VM land is the next Chipnet proof. |
+| Not this pre-release | ZK masking, Lean, mainnet, OPTN builtin register, hidden pool-UTXO value. |
 
 Lab notes: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md),
 [`DESIGN.md`](workspaces/any-amount/DESIGN.md).

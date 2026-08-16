@@ -4,6 +4,8 @@ Chipnet-only screen for the any-amount lab. **Not** registered in OPTN
 upstream (`src/addons/builtin/index.ts`). Zero-touch: do not edit OPTN
 from this repo.
 
+Typecheck: `npm ci && npm run typecheck` in this folder (CI job `addon`).
+
 Until a separate OPTN PR exists, this folder is the manifest + screen.
 The first client is the lab CLI: `workspaces/any-amount` (`npx tsx src/cli.ts`).
 

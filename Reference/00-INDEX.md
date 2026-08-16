@@ -11,6 +11,8 @@ Last updated 2026-08-16. Every entry below exists on disk or is a public URL tha
 | Early CashVM ZIP | `Reference/prior-art/zk-stark-cashvm-early/` | Goldilocks FRI + CashScript folds |
 | verifier.cash (Groth16, not STARK) | `Reference/prior-art/verifier-cash.md` | BCH-native pairing verifier leaderboard; packaging lessons |
 | Any-amount Chipnet lab | `workspaces/any-amount/` | Product profile on this branch |
+| Chipnet 36-slot milestone | `workspaces/any-amount/MILESTONE.md` | Tx `356630bd…` 270251 B |
+| Nostr pool announce | `Reference/prior-art/nostr-pool-announce.md` | Kind 30017 discovery bus (not consensus) |
 
 ## Public remotes
 

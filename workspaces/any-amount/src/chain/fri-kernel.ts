@@ -170,6 +170,8 @@ OP_UNTIL
 OP_1
 `;
 
+export const FRI_MERKLE_ONLY_KERNEL = FRI_QUERY_KERNEL;
+
 export function compileFriQueryKernel(): Uint8Array {
   const bin = cashAssemblyToBin(FRI_QUERY_KERNEL);
   if (typeof bin === "string") throw new Error(`fri kernel: ${bin}`);
@@ -178,4 +180,12 @@ export function compileFriQueryKernel(): Uint8Array {
 
 export function compileFriQueryLockP2sh32(): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compileFriQueryKernel()));
+}
+
+export function compileFriMerkleOnlyKernel(): Uint8Array {
+  return compileFriQueryKernel();
+}
+
+export function compileFriMerkleOnlyLockP2sh32(): Uint8Array {
+  return compileFriQueryLockP2sh32();
 }

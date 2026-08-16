@@ -3,10 +3,17 @@
 **Pre-release.** Off-chain TypeScript prover/verifier + a 2026 pool lock that
 **binds** the new 128-byte PAA1 NFT and spends **10 FRI-kernel inputs** that
 Merkle-walk packed openings. Default spend targets **100 KB relay** with **6**
-distinct `C=Q·Z` slots (measured 95172 B). A parallel **consensus** path (one tx
-≤ **1 MB**, unlockings still ≤ 10 KB) carries all **36** slots. Chained txs can go larger. This is **not**
-a full FRI fold, **not** ZK, **not** Lean, **not** mainnet. Language: TypeScript /
-CashScript / Rust.
+distinct `C=Q·Z` slots (measured 95172 B before the fold input). A parallel
+**consensus** path (one tx ≤ **1 MB**, unlockings still ≤ 10 KB) carries all
+**36** slots. Chained txs can go larger.
+
+**Milestone (agreed Chipnet proof):** 36-slot successor
+`356630bd10c6bf9b3d4bbd6d1835ed3baed430641f168c2ad1e1f534a3080898`
+(270251 B). Details: [`MILESTONE.md`](MILESTONE.md).
+
+This is **not** ZK, **not** Lean, **not** mainnet. On-chain fold is in-tree
+(`src/chain/fold-kernel.ts`); isolated fold tests pass; successor VM land is
+next. Language: TypeScript / CashScript / Rust.
 
 ## Passing
 
@@ -20,7 +27,7 @@ CashScript / Rust.
 ## Not done (honest)
 
 - Full DEEP-ALI / 128-bit algebraic note-tree hash inside the AIR (note tree is still SHA-256; AIR binds public reserves/digest).
-- On-chain FRI *fold* of all layers / all 36 C=QZ slots (density). A 1024-wide tree that plants honest Q at the FS index is not rejected by Merkle+slot-0 alone.
+- Chipnet land of the dedicated fold kernel (isolated `foldPair` / λ / redeem ≤ 10 KB pass; full successor VM still open).
 - On-chain **value** hiding (pool UTXO sats remain public; only note amounts are committed).
 - 100 faucet-funded Chipnet wallets. VM eval of the same bytecode is the on-chain bar.
 - Formal paper proof. Rust worker still speaks the old n=32 wire (optional; TS is shipped).

@@ -20,7 +20,7 @@ import { STATE_BASE_SATS } from "../pool/state.ts";
  *
  * Output-0's 128-byte PAA1 is bound: instance id, noteRoot (equal or
  * incremental append), nullifierRoot (equal or SHA-256(old||nf)).
- * Unlocking: <packed AIR 1600> [<redeem>]. Membership, nullifier, and note
+ * Unlocking: <packed AIR 1608> [<redeem>]. Membership, nullifier, and note
  * preimage stay inside verifyFri — they are not published on the successor.
  */
 export const FIVE_POINT_PAA1 = `
