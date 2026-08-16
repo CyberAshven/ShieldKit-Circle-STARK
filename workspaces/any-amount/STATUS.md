@@ -58,9 +58,17 @@ Previous 1-slot lock, Electrum-accepted 2026-08-16:
 
 `b4d66312…` / `8ccad3b8…` still interpolated full `publicCells` into Newton T. `52b46dab…` published the spent preimage.
 
-**36-slot 1 MB consensus** compiles one tx (270251 B after the matching 36-slot redeem; VM-accepted off-chain with `createVirtualMachineBch2026(false)`). Pool unlocking pushes `compilePoolCovenant({slotKernels:36})` so P2SH32 HASH256 matches the genesis lock (a 6-slot redeem cannot spend a 36-slot lock). Public Electrum timed out; Start9 BCHN P2P (`192.168.0.55:48333`) rejected `5dcf42cc726017f8a93b8e19f37bf41e38bb6094904befe08a0c94b056295d9e`: `not standard: size 270251 > max allowed 100000`. Chipnet default is `fRequireStandard = true`.
+**36-slot consensus spend landed on Chipnet** after Start9 BCHN `acceptnonstdtxn=1` + local mine. Public Electrum has the raw 270251 B tx:
 
-This is **not a hashpower problem**. ASICSeer (stratum on :3333/:3334) only mines whatever Bitcoin Cash Node puts in `getblocktemplate`. BCHN dropped the 270 KB tx at **relay policy** before the mempool, so extra ASIC hash cannot include it. Chipnet consensus block size is 2 MB; 270 KB fits a block if the node will accept it. Set `acceptnonstdtxn=1` on the Start9 **BCHN** service (not on ASICSeer), restart BCHN, resubmit. Then ASICSeer will see it in the next template. No fake inclusion.
+| Step | txid |
+| --- | --- |
+| Genesis | `006186da1d496abace49e1f1d8712c3c18d9bf522910aa8fb60b553be374cab5` |
+| Kernels | `7a4e685d3bbfc39eb59f0f29ab11e05135eb76111e1c58a4f84ee2d13e32b8ba` |
+| Successor (270251 B, 36× C=Q·Z) | `356630bd10c6bf9b3d4bbd6d1835ed3baed430641f168c2ad1e1f534a3080898` |
+
+Block (3+ conf on local BCHN): `000000001abbed79d00f1d2d3e47c16a62114c40da6f559b6d24b438703636b7`
+
+Public miners will not *relay* a 270 KB tx. This one got in because it was submitted to the lab BCHN mempool and mined. ASICSeer solo is pointed at that BCHN (`bitcoincashd.startos:48332`). Stratum for more hash: `start9oslinux.local:3333` (or `192.168.0.55:3333`), user `bchtest:qrzq5f9ltv70u4su7d40agd4nlnp8qlgqcma6x2tvp`.
 
 Explorer: `https://chipnet.imaginary.cash/tx/<txid>`
 
