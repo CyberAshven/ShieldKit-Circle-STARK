@@ -11,7 +11,8 @@ import { writeI64BE, writeU64BE } from "../src/pool/bytes.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
 import { encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
-import { AIR_PACKED_SIZE } from "../src/chain/air-cqz.ts";
+import { AIR_OFF_CELLS, AIR_PACKED_SIZE } from "../src/chain/air-cqz.ts";
+import { bytesToFelt4 } from "../src/backends/circle/felt-hash.ts";
 
 function parsePushes(script: Uint8Array): Uint8Array[] {
   const out: Uint8Array[] = [];
@@ -163,5 +164,28 @@ describe("pool e2e mix", () => {
       false,
       "new reserve u64 must not appear",
     );
+    const packed = pushes[0]!;
+    const feltAt = (i: number): bigint => {
+      const o = AIR_OFF_CELLS + i * 4;
+      return (
+        BigInt(packed[o]!) |
+        (BigInt(packed[o + 1]!) << 8n) |
+        (BigInt(packed[o + 2]!) << 16n) |
+        (BigInt(packed[o + 3]!) << 24n)
+      );
+    };
+    const absDelta =
+      mix.statement.publicAmountSats < 0n ? -mix.statement.publicAmountSats : mix.statement.publicAmountSats;
+    assert.equal(feltAt(0), 0n, "cell0 old reserve must be omitted");
+    assert.equal(feltAt(1), 0n, "cell1 new reserve must be omitted");
+    assert.equal(feltAt(2), 0n, "cell2 absDelta must be omitted");
+    assert.notEqual(mix.statement.oldState.reserveSats, 0n);
+    assert.notEqual(mix.statement.newState.reserveSats, 0n);
+    assert.notEqual(absDelta, 0n);
+    const noteLimbs = bytesToFelt4(mix.statement.noteCommitment);
+    assert.ok(noteLimbs.some((n) => n !== 0n), "spent note commitment is nonzero");
+    for (let i = 0; i < 4; i += 1) {
+      assert.equal(feltAt(4 + i), 0n, `noteCommitment limb ${i} must be omitted`);
+    }
   });
 });

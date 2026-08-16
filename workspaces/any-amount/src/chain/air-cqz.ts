@@ -280,6 +280,7 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
   }
   const cells = publicCells(statement);
   while (cells.length < TRACE_LEN) cells.push(0n);
+  for (const i of [0, 1, 2, 4, 5, 6, 7, 16, 17]) cells[i] = 0n;
   packed.set(encodeFeltBlob(cells.slice(0, TRACE_LEN)), AIR_OFF_CELLS);
   return packed;
 }
@@ -732,7 +733,7 @@ OP_BIN2NUM
 
 /** Stack: packed even odd → same. even/odd interpolate AIR-relevant packed cells. */
 export function bindTToCellsAsm(): string {
-  const needed = new Set([0, 1, 2, 3, 18, 23, 24]);
+  const needed = new Set([3, 18, 23, 24]);
   const lines: string[] = [];
   for (const { i, j, x, y } of conjugatePairs().filter((p) => needed.has(p.i) || needed.has(p.j))) {
     lines.push(`
