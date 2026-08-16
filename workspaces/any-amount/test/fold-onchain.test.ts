@@ -124,6 +124,18 @@ describe("on-chain Circle fold", () => {
     assert.ok(ev.unlockingBytes <= 10_000);
   });
 
+  it("one-query fold kernel accepts shard 1 at the matching FS index", () => {
+    const d = deposit();
+    const proof = proveFri(d.statement, d.witness);
+    const ev = evaluateFoldKernelOnly({
+      statement: d.statement,
+      proof: encodeFriProof(proof),
+      nFold: 1,
+      sourceInput: 2,
+    });
+    assert.equal(ev.accepted, true, ev.error ?? "shard-1 fold");
+  });
+
   it("honest successor still VM-accepts after on-chain fold", () => {
     const d = deposit();
     const proof = proveFri(d.statement, d.witness);

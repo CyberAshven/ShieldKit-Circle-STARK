@@ -30,10 +30,12 @@ function sleep(ms: number) {
 
 async function broadcastRetry(
   client: Awaited<ReturnType<typeof connectChipnet>>,
-  rawHex: string,
+  raw: Uint8Array,
+  expectedTxid: string,
 ): Promise<string> {
+  const rawHex = binToHex(raw);
   let last: Error | undefined;
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 3; i += 1) {
     try {
       return await broadcast(client, rawHex);
     } catch (e) {
@@ -43,14 +45,24 @@ async function broadcastRetry(
         !msg.includes("missing") &&
         !msg.includes("orphan") &&
         !msg.includes("bad-txns-inputs") &&
-        !msg.includes("timed out")
+        !msg.includes("timed out") &&
+        !msg.includes("tx-size")
       ) {
-        throw last;
+        break;
       }
-      await sleep(1500 * (i + 1));
+      await sleep(1200 * (i + 1));
     }
   }
-  throw last ?? new Error("broadcast retry exhausted");
+  try {
+    await getTx(client, expectedTxid);
+    return expectedTxid;
+  } catch {
+    const p2p = await broadcastP2p(raw);
+    if (p2p.ok) return expectedTxid;
+    throw new Error(
+      `${last?.message ?? "electrum"}; p2p ${p2p.host}:${p2p.port} ${p2p.reject ?? "fail"} computed=${expectedTxid}`,
+    );
+  }
 }
 
 async function waitForTxid(
@@ -105,7 +117,7 @@ async function landEnvelope(
     if (picked.tx_pos !== 0) {
       step = "prep-vout0";
       const prep = compileSelfSendVout0(wallet, picked);
-      prepTxid = await broadcastRetry(client, binToHex(prep.raw));
+      prepTxid = await broadcastRetry(client, prep.raw, prep.txid);
       await waitForTxid(client, prep.txid);
       picked = { tx_hash: prep.txid, tx_pos: 0, value: prep.value, height: 0 };
     }
@@ -119,7 +131,7 @@ async function landEnvelope(
       envelope,
       slotKernels: slots,
     });
-    const genesisTxid = await broadcastRetry(client, binToHex(genesis.raw));
+    const genesisTxid = await broadcastRetry(client, genesis.raw, genesis.txid);
     await waitForTxid(client, genesisTxid);
     if (genesis.changeValue === undefined || genesis.changeValue < 200_000) {
       return { envelope, slots, ok: false, genesis: genesisTxid, prep: prepTxid ?? null, error: `change too small ${genesis.changeValue}` };
@@ -131,7 +143,7 @@ async function landEnvelope(
       1_000,
       slots,
     );
-    const kernelTxid = await broadcastRetry(client, binToHex(funded.raw));
+    const kernelTxid = await broadcastRetry(client, funded.raw, funded.txid);
     await waitForTxid(client, kernelTxid);
     step = "successor";
     const successor = compileCovenantSuccessor({
@@ -153,29 +165,9 @@ async function landEnvelope(
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
     });
-    let succTxid: string;
-    let p2p: Awaited<ReturnType<typeof broadcastP2p>> | undefined;
-    try {
-      succTxid = await broadcastRetry(client, binToHex(successor.raw));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      try {
-        await getTx(client, successor.txid);
-        succTxid = successor.txid;
-      } catch {
-        if (msg.toLowerCase().includes("tx-size") || successor.txBytes > 100_000) {
-          p2p = await broadcastP2p(successor.raw);
-          if (!p2p.ok) {
-            throw new Error(
-              `${msg}; p2p ${p2p.host}:${p2p.port} ${p2p.reject ?? "fail"}; txBytes=${successor.txBytes} computed=${successor.txid}`,
-            );
-          }
-          succTxid = successor.txid;
-        } else {
-          throw new Error(`${msg}; txBytes=${successor.txBytes} feeUtxo=${funded.changeValue} computed=${successor.txid}`);
-        }
-      }
-    }
+    writeFileSync(join(scratch, `successor-${envelope}.hex`), binToHex(successor.raw));
+    const succTxid = await broadcastRetry(client, successor.raw, successor.txid);
+    const p2p = successor.txBytes > 100_000 ? { used: true, txBytes: successor.txBytes } : null;
     return {
       envelope,
       slots,

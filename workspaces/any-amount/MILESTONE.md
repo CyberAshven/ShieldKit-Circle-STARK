@@ -29,9 +29,10 @@ Explorer: `https://chipnet.imaginary.cash/tx/356630bd10c6bf9b3d4bbd6d1835ed3baed
 
 ## Fold (this tree, not `356630bd…`)
 
-The successor lock now **requires** `fold-kernel.ts`. Isolated + VM tests accept
+The successor lock **requires** `fold-kernel.ts`. Isolated + VM tests accept
 an honest fold and reject a flipped FS index. Density allows **1** folded query
-per redeem.
+per redeem. Standard pins **1** fold input. Consensus pins **10** (one first
+query per FRI shard). `algebraicC` / auth / grind stay in `verifyFri`.
 
 Fold-executing Chipnet land (standard 98831 B, Electrum-accepted):
 

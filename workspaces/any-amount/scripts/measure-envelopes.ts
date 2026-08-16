@@ -12,6 +12,7 @@ import {
   SLOT_KERNEL_COUNT_CONSENSUS,
   slotsKernelUnlocking,
 } from "../src/chain/air-cqz.ts";
+import { compileFoldKernel, foldKernelCount } from "../src/chain/fold-kernel.ts";
 import { RELAY_STANDARD_TX_BYTES, CONSENSUS_TX_BYTES, UNLOCKING_MAX_BYTES } from "../src/chain/envelope.ts";
 
 const outPath = process.argv[2];
@@ -54,6 +55,7 @@ const std = measure(SLOT_KERNEL_COUNT);
 const cons = measure(SLOT_KERNEL_COUNT_CONSENSUS);
 const k0 = compileSlotsKernel(0);
 const u0 = slotsKernelUnlocking(0);
+const fold1 = compileFoldKernel(1);
 const sweep: string[] = [];
 for (const n of [1, 2, 3, 4, 5, 6, 8, 12, 18, 36]) {
   const m = measure(n);
@@ -72,6 +74,8 @@ const text = [
   `standard txBytes=${std.txBytes} unlocking=${std.unlockingBytes} limit=${RELAY_STANDARD_TX_BYTES} ok=${std.txBytes <= RELAY_STANDARD_TX_BYTES && std.unlockingBytes <= UNLOCKING_MAX_BYTES}`,
   `consensus txBytes=${cons.txBytes} unlocking=${cons.unlockingBytes} limit=${CONSENSUS_TX_BYTES} ok=${cons.txBytes <= CONSENSUS_TX_BYTES && cons.unlockingBytes <= UNLOCKING_MAX_BYTES}`,
   `slot0 redeem=${k0.length} unlocking=${u0.length} unlockingMax=${UNLOCKING_MAX_BYTES}`,
+  `fold1 redeem=${fold1.length} unlockingMax=${UNLOCKING_MAX_BYTES} under10k=${fold1.length <= UNLOCKING_MAX_BYTES}`,
+  `foldKernels standard=${foldKernelCount(SLOT_KERNEL_COUNT)} consensus=${foldKernelCount(SLOT_KERNEL_COUNT_CONSENSUS)}`,
   ...sweep,
 ].join("\n");
 

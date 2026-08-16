@@ -14,6 +14,7 @@ import {
 import { compileNoteMerkleWalk } from "../src/chain/note-merkle.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
 import { encodeAirPacked, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
+import { FOLD_KERNEL_COUNT_CONSENSUS, foldKernelCount } from "../src/chain/fold-kernel.ts";
 import { evaluateBch2026, evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
 
 describe("covenant five-point compile", () => {
@@ -78,6 +79,13 @@ describe("covenant five-point compile", () => {
     });
     assert.ok(Buffer.from(measured.raw).toString("hex").includes("50414131"), "successor must embed public PAA1");
     assert.equal(Buffer.from(measured.raw).toString("hex").includes("5041413153544d54"), false, "full PAA1STMT preimage stays off the unlocking");
+    const rawHex = Buffer.from(measured.raw).toString("hex");
+    assert.equal(rawHex.includes(Buffer.from(note.rho).toString("hex")), false, "spent rho must not appear in successor");
+    assert.equal(
+      rawHex.includes(Buffer.from(note.ownerSecret).toString("hex")),
+      false,
+      "owner secret must not appear in successor",
+    );
     assert.ok(measured.txBytes <= 100_000);
     assert.ok(measured.unlockingBytes <= 10_000);
   });
@@ -156,5 +164,7 @@ describe("covenant five-point compile", () => {
     });
     assert.equal(vm.accepted, true, vm.error ?? "honest 36-slot successor must VM-accept");
     assert.ok(vm.unlockingBytes <= 10_000);
+    assert.equal(foldKernelCount(SLOT_KERNEL_COUNT_CONSENSUS), FOLD_KERNEL_COUNT_CONSENSUS);
+    assert.equal(FOLD_KERNEL_COUNT_CONSENSUS, 10);
   });
 });

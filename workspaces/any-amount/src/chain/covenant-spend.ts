@@ -65,7 +65,7 @@ import {
   SLOTS_PER_KERNEL,
   slotsKernelUnlocking,
 } from "./air-cqz.ts";
-import { compileFoldLockP2sh32, foldKernelUnlocking } from "./fold-kernel.ts";
+import { compileFoldLockP2sh32, foldKernelCount, foldKernelUnlocking } from "./fold-kernel.ts";
 import type { PoolStatement } from "../pool/statement.ts";
 
 export type LockKind = "p2s" | "p2sh32";
@@ -237,13 +237,14 @@ export function compileCovenantSuccessor(args: {
   if (kernels.length !== FRI_KERNEL_INPUTS) {
     throw new Error(`need ${FRI_KERNEL_INPUTS} FRI kernel UTXOs, got ${kernels.length}`);
   }
+  const foldN = foldKernelCount(slotKernels);
   const extras = args.extraKernels ?? [
     { tx_hash: dummy, tx_pos: 10, value: 1000 },
-    { tx_hash: dummy, tx_pos: 11, value: 1000 },
-    ...Array.from({ length: slotKernels }, (_, i) => ({ tx_hash: dummy, tx_pos: 12 + i, value: 1000 })),
+    ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 11 + f, value: 1000 })),
+    ...Array.from({ length: slotKernels }, (_, i) => ({ tx_hash: dummy, tx_pos: 11 + foldN + i, value: 1000 })),
   ];
-  if (extras.length !== 2 + slotKernels) {
-    throw new Error(`need ${2 + slotKernels} extra kernel UTXOs, got ${extras.length}`);
+  if (extras.length !== 1 + foldN + slotKernels) {
+    throw new Error(`need ${1 + foldN + slotKernels} extra kernel UTXOs, got ${extras.length}`);
   }
 
   const generated = generateTransaction({
@@ -268,14 +269,14 @@ export function compileCovenantSuccessor(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: cqzKernelUnlocking(),
       },
-      {
-        outpointIndex: extras[1]!.tx_pos,
-        outpointTransactionHash: hexToBin(extras[1]!.tx_hash),
+      ...Array.from({ length: foldN }, (_, f) => ({
+        outpointIndex: extras[1 + f]!.tx_pos,
+        outpointTransactionHash: hexToBin(extras[1 + f]!.tx_hash),
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: foldKernelUnlocking(Math.min(slotKernels, 1)),
-      },
+        unlockingBytecode: foldKernelUnlocking(1, 1 + f),
+      })),
       ...Array.from({ length: slotKernels }, (_, i) => ({
-        outpointIndex: extras[2 + i]!.tx_pos,
+        outpointIndex: extras[1 + foldN + i]!.tx_pos,
         outpointTransactionHash: hexToBin(extras[2 + i]!.tx_hash),
         sequenceNumber: 0xffffffff,
         unlockingBytecode: slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
@@ -419,7 +420,8 @@ export function compileFundVerifierKernels(
 } {
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
-  const extraCount = 2 + slotKernels;
+  const foldN = foldKernelCount(slotKernels);
+  const extraCount = 1 + foldN + slotKernels;
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
   const fee = 2_000n + BigInt(count) * 80n;
@@ -445,7 +447,10 @@ export function compileFundVerifierKernels(
     outputs: [
       ...Array.from({ length: FRI_KERNEL_INPUTS }, () => friOut),
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
-      { lockingBytecode: compileFoldLockP2sh32(Math.min(slotKernels, 1)), valueSatoshis: BigInt(kernelSats) },
+      ...Array.from({ length: foldN }, (_, f) => ({
+        lockingBytecode: compileFoldLockP2sh32(1, 1 + f),
+        valueSatoshis: BigInt(kernelSats),
+      })),
       ...Array.from({ length: slotKernels }, (_, i) => ({
         lockingBytecode: compileSlotsLockP2sh32(i),
         valueSatoshis: BigInt(kernelSats),

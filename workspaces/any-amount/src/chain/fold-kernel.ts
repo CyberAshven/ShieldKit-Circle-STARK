@@ -5,12 +5,21 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { COMMITTED_LAYERS } from "../backends/circle/params.ts";
 import { AIR_OFF_IDX, SLOT_KERNEL_COUNT } from "./air-cqz.ts";
+import { FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { foldDefinesAsm, foldQueriesAsm } from "./fold-asm.ts";
 
 export const FOLD_KERNEL_INPUTS = 1;
 export const FOLD_KERNEL_INDEX = 12;
 /** Measured: 2+ query folds exceed 2026 VM density in the successor kernel. */
 export const FOLD_QUERY_COUNT_STANDARD = 1;
+/** Standard 100 KB path: one fold input (density + remaining bytes). */
+export const FOLD_KERNEL_COUNT_STANDARD = 1;
+/** Consensus 1 MB path: one 1-query fold kernel per FRI shard (first query in that shard). */
+export const FOLD_KERNEL_COUNT_CONSENSUS = FRI_KERNEL_INPUTS;
+
+export function foldKernelCount(slotKernels: number): number {
+  return slotKernels > SLOT_KERNEL_COUNT ? FOLD_KERNEL_COUNT_CONSENSUS : FOLD_KERNEL_COUNT_STANDARD;
+}
 
 /** Stack in: raw unlocking. Stack out: first 56-byte query pair blob. */
 function firstQueryPairsAsm(): string {
@@ -56,8 +65,9 @@ ${firstQueryPairsAsm()}
 `;
 }
 
-export function foldKernelAsm(nFold = SLOT_KERNEL_COUNT): string {
-  const pulls = Array.from({ length: nFold }, (_, q) => `${extractQueryPairsAsm(1 + q)}\nOP_CAT`).join("\n");
+export function foldKernelAsm(nFold = 1, sourceInput = 1): string {
+  const qOffset = sourceInput - 1;
+  const pulls = Array.from({ length: nFold }, (_, q) => `${extractQueryPairsAsm(sourceInput + q)}\nOP_CAT`).join("\n");
   return `
 ${foldDefinesAsm()}
 <0> OP_INPUTBYTECODE
@@ -66,7 +76,7 @@ ${foldDefinesAsm()}
 OP_0
 ${pulls}
 OP_OVER
-<${AIR_OFF_IDX}> OP_SPLIT OP_NIP
+<${AIR_OFF_IDX + qOffset * 2}> OP_SPLIT OP_NIP
 <${nFold * 2}> OP_SPLIT OP_DROP
 ${foldQueriesAsm(nFold)}
 OP_1
@@ -100,8 +110,8 @@ OP_NIP
 
 const FOLD_REDEEM_PAD = 0;
 
-export function compileFoldKernel(nFold = SLOT_KERNEL_COUNT): Uint8Array {
-  const bin = cashAssemblyToBin(foldKernelAsm(nFold));
+export function compileFoldKernel(nFold = 1, sourceInput = 1): Uint8Array {
+  const bin = cashAssemblyToBin(foldKernelAsm(nFold, sourceInput));
   if (typeof bin === "string") throw new Error(`fold-kernel: ${bin}`);
   if (bin.length >= FOLD_REDEEM_PAD) return bin;
   const pairs = Math.ceil((FOLD_REDEEM_PAD - bin.length) / 2);
@@ -116,8 +126,8 @@ export function compileFoldKernel(nFold = SLOT_KERNEL_COUNT): Uint8Array {
   return out;
 }
 
-export function compileFoldLockP2sh32(nFold = SLOT_KERNEL_COUNT): Uint8Array {
-  return encodeLockingBytecodeP2sh32(hash256(compileFoldKernel(nFold)));
+export function compileFoldLockP2sh32(nFold = 1, sourceInput = 1): Uint8Array {
+  return encodeLockingBytecodeP2sh32(hash256(compileFoldKernel(nFold, sourceInput)));
 }
 
 function pushRedeem(data: Uint8Array): Uint8Array {
@@ -126,6 +136,6 @@ function pushRedeem(data: Uint8Array): Uint8Array {
   return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
 }
 
-export function foldKernelUnlocking(nFold = SLOT_KERNEL_COUNT): Uint8Array {
-  return pushRedeem(compileFoldKernel(nFold));
+export function foldKernelUnlocking(nFold = 1, sourceInput = 1): Uint8Array {
+  return pushRedeem(compileFoldKernel(nFold, sourceInput));
 }

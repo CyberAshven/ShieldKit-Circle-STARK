@@ -12,16 +12,17 @@ distinct `C=Q·Z` slots (measured 95172 B before the fold input). A parallel
 (270251 B). Details: [`MILESTONE.md`](MILESTONE.md).
 
 This is **not** ZK, **not** Lean, **not** mainnet. The shipped lock **requires**
-a Circle fold kernel that foldPairs **1** FS query (2026 VM density: 2+ queries
-in one redeem exceed ~800×script-length). C=QZ stays 6/36. Language: TypeScript /
-CashScript / Rust.
+Circle fold kernels that foldPair **1** FS query **each** (2026 VM density: 2+
+queries in one redeem exceed ~800×script-length). Standard 100 KB: **1** fold.
+Consensus 1 MB: **10** folds (one first-query per FRI shard). C=QZ stays 6/36.
+Language: TypeScript / CashScript / Rust.
 
 ## Passing
 
 - Soundness worksheet: TRACE=64, blowup=16, FRI_N=1024, queries=36, grind=20, rate 2/B → **128 conjectural bits**. `sound: true`. Old n=32/q=8 fails the build.
 - Prover FRIs \(Q=N/Z\) of the `onChainCells` interpolant (action/digest/roots/seq). Honest \(N\) vanishes on-trace so off-trace \(Q\) is not the zero polynomial. `plugin.verify` / `verifyFri` take **no private witness**: `proof.auth` carries the note preimage, so a fake nullifier + valid membership path is rejected (`nullifier preimage`). Amount conservation is `algebraicC(publicCells)` inside `verifyFri`, not in packed T.
-- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): packed T/N/Q interpolate `onChainCells` (action, digest, roots, seq only). Reserves/delta/note limbs are not in that interpolant; `verifyFri` still checks `publicCells` + `algebraicC` + auth. Successor unlocking is packed AIR + redeem only. Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Inputs 12..17 run distinct slot `C=Q·Z` (slots 0–5) at recomputed Fiat–Shamir indices. Consensus spends use slots 0–35. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. The 100 KB spend checks slots 0–5 on chain; slots 6–35 compile on the 1 MB path. FRI *fold* stays on `verifyFri` (0zkbrewer #2: this is one bound prefix, not a full on-chain FRI fold).
-- Proof 64278 B, **10 shards**, 252 Merkle openings, slot redeem **5618**, unlocking max **5853**, Chipnet 6-slot successor **95172 B** / pool unlocking **2437 B**. Consensus compile **270251 B** / pool unlocking **3637 B** (36-slot redeem). 1-slot successor was 66555 B.
+- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): packed T/N/Q interpolate `onChainCells` (action, digest, roots, seq only). Reserves/delta/note limbs are not in that interpolant; `verifyFri` still checks `publicCells` + `algebraicC` + auth + grind + the other query folds. Successor unlocking is packed AIR + redeem only (no rho/owner). Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Next input(s) foldPair **1** query each (standard: 1 fold; consensus: **10** folds, shards 0–9). Remaining inputs run distinct slot `C=Q·Z` (slots 0–5 standard, 0–35 consensus) at recomputed Fiat–Shamir indices. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, wrong-fold-index, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. This is still a **bound prefix** (Merkle + bind-T + 1/10 folds + 6/36 C=QZ), not a full on-chain FRI of all 36 queries. Conservation stays in `verifyFri` — on-chain PAA1 zeros the reserve field.
+- Proof 64278 B, **10 shards**, 252 Merkle openings, slot redeem **5618**, unlocking max **5853**, fold redeem **2955**. Chipnet 6-slot + 1-fold successor **98831 B** / pool unlocking **2485 B**. Consensus compile **301279 B** / pool unlocking **4045 B** (36-slot + **10** folds). 1-slot successor was 66555 B.
 - Any-amount one set; Pedersen-hidden note amounts. On-chain PAA1 zeros the reserve field; pool UTXO is `STATE_BASE` only. Reserve conservation is `verifyFri` / `algebraicC`, not packed T. `runMixSuccessor` still updates machine reserve, noteRoot, and nullifierRoot.
 - Comparison table in `COMPARISON.md` (checkable axes only).
 
@@ -77,6 +78,8 @@ Previous 1-slot lock, Electrum-accepted 2026-08-16:
 Block (3+ conf on local BCHN): `000000001abbed79d00f1d2d3e47c16a62114c40da6f559b6d24b438703636b7`
 
 Public miners will not *relay* a 270 KB tx. This one got in because it was submitted to the lab BCHN mempool and mined. ASICSeer solo is pointed at that BCHN (`bitcoincashd.startos:48332`). Stratum for more hash: `start9oslinux.local:3333` (or `192.168.0.55:3333`), user `bchtest:qrzq5f9ltv70u4su7d40agd4nlnp8qlgqcma6x2tvp`.
+
+**10-fold consensus compile** (36 C=QZ + 10 shard folds) measures **301279 B** and VM-accepts. A 2026-08-16 Chipnet submit of that successor was rejected on P2P `192.168.0.55:48333` as `not standard: size 301279 > 100000` even though `bitcoin.conf` already has `acceptnonstdtxn=1`. Not mined. Next submit is JSON-RPC `sendrawtransaction` (not P2P policy).
 
 **Fold-executing standard successor** (1 query fold + 6× C=QZ, 98831 B), Electrum-accepted 2026-08-16:
 

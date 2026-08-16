@@ -205,7 +205,7 @@ ${r + 1 < COMMITTED_LAYERS ? nextPairCheckAsm(r) : finalCheckAsm()}
 `;
 }
 
-/** Stack: packed builtPairs idxBlob → (consumed). Folds `nFold` queries. */
+/** Stack: packed builtPairs idxBlob → (consumed). Folds `nFold` queries. idxBlob is already sliced. */
 export function foldQueriesAsm(nFold: number): string {
   const layers = Array.from({ length: COMMITTED_LAYERS }, (_, r) => layerFoldAsm(r)).join("\n");
   return `
