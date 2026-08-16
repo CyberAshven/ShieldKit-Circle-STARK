@@ -22,7 +22,7 @@ import { decodeFriProof } from "../backends/circle/fri.ts";
 import { decodeState } from "../pool/state.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { friShardUnlockings } from "./fri-openings.ts";
-import { cqzKernelUnlocking } from "./air-cqz.ts";
+import { cqzKernelUnlocking, SLOT_KERNEL_COUNT, SLOTS_PER_KERNEL, slotsKernelUnlocking } from "./air-cqz.ts";
 
 export type LockKind = "p2s" | "p2sh32";
 
@@ -201,6 +201,12 @@ export function compileCovenantSuccessor(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: cqzKernelUnlocking(),
       },
+      ...Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) => ({
+        outpointIndex: 11 + i,
+        outpointTransactionHash: hexToBin(dummy),
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
+      })),
       {
         outpointIndex: args.feeUtxo.tx_pos,
         outpointTransactionHash: hexToBin(args.feeUtxo.tx_hash),

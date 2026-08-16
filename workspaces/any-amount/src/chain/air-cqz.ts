@@ -16,7 +16,7 @@ import { airQuotientLde, publicCells } from "../backends/circle/air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
-import { add, encodeLe, mul, sub, type M31El } from "../backends/circle/m31.ts";
+import { add, encodeLe, M31, mul, sub, type M31El } from "../backends/circle/m31.ts";
 import { circleDomain } from "../backends/circle/fri.ts";
 import { COMMITTED_LAYERS, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
 import { encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
@@ -350,10 +350,14 @@ OP_NUMEQUAL
   );
 }
 
+function defineFn(asm: string, index: number, name: string): string {
+  const body = cashAssemblyToBin(asm);
+  if (typeof body === "string") throw new Error(`${name}: ${body}`);
+  return `${hexPush(body)}\n<${index}>\nOP_DEFINE`;
+}
+
 function defineNewtonFn(): string {
-  const body = cashAssemblyToBin(newtonFromBlobAsm());
-  if (typeof body === "string") throw new Error(`newton fn: ${body}`);
-  return `${hexPush(body)}\n<0>\nOP_DEFINE`;
+  return defineFn(newtonFromBlobAsm(), 0, "newton");
 }
 
 /** Stack: even odd x y → T(x,y). Requires newton fn 0. Alt-clean. */
@@ -648,28 +652,483 @@ export function compileSlot0CqzLock(): Uint8Array {
   return compileOrThrow(`${slot0CqzAsm()}\nOP_1`, "slot0-cqz");
 }
 
-/** Kernel redeem: load packed blob from input 0 unlocking, then slot-0 C=Q·Z. */
-export const CQZ_KERNEL = `
+function conjugatePairs(): { i: number; j: number; x: M31El; y: M31El }[] {
+  const seen = new Set<string>();
+  const pairs: { i: number; j: number; x: M31El; y: M31El }[] = [];
+  for (let i = 0; i < TRACE_LEN; i += 1) {
+    const p = smallDomain[i]!;
+    const key = p.x.toString();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const ny = p.y === 0n ? 0n : M31 - p.y;
+    let j = i;
+    for (let k = 0; k < TRACE_LEN; k += 1) {
+      if (smallDomain[k]!.x === p.x && smallDomain[k]!.y === ny) {
+        j = k;
+        break;
+      }
+    }
+    pairs.push({ i, j, x: p.x, y: p.y });
+  }
+  return pairs;
+}
+
+function extractCellAsm(index: number): string {
+  return `
+<${AIR_OFF_CELLS + index * 4}> OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
+OP_BIN2NUM
+`;
+}
+
+/** Stack: packed even odd → same. even/odd interpolate AIR-relevant packed cells. */
+export function bindTToCellsAsm(): string {
+  const needed = new Set([0, 1, 2, 3, 18, 23, 24]);
+  const lines: string[] = [];
+  for (const { i, j, x, y } of conjugatePairs().filter((p) => needed.has(p.i) || needed.has(p.j))) {
+    lines.push(`
+OP_OVER
+${pushFelt(x)}
+<0> OP_INVOKE
+OP_OVER
+${pushFelt(x)}
+<0> OP_INVOKE
+OP_4 OP_PICK
+${extractCellAsm(i)}
+OP_5 OP_PICK
+${extractCellAsm(j)}
+OP_2DUP
+${M31_ADD}
+OP_4 OP_PICK
+OP_DUP
+${M31_ADD}
+OP_NUMEQUALVERIFY
+${pushFelt(y)}
+OP_DUP
+${M31_ADD}
+OP_3 OP_PICK
+${M31_MUL}
+OP_2 OP_PICK
+OP_2 OP_PICK
+${M31_SUB}
+OP_NUMEQUALVERIFY
+OP_2DROP
+OP_2DROP
+`);
+  }
+  return lines.join("\n");
+}
+
+function be8UnsignedAsm(): string {
+  const oneByte = `
+OP_1 OP_SPLIT
+OP_ROT
+<256> OP_MUL
+OP_ROT
+<0x00> OP_CAT
+OP_BIN2NUM
+OP_ADD
+OP_SWAP
+`;
+  return `
+<0>
+OP_SWAP
+${oneByte}
+${oneByte}
+${oneByte}
+${oneByte}
+${oneByte}
+${oneByte}
+${oneByte}
+${oneByte}
+OP_DROP
+`;
+}
+
+function be8ModPAsm(): string {
+  return `
+${be8UnsignedAsm()}
+<2147483647> OP_MOD
+`;
+}
+
+function eqCellToStmtU64Asm(cellIndex: number, stmtOff: number): string {
+  return `
+OP_DUP
+${extractCellAsm(cellIndex)}
+OP_OVER
+<${stmtOff}> OP_SPLIT OP_NIP
+<8> OP_SPLIT OP_DROP
+${be8ModPAsm()}
+OP_NUMEQUALVERIFY
+`;
+}
+
+/** Stack: packed → packed. AIR cells match statement fields. */
+export function bindCellsToStatementAsm(): string {
+  const stmtOld = AIR_OFF_STMT + 17;
+  const stmtNew = AIR_OFF_STMT + 145;
+  return `
+OP_DUP
+${extractCellAsm(3)}
+OP_OVER
+<${AIR_OFF_STMT + 8}> OP_SPLIT OP_NIP
+<1> OP_SPLIT OP_DROP
+OP_BIN2NUM
+OP_NUMEQUALVERIFY
+${eqCellToStmtU64Asm(0, stmtOld + 16)}
+${eqCellToStmtU64Asm(1, stmtNew + 16)}
+${eqCellToStmtU64Asm(23, stmtOld + 8)}
+${eqCellToStmtU64Asm(24, stmtNew + 8)}
+OP_DUP
+${extractCellAsm(2)}
+OP_OVER
+<${AIR_OFF_STMT + 8}> OP_SPLIT OP_NIP
+<1> OP_SPLIT OP_DROP
+OP_BIN2NUM
+OP_2 OP_PICK
+<${AIR_OFF_STMT + 9}> OP_SPLIT OP_NIP
+<8> OP_SPLIT OP_DROP
+OP_TOALTSTACK
+OP_1
+OP_NUMEQUAL
+OP_IF
+  OP_FROMALTSTACK
+  ${be8ModPAsm()}
+OP_ELSE
+  OP_FROMALTSTACK
+  ${be8UnsignedAsm()}
+  <18446744073709551616>
+  OP_SWAP
+  OP_SUB
+  <2147483647> OP_MOD
+OP_ENDIF
+OP_NUMEQUALVERIFY
+OP_DUP
+${extractCellAsm(18)}
+OP_OVER
+<${AIR_OFF_STMT}> OP_SPLIT OP_NIP
+<${AIR_STMT_LEN}> OP_SPLIT OP_DROP
+OP_SHA256
+<4> OP_SPLIT OP_DROP
+<0x00> OP_CAT
+OP_BIN2NUM
+<2147483647> OP_MOD
+OP_NUMEQUALVERIFY
+`;
+}
+
+/**
+ * One FS slot. Stack: packed even odd action slot → packed even odd action slot.
+ * Recomputes N from T; nTable[s]==N; if Z≠0 then qTable[s]·Z==N.
+ */
+function oneFsSlotBodyAsm(): string {
+  const l0 = lagrangeNewtonBlobs(0);
+  const l23 = lagrangeNewtonBlobs(23);
+  const g64 = `${pushFelt(G64.x)}\n${pushFelt(G64.y)}`;
+  return `
+OP_4 OP_PICK
+OP_1 OP_PICK
+<2> OP_MUL
+<${AIR_OFF_IDX}> OP_ADD
+OP_SPLIT OP_NIP
+<2> OP_SPLIT OP_DROP
+${BE16_UNSIGNED}
+OP_TOALTSTACK
+OP_4 OP_PICK
+OP_1 OP_PICK
+<4> OP_MUL
+<${AIR_OFF_QTABLE}> OP_ADD
+OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
+OP_BIN2NUM
+OP_TOALTSTACK
+OP_4 OP_PICK
+OP_1 OP_PICK
+<4> OP_MUL
+<${AIR_OFF_NTABLE}> OP_ADD
+OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
+OP_BIN2NUM
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+${pushFelt(G1024.x)}
+${pushFelt(G1024.y)}
+<2> OP_INVOKE
+OP_OVER
+<3> OP_INVOKE
+OP_TOALTSTACK
+OP_2SWAP
+OP_TOALTSTACK
+OP_TOALTSTACK
+OP_TOALTSTACK
+OP_2 OP_PICK
+OP_TOALTSTACK
+OP_TOALTSTACK
+OP_TOALTSTACK
+OP_TOALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_2OVER
+OP_3 OP_PICK
+OP_3 OP_PICK
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DUP
+${g64}
+${CIRCLE_ADD}
+OP_5 OP_PICK
+OP_5 OP_PICK
+OP_3 OP_PICK
+OP_3 OP_PICK
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DUP
+${g64}
+${CIRCLE_ADD}
+OP_7 OP_PICK
+OP_7 OP_PICK
+OP_3 OP_PICK
+OP_3 OP_PICK
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DROP
+OP_2DROP
+OP_2DUP
+${hexPush(l0.even)}
+${hexPush(l0.odd)}
+OP_2SWAP
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DUP
+${hexPush(l23.even)}
+${hexPush(l23.odd)}
+OP_2SWAP
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DROP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_ROT
+OP_FROMALTSTACK
+${airNumeratorAsm()}
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_DUP
+OP_0
+OP_NUMEQUAL
+OP_IF
+  OP_DROP
+  OP_0
+  OP_NUMEQUALVERIFY
+  OP_0
+  OP_NUMEQUALVERIFY
+  OP_DROP
+  OP_3 OP_ROLL
+  OP_0
+  OP_NUMEQUALVERIFY
+OP_ELSE
+  OP_1 OP_PICK
+  OP_7 OP_PICK
+  OP_NUMEQUALVERIFY
+  OP_1 OP_PICK
+  OP_1 OP_PICK
+  ${M31_MUL}
+  OP_6 OP_PICK
+  OP_NUMEQUALVERIFY
+  OP_2DROP
+  OP_DROP
+  OP_3 OP_ROLL
+  OP_DROP
+OP_ENDIF
+`;
+}
+
+/**
+ * All FS slots + T bound to packed cells + cells bound to the statement.
+ * Stack in: packed blob.
+ */
+export function allSlotsCqzAsm(): string {
+  return `
+${defineNewtonFn()}
+${defineFn(evalTFromBlobAsm(), 1, "evalT")}
+${defineFn(SCALAR_MUL_FAST, 2, "fast")}
+${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
+${packedMagicAsm()}
+OP_DUP
+<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_TOALTSTACK
+OP_DUP
+<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_FROMALTSTACK
+OP_SWAP
+${bindTToCellsAsm()}
+OP_TOALTSTACK
+OP_TOALTSTACK
+${bindCellsToStatementAsm()}
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_OVER
+<${AIR_OFF_STMT + 8}> OP_SPLIT OP_NIP
+<1> OP_SPLIT OP_DROP
+OP_BIN2NUM
+<0>
+OP_BEGIN
+  OP_DUP
+  <${FRI_QUERIES}>
+  OP_LESSTHAN
+  OP_IF
+    ${oneFsSlotBodyAsm()}
+    OP_1ADD
+    OP_0
+  OP_ELSE
+    OP_DROP
+    OP_1
+  OP_ENDIF
+OP_UNTIL
+OP_2DROP
+OP_2DROP
+`;
+}
+
+export function compileBindTLock(): Uint8Array {
+  return compileOrThrow(
+    `
+${defineNewtonFn()}
+${packedMagicAsm()}
+OP_DUP
+<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_TOALTSTACK
+OP_DUP
+<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_FROMALTSTACK
+OP_SWAP
+${bindTToCellsAsm()}
+OP_TOALTSTACK
+OP_TOALTSTACK
+${bindCellsToStatementAsm()}
+OP_DROP
+OP_1
+`,
+    "bind-t",
+  );
+}
+
+export function compileAllSlotsCqzLock(): Uint8Array {
+  return compileOrThrow(`${allSlotsCqzAsm()}\nOP_1`, "all-slots-cqz");
+}
+
+function pushRedeem(data: Uint8Array): Uint8Array {
+  if (data.length <= 75) return Uint8Array.of(data.length, ...data);
+  if (data.length <= 255) return Uint8Array.of(0x4c, data.length, ...data);
+  return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
+}
+
+function paddedUnlocking(redeem: Uint8Array, target = 9700): Uint8Array {
+  const body = pushRedeem(redeem);
+  if (body.length >= target) return body;
+  const pad = new Uint8Array(Math.max(1, target - body.length - 3));
+  pad.fill(0x22);
+  const dummy = pushDataPad(pad);
+  const out = new Uint8Array(dummy.length + body.length);
+  out.set(dummy, 0);
+  out.set(body, dummy.length);
+  return out;
+}
+
+function pushDataPad(data: Uint8Array): Uint8Array {
+  if (data.length <= 75) return Uint8Array.of(data.length, ...data);
+  if (data.length <= 255) return Uint8Array.of(0x4c, data.length, ...data);
+  return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
+}
+
+/** Bind T + statement cells. */
+export const BIND_T_KERNEL = `
 <0> OP_INPUTBYTECODE
 <1> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_NIP
-${slot0CqzAsm()}
+${defineNewtonFn()}
+${packedMagicAsm()}
+OP_DUP
+<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_TOALTSTACK
+OP_DUP
+<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_FROMALTSTACK
+OP_SWAP
+${bindTToCellsAsm()}
+OP_TOALTSTACK
+OP_TOALTSTACK
+${bindCellsToStatementAsm()}
+OP_DROP
 OP_1
 `;
 
+export const SLOTS_PER_KERNEL = 1;
+export const SLOT_KERNEL_COUNT = 1;
+
+/** Unlocking: <dummy> <start> <redeem>. Checks start .. start+SLOTS_PER_KERNEL. */
+export function slotsCqzAsm(): string {
+  return `
+OP_DROP
+<0> OP_INPUTBYTECODE
+<1> OP_SPLIT OP_NIP
+<2> OP_SPLIT OP_NIP
+OP_NIP
+${slot0CqzAsm()}
+OP_1
+`;
+}
+
+/** Kernel redeem: bind T to the public interpolant (input 11). */
+export const CQZ_KERNEL = BIND_T_KERNEL;
+
 export function compileCqzKernel(): Uint8Array {
   return compileOrThrow(CQZ_KERNEL, "cqz-kernel");
+}
+
+export function compileSlotsKernel(): Uint8Array {
+  return compileOrThrow(slotsCqzAsm(), "slots-kernel");
 }
 
 export function compileCqzLockP2sh32(): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compileCqzKernel()));
 }
 
+export function compileSlotsLockP2sh32(): Uint8Array {
+  return encodeLockingBytecodeP2sh32(hash256(compileSlotsKernel()));
+}
+
 export function cqzKernelUnlocking(): Uint8Array {
-  const data = compileCqzKernel();
-  if (data.length <= 75) return Uint8Array.of(data.length, ...data);
-  if (data.length <= 255) return Uint8Array.of(0x4c, data.length, ...data);
-  return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
+  return pushRedeem(compileCqzKernel());
+}
+
+export function slotsKernelUnlocking(start: number): Uint8Array {
+  const redeem = compileSlotsKernel();
+  const startPush = start === 0 ? Uint8Array.of(0x00) : start <= 16 ? Uint8Array.of(0x50 + start) : Uint8Array.of(1, start);
+  const dummy = Uint8Array.of(0x00);
+  const body = pushRedeem(redeem);
+  const out = new Uint8Array(dummy.length + startPush.length + body.length);
+  out.set(dummy, 0);
+  out.set(startPush, dummy.length);
+  out.set(body, dummy.length + startPush.length);
+  return out;
 }
 
 export function compileScalarMulFastLock(expected: CirclePoint): Uint8Array {

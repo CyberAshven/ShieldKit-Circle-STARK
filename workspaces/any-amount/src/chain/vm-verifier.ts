@@ -8,7 +8,14 @@ import { add, encodeLe, mul } from "../backends/circle/m31.ts";
 import { decodeFriProof, verifyFri, type FriProof } from "../backends/circle/fri.ts";
 import { FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
 import { compileFriQueryKernel, compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS, FRI_QUERY_KERNEL } from "./fri-kernel.ts";
-import { compileCqzLockP2sh32, cqzKernelUnlocking } from "./air-cqz.ts";
+import {
+  compileCqzLockP2sh32,
+  compileSlotsLockP2sh32,
+  cqzKernelUnlocking,
+  SLOT_KERNEL_COUNT,
+  SLOTS_PER_KERNEL,
+  slotsKernelUnlocking,
+} from "./air-cqz.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import {
   dummyFriOpenings,
@@ -17,7 +24,7 @@ import {
   friShardUnlockings,
   proofShardReport,
 } from "./fri-openings.ts";
-import { AIR_OFF_IDX, AIR_OFF_NTABLE, AIR_OFF_QTABLE, encodeAirPacked, nqzAt } from "./air-cqz.ts";
+import { AIR_OFF_EVEN, AIR_OFF_IDX, AIR_OFF_NTABLE, AIR_OFF_QTABLE, encodeAirPacked, nqzAt } from "./air-cqz.ts";
 import {
   compilePoolCovenant,
   FIVE_POINT_PAA1,
@@ -178,6 +185,10 @@ export function evaluatePoolSuccessorVm(args: {
   const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof);
   const cqzLock = compileCqzLockP2sh32();
   const cqzUnlock = cqzKernelUnlocking();
+  const slotsLock = compileSlotsLockP2sh32();
+  const slotUnlocks = Array.from({ length: SLOT_KERNEL_COUNT }, (_, i) =>
+    slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
+  );
   const sourceOutputs = [
     {
       lockingBytecode: poolLock,
@@ -190,6 +201,7 @@ export function evaluatePoolSuccessorVm(args: {
     },
     ...shards.map(() => ({ lockingBytecode: friLock, valueSatoshis: 1000n })),
     { lockingBytecode: cqzLock, valueSatoshis: 1000n },
+    ...slotUnlocks.map(() => ({ lockingBytecode: slotsLock, valueSatoshis: 1000n })),
   ];
   const decoded = decodeFriProof(args.proof);
   const prefix = args.airPacked
@@ -220,6 +232,12 @@ export function evaluatePoolSuccessorVm(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: cqzUnlock,
       },
+      ...slotUnlocks.map((unlocking, i) => ({
+        outpointTransactionHash: new Uint8Array(32).fill(0x89 + i),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: unlocking,
+      })),
     ],
     outputs: [
       {
@@ -420,6 +438,47 @@ export function evaluateCookedNTable(args: {
   const q2 = add(q, 1n);
   cooked.set(encodeLe(q2), AIR_OFF_QTABLE);
   cooked.set(encodeLe(mul(q2, z)), AIR_OFF_NTABLE);
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: cooked,
+    statement: args.statement,
+  });
+}
+
+/** Honest kernels; Newton even[0] flipped so T is not the public interpolant. */
+export function evaluateCookedT(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const honest = encodeAirPacked(args.statement, args.proof);
+  const cooked = new Uint8Array(honest);
+  cooked[AIR_OFF_EVEN] ^= 1;
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: cooked,
+    statement: args.statement,
+  });
+}
+
+/** Honest slot 0; a later off-trace slot has q'·Z cooked into nTable. */
+export function evaluateCookedLaterSlot(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const cooked = new Uint8Array(encodeAirPacked(args.statement, args.proof));
+  for (let s = 1; s < FRI_QUERIES; s += 1) {
+    const i = (cooked[AIR_OFF_IDX + s * 2]! << 8) | cooked[AIR_OFF_IDX + s * 2 + 1]!;
+    const { z, q } = nqzAt(args.statement, i);
+    if (z === 0n) continue;
+    const q2 = add(q, 1n);
+    cooked.set(encodeLe(q2), AIR_OFF_QTABLE + s * 4);
+    cooked.set(encodeLe(mul(q2, z)), AIR_OFF_NTABLE + s * 4);
+    break;
+  }
   return evaluatePoolSuccessorVm({
     ...args,
     airPacked: cooked,

@@ -21,7 +21,9 @@ import { emptyState } from "../src/pool/state.ts";
 import {
   evaluateDigestOnlyPool,
   evaluateDummyKernels,
+  evaluateCookedLaterSlot,
   evaluateCookedNTable,
+  evaluateCookedT,
   evaluateSwappedDummyKernels,
   evaluateMissingProofPool,
   evaluateOnChainVerify,
@@ -173,6 +175,18 @@ const cookedNTable = evaluateCookedNTable({
   proof: raw,
   statement: w.statement,
 });
+const cookedT = evaluateCookedT({
+  oldState: w.statement.oldState,
+  newState: w.statement.newState,
+  proof: raw,
+  statement: w.statement,
+});
+const cookedLater = evaluateCookedLaterSlot({
+  oldState: w.statement.oldState,
+  newState: w.statement.newState,
+  proof: raw,
+  statement: w.statement,
+});
 const env = proofFitsEnvelope(raw);
 const vmLog = {
   path: "evaluatePoolSuccessorVm only (no JS AND); NFT PAA1 + CashAssembly/libauth 2026 VM; kernels bind packed AIR",
@@ -188,6 +202,7 @@ const vmLog = {
   dummyKernels: { accepted: dummyKernels.accepted, error: dummyKernels.error },
   swappedDummy: { accepted: swappedDummy.accepted, error: swappedDummy.error },
   cookedNTable: { accepted: cookedNTable.accepted, error: cookedNTable.error },
+  cookedT: { accepted: cookedT.accepted, error: cookedT.error },
 };
 writeFileSync(join(scratch, "vm-onchain.log"), `${JSON.stringify(vmLog, null, 2)}\n`);
 

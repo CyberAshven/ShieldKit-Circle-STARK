@@ -1,7 +1,7 @@
 import { binToHex, cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { encodeLayerRootsPrefix } from "./fri-openings.ts";
-import { AIR_PACKED_SIZE, compileCqzLockP2sh32 } from "./air-cqz.ts";
+import { AIR_PACKED_SIZE, compileCqzLockP2sh32, compileSlotsLockP2sh32, SLOT_KERNEL_COUNT } from "./air-cqz.ts";
 import {
   EXTRACT_INSTANCE,
   EXTRACT_NF_ROOT,
@@ -51,9 +51,10 @@ OP_0 OP_OUTPUTTOKENCOMMITMENT
 function requireFriInputsAsm(): string {
   const lockHex = binToHex(compileFriQueryLockP2sh32());
   const cqzHex = binToHex(compileCqzLockP2sh32());
+  const slotsHex = binToHex(compileSlotsLockP2sh32());
   const lines = [
     "OP_TXINPUTCOUNT",
-    `<${2 + FRI_KERNEL_INPUTS}>`,
+    `<${2 + FRI_KERNEL_INPUTS + SLOT_KERNEL_COUNT}>`,
     "OP_GREATERTHANOREQUAL",
     "OP_VERIFY",
   ];
@@ -61,6 +62,14 @@ function requireFriInputsAsm(): string {
     lines.push(`<${i}>`, "OP_UTXOBYTECODE", `<0x${lockHex}>`, "OP_EQUALVERIFY");
   }
   lines.push(`<${1 + FRI_KERNEL_INPUTS}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
+  for (let i = 0; i < SLOT_KERNEL_COUNT; i += 1) {
+    lines.push(
+      `<${2 + FRI_KERNEL_INPUTS + i}>`,
+      "OP_UTXOBYTECODE",
+      `<0x${slotsHex}>`,
+      "OP_EQUALVERIFY",
+    );
+  }
   return lines.join("\n");
 }
 

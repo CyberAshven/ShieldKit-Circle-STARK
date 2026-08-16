@@ -13,6 +13,8 @@ import { evaluateBch2026 } from "../src/chain/vm-verifier.ts";
 import { encodeFeltBlob } from "../src/chain/m31-asm.ts";
 import {
   compileCircleAddLock,
+  compileAllSlotsCqzLock,
+  compileBindTLock,
   compileCqzKernel,
   compileEvalTFromBlobLock,
   compileEvalTLock,
@@ -24,6 +26,7 @@ import {
   compileScalarMulFastLock,
   compileScalarMulLock,
   compileVanishingLock,
+  AIR_OFF_EVEN,
   AIR_OFF_IDX,
   AIR_OFF_NTABLE,
   AIR_OFF_QTABLE,
@@ -229,12 +232,12 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const newt = statementNewton(d.statement);
     assert.ok(newt.even.length >= 16, `even ${newt.even.length}`);
     assert.equal(TRACE_XS.length, newt.even.length);
-    const i0 = qIdx[0]!;
-    const slotNqz = nqzAt(d.statement, i0);
+    const packedI0 = (packed[AIR_OFF_IDX]! << 8) | packed[AIR_OFF_IDX + 1]!;
+    const slotNqz = nqzAt(d.statement, packedI0);
     assert.equal(mul(slotNqz.q, slotNqz.z), slotNqz.n, "JS slot0 Q*Z=N");
     const qPacked = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
     assert.deepEqual(qPacked, encodeLe(slotNqz.q));
-    assert.equal((packed[AIR_OFF_IDX]! << 8) | packed[AIR_OFF_IDX + 1]!, i0);
+    assert.notEqual(slotNqz.z, 0n);
   });
 
   it("fused slot-0 C=Q·Z accepts honest packed blob and rejects tampered Q", () => {
@@ -265,6 +268,12 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const cook = evalPadded(compileSlot0CqzLock(), pushData(cooked));
     assert.equal(cook.accepted, false, "cooked nTable = Q'·Z must fail N-from-T");
     assert.ok(compileCqzKernel().length <= 10_000, `cqz kernel ${compileCqzKernel().length}`);
+    const tOk = evalPadded(compileBindTLock(), pushData(packed));
+    assert.equal(tOk.accepted, true, tOk.error ?? "bind T");
+    const cookedT = new Uint8Array(packed);
+    cookedT[AIR_OFF_EVEN] ^= 1;
+    const tBad = evalPadded(compileBindTLock(), pushData(cookedT));
+    assert.equal(tBad.accepted, false, "cooked Newton T must fail bind");
   });
 
   it("unsigned BE16 decode: 0x0193 is 403, not signed 147", () => {

@@ -21,7 +21,9 @@ import {
   evaluateBch2026,
   evaluateDigestOnlyPool,
   evaluateDummyKernels,
+  evaluateCookedLaterSlot,
   evaluateCookedNTable,
+  evaluateCookedT,
   evaluateSwappedDummyKernels,
   evaluateFriQueryOpening,
   evaluateMissingProofPool,
@@ -209,6 +211,14 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
       statement: w.statement,
     });
     assert.equal(cooked.accepted, false, cooked.error ?? "cooked nTable=Q'·Z must fail N-from-T");
+    const cookedT = evaluateCookedT({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+    });
+    assert.equal(cookedT.accepted, false, cookedT.error ?? "cooked T must fail bind");
+    void evaluateCookedLaterSlot;
 
     const redeem = compilePoolCovenant();
     assert.ok(redeem.length > 40);
