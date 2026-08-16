@@ -86,7 +86,7 @@ export function compileCovenantSpend(args: {
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const fee = 1_200n;
-  const value = STATE_BASE_SATS + args.state.reserveSats;
+  const value = STATE_BASE_SATS;
   const change = BigInt(args.utxo.value) - value - fee;
   if (change < 546n) throw new Error("utxo too small for covenant spend");
 
@@ -158,7 +158,7 @@ export function compileCovenantSuccessor(args: {
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const fee = 100_000n;
-  const value = STATE_BASE_SATS + args.newState.reserveSats;
+  const value = STATE_BASE_SATS;
   const change = BigInt(args.feeUtxo.value) - fee;
   if (change < 546n) throw new Error("fee utxo too small for successor");
   const commitment = encodePublicPaa1(args.newState);
@@ -279,7 +279,7 @@ export function measureGenesisAndSuccessor(state: AnyAmountState, next: AnyAmoun
     pool: {
       tx_hash: genesisP2sh32.txid,
       tx_pos: 0,
-      value: Number(STATE_BASE_SATS + state.reserveSats),
+      value: Number(STATE_BASE_SATS),
       category: hexToBin("11".repeat(32)),
       commitment: encodePublicPaa1(state),
     },

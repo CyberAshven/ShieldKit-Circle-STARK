@@ -104,6 +104,7 @@ export function publicStateHasNoNoteAmounts(state: AnyAmountState, noteAmounts: 
   if (bin.length !== 128 || bin[0] !== 0x50 || bin[1] !== 0x41 || bin[2] !== 0x41 || bin[3] !== 0x31) {
     return false;
   }
+  if (!bin.subarray(16, 24).every((b) => b === 0)) return false;
   for (const amt of noteAmounts) {
     if (amt === state.reserveSats) continue;
     if (amt <= 0n) continue;

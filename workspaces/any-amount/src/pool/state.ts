@@ -74,9 +74,14 @@ export function encodeState(state: AnyAmountState): Uint8Array {
   return out;
 }
 
-/** On-chain NFT cell is the full PAA1 (sequence, reserve, roots). */
+/**
+ * On-chain NFT cell: instance, roots, sequence. Reserve bytes are zero —
+ * pool value is not published in the cell. Conservation lives in the AIR.
+ */
 export function encodePublicPaa1(state: AnyAmountState): Uint8Array {
-  return encodeState(state);
+  const bin = encodeState(state);
+  bin.fill(0, 16, 24);
+  return bin;
 }
 
 export function decodeState(bytes: Uint8Array): AnyAmountState {
@@ -107,6 +112,6 @@ export function stateFromHex(hex: string): AnyAmountState {
   return decodeState(hexToBytes(hex, "state"));
 }
 
-export function utxoValueFor(state: AnyAmountState): bigint {
-  return STATE_BASE_SATS + state.reserveSats;
+export function utxoValueFor(_state: AnyAmountState): bigint {
+  return STATE_BASE_SATS;
 }

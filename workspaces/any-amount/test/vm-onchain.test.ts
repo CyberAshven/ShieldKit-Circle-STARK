@@ -142,10 +142,11 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
 
     const drainVm = evaluatePoolSuccessorVm({
       oldState: w.statement.oldState,
-      newState: { ...w.statement.newState, reserveSats: 0n },
+      newState: w.statement.newState,
       proof: raw,
+      outputValueSats: 0n,
     });
-    assert.equal(drainVm.accepted, false, drainVm.error ?? "drain reserve must fail pool lock");
+    assert.equal(drainVm.accepted, false, drainVm.error ?? "drain pool value must fail pool lock");
 
     const seqVm = evaluatePoolSuccessorVm({
       oldState: w.statement.oldState,

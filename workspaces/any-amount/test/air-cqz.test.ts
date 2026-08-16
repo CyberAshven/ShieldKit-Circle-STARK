@@ -276,6 +276,48 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     assert.equal(tBad.accepted, false, "cooked Newton T must fail bind");
   });
 
+  it("36× slot-0 C=QZ ops exceed the 10KB unlocking density budget", async () => {
+    const { createTestAuthenticationProgramBch, createVirtualMachineBch2026 } = await import(
+      "@bitauth/libauth"
+    );
+    const note: Note = {
+      amountSats: 8_000n,
+      rho: crypto.getRandomValues(new Uint8Array(32)),
+      ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
+    };
+    const d = applyDeposit(
+      { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
+      note,
+    );
+    const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
+    const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
+    const drop = cashAssemblyToBin("OP_DROP");
+    if (typeof drop === "string") throw new Error(drop);
+    const lock = compileSlot0CqzLock();
+    const locking = new Uint8Array(drop.length + lock.length);
+    locking.set(drop, 0);
+    locking.set(lock, drop.length);
+    const unlocking = padUnlock(pushData(packed));
+    const vm = createVirtualMachineBch2026(true);
+    const program = createTestAuthenticationProgramBch({
+      lockingBytecode: locking,
+      unlockingBytecode: unlocking,
+      valueSatoshis: 1000n,
+    });
+    const state = vm.evaluate(program);
+    assert.equal(vm.stateSuccess(state), true, String(vm.stateSuccess(state)));
+    const cost = Number(
+      (state as { metrics?: { operationCost?: number | bigint } }).metrics?.operationCost ?? 0,
+    );
+    const budget10k = (41 + 10_000) * 800;
+    assert.ok(cost > 0, "need a measured slot-0 cost");
+    assert.ok(
+      cost * 36 > budget10k,
+      `36× slot-0 cost ${cost * 36} should exceed 10KB budget ${budget10k} (one slot ${cost})`,
+    );
+    assert.ok(compileAllSlotsCqzLock().length <= 10_000);
+  });
+
   it("unsigned BE16 decode: 0x0193 is 403, not signed 147", () => {
     const lock = cashAssemblyToBin(`${BE16_UNSIGNED}\n<403>\nOP_NUMEQUAL`);
     if (typeof lock === "string") throw new Error(lock);

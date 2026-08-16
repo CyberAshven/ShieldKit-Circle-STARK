@@ -24,7 +24,8 @@ describe("mix successor updates the public cell", () => {
     const newBin = encodePublicPaa1(mix.newState);
     assert.notDeepEqual(oldBin.subarray(64, 96), newBin.subarray(64, 96));
     assert.notDeepEqual(oldBin.subarray(96, 128), newBin.subarray(96, 128));
-    assert.notDeepEqual(oldBin.subarray(16, 24), newBin.subarray(16, 24));
+    assert.deepEqual(oldBin.subarray(16, 24), new Uint8Array(8));
+    assert.deepEqual(newBin.subarray(16, 24), new Uint8Array(8));
     assert.equal(mix.publicBefore.noteRoot.includes("amount"), false);
   });
 

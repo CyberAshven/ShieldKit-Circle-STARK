@@ -27,7 +27,7 @@ Output 0 must keep:
 
 1. locking bytecode (P2S / P2SH32 redeem)
 2. token category
-3. satoshis = `STATE_BASE + reserve`
+3. satoshis = `STATE_BASE` (reserve is not on the UTXO or in the public cell)
 4. fungible token amount `0`
 5. new 128-byte commitment (`PAA1` any-amount, or `PAF1` Fv1 ticket)
 

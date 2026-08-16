@@ -113,8 +113,9 @@ const rewritten = evaluatePoolSuccessorVm({
 });
 const drain = evaluatePoolSuccessorVm({
   oldState: w.statement.oldState,
-  newState: { ...w.statement.newState, reserveSats: 0n },
+  newState: w.statement.newState,
   proof: raw,
+  outputValueSats: 0n,
 });
 const seq99 = evaluatePoolSuccessorVm({
   oldState: w.statement.oldState,

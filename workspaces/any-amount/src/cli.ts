@@ -459,7 +459,7 @@ async function main(): Promise<void> {
         pool: {
           tx_hash: genesis.broadcast,
           tx_pos: 0,
-          value: Number(STATE_BASE_SATS + mix.oldState.reserveSats),
+          value: Number(STATE_BASE_SATS),
           category: hexToBin(genesis.categoryHex),
           commitment: encodePublicPaa1(mix.oldState),
         },

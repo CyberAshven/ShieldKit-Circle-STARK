@@ -175,13 +175,14 @@ export function evaluatePoolSuccessorVm(args: {
   kernelUnlockings?: Uint8Array[];
   statement?: PoolStatement;
   airPacked?: Uint8Array;
+  outputValueSats?: bigint;
 }): VmEval {
   const vm = createVirtualMachineBch2026(true);
   const poolLock = poolLockP2sh32();
   const friLock = compileFriQueryLockP2sh32();
   const category = args.category ?? new Uint8Array(32).fill(0x11);
-  const poolValue = STATE_BASE_SATS + args.oldState.reserveSats;
-  const newValue = STATE_BASE_SATS + args.newState.reserveSats;
+  const poolValue = STATE_BASE_SATS;
+  const newValue = args.outputValueSats ?? STATE_BASE_SATS;
   const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof);
   const cqzLock = compileCqzLockP2sh32();
   const cqzUnlock = cqzKernelUnlocking();
@@ -268,7 +269,7 @@ export function evaluateDigestOnlyPool(oldState: AnyAmountState): VmEval {
   const sourceOutputs = [
     {
       lockingBytecode: poolLock,
-      valueSatoshis: STATE_BASE_SATS + oldState.reserveSats,
+      valueSatoshis: STATE_BASE_SATS,
       token: {
         amount: 0n,
         category: new Uint8Array(32).fill(0x11),
@@ -290,7 +291,7 @@ export function evaluateDigestOnlyPool(oldState: AnyAmountState): VmEval {
     outputs: [
       {
         lockingBytecode: poolLock,
-        valueSatoshis: STATE_BASE_SATS + oldState.reserveSats,
+        valueSatoshis: STATE_BASE_SATS,
         token: {
           amount: 0n,
           category: new Uint8Array(32).fill(0x11),
@@ -314,7 +315,7 @@ export function evaluateMissingProofPool(oldState: AnyAmountState): VmEval {
   const sourceOutputs = [
     {
       lockingBytecode: poolLock,
-      valueSatoshis: STATE_BASE_SATS + oldState.reserveSats,
+      valueSatoshis: STATE_BASE_SATS,
       token: {
         amount: 0n,
         category: new Uint8Array(32).fill(0x11),

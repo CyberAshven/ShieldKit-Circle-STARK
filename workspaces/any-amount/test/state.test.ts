@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decodeState, emptyState, encodeState, ANY_STATE_BYTES } from "../src/pool/state.ts";
+import { decodeState, emptyState, encodePublicPaa1, encodeState, ANY_STATE_BYTES } from "../src/pool/state.ts";
 import {
   IncrementalMerkle,
   NullifierSet,
@@ -24,6 +24,15 @@ describe("PAA1 state", () => {
     const back = decodeState(bin);
     assert.equal(back.reserveSats, 0n);
     assert.deepEqual(back.poolInstanceId, s.poolInstanceId);
+  });
+
+  it("public PAA1 zeros the reserve field", () => {
+    const s = { ...emptyState(rnd32()), reserveSats: 42_000n };
+    const pub = encodePublicPaa1(s);
+    const priv = encodeState(s);
+    assert.deepEqual(pub.subarray(16, 24), new Uint8Array(8));
+    assert.notDeepEqual(priv.subarray(16, 24), new Uint8Array(8));
+    assert.deepEqual(pub.subarray(64, 96), priv.subarray(64, 96));
   });
 });
 
