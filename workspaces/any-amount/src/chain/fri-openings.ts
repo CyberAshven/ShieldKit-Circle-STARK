@@ -1,4 +1,4 @@
-import { encodeLe } from "../backends/circle/m31.ts";
+import { encodeLe, M31 } from "../backends/circle/m31.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { MerkleTree } from "../backends/circle/merkle.ts";
 import { COMMITTED_LAYERS, FRI_N } from "../backends/circle/params.ts";
@@ -178,6 +178,25 @@ export function dummyFriOpeningsNoL0(count = FRI_KERNEL_INPUTS): FriOpening[] {
 
 export function dummyFriShardUnlockingsNoL0(): Uint8Array[] {
   return shardFriOpenings(dummyFriOpeningsNoL0()).map(encodeFriBatchUnlocking);
+}
+
+/** FRI_N-wide dummy tree (honest path depth) so isolated walk tests can pass the depth gate. */
+export function dummyFriOpeningsWide(count = 1): FriOpening[] {
+  const values = Array.from({ length: FRI_N }, (_, i) => BigInt((i % Number(M31 - 1n)) + 1));
+  const tree = new MerkleTree(values);
+  const out: FriOpening[] = [];
+  for (let k = 0; k < count; k += 1) {
+    const i = (k % (FRI_N / 2)) * 2;
+    out.push({
+      left: encodeLe(values[i]!),
+      right: encodeLe(values[i + 1]!),
+      parentPath: tree.path(i).slice(1),
+      parentIndex: Math.floor(i / 2),
+      root: tree.root,
+      layerIndex: 0,
+    });
+  }
+  return out;
 }
 
 export function proofShardReport(proof: Uint8Array | FriProof): {

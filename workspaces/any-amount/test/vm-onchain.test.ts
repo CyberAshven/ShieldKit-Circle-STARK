@@ -23,6 +23,8 @@ import {
   evaluateDummyKernels,
   evaluateDummyConsistent,
   evaluateDummyNoL0,
+  evaluateDummyShortPath,
+  evaluateCrossPacked,
   evaluateDummyUnbound,
   evaluateCookedLaterSlot,
   evaluateCookedNTable,
@@ -34,7 +36,7 @@ import {
   evaluatePoolSuccessorVm,
   proofFitsEnvelope,
 } from "../src/chain/vm-verifier.ts";
-import { collectFriOpenings, dummyFriOpenings } from "../src/chain/fri-openings.ts";
+import { collectFriOpenings, dummyFriOpenings, dummyFriOpeningsWide } from "../src/chain/fri-openings.ts";
 import { AIR_OFF_QTABLE, AIR_PACKED_SIZE, encodeAirPacked } from "../src/chain/air-cqz.ts";
 import { NOTE_MERKLE_WALK, encodeWalkSteps } from "../src/chain/note-merkle.ts";
 import { cashAssemblyToBin } from "@bitauth/libauth";
@@ -176,19 +178,20 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
     assert.equal(fakeNfVm.accepted, false, fakeNfVm.error ?? "fake nullifier must fail pool lock");
 
     const dummy = dummyFriOpenings(1)[0]!;
+    const wide = dummyFriOpeningsWide(1)[0]!;
     const walkPacked = new Uint8Array(AIR_PACKED_SIZE);
-    walkPacked.set(dummy.root, 0);
-    walkPacked.set(dummy.left, AIR_OFF_QTABLE);
+    walkPacked.set(wide.root, 0);
+    walkPacked.set(wide.left, AIR_OFF_QTABLE);
     const dummyOk = evaluateFriQueryOpening({
-      left: dummy.left,
-      right: dummy.right,
-      root: dummy.root,
-      parentPath: dummy.parentPath,
-      parentIndex: dummy.parentIndex,
+      left: wide.left,
+      right: wide.right,
+      root: wide.root,
+      parentPath: wide.parentPath,
+      parentIndex: wide.parentIndex,
       layerIndex: 0,
       packed: walkPacked,
     });
-    assert.equal(dummyOk.accepted, true, dummyOk.error ?? "dummy tree must walk its own root");
+    assert.equal(dummyOk.accepted, true, dummyOk.error ?? "wide dummy tree must walk its own root");
     const dummyVsHonest = evaluateFriQueryOpening({
       left: dummy.left,
       right: dummy.right,
@@ -225,6 +228,23 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
     });
     assert.equal(honestOpen.accepted, true, honestOpen.error ?? "honest leaf must be in qTable");
 
+    const dummyShort = evaluateDummyShortPath({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+    });
+    assert.equal(dummyShort.accepted, false, dummyShort.error ?? "short dummy path must fail");
+    const other = deposit();
+    const otherPacked = encodeAirPacked(other.statement, encodeFriProof(proveFri(other.statement, other.witness)));
+    const cross = evaluateCrossPacked({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof: raw,
+      statement: w.statement,
+      otherPacked,
+    });
+    assert.equal(cross.accepted, false, cross.error ?? "cross-statement packed must fail");
     const dummyNoL0 = evaluateDummyNoL0({
       oldState: w.statement.oldState,
       newState: w.statement.newState,

@@ -9,7 +9,7 @@ and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 
 - Soundness worksheet: TRACE=64, blowup=16, FRI_N=1024, queries=36, grind=20, rate 2/B → **128 conjectural bits**. `sound: true`. Old n=32/q=8 fails the build.
 - Prover FRIs the residual quotient \(Q=C/Z\) (honest residuals vanish so \(Q=0\)). `plugin.verify` / `verifyFri` take **no private witness**: `proof.auth` carries the note preimage, so a fake nullifier + valid membership path is rejected (`nullifier preimage`). Query check is \(C(z)=Q(z)Z(z)\), not \(T(z)=\) public interpolant.
-- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): pool five-point + spent-note preimage; PAA1 NFT is the public cell. Inputs 1..10 Merkle-walk packed `layerRoots`. Input 11 binds Newton `T` to AIR cells (0,1,2,3,18,23,24) and those cells to the statement (reserves, action, amount, sequences, digest). Input 12 runs slot-0 `C=Q·Z` (`N` from `T`, `Z≠0`). Cooking `T` or `nTable=Q'·Z` fails. Dummy 8-leaf kernels fail input 1. Shipped test: 36× measured slot-0 op-cost exceeds the 10KB density budget (`(41+10000)*800`). Remaining FS slots stay on `verifyFri`.
+- BCH 2026 VM (libauth CashAssembly, not OP_RETURN): pool five-point + spent-note preimage; PAA1 NFT is the public cell. Inputs 1..10 Merkle-walk packed `layerRoots` at **FRI_N path depth** (8-leaf dummy paths fail), require ≥1 layer-0 opening whose felt is in `qTable`. Input 11 binds Newton `T` to AIR cells and those cells to the statement. Input 12 runs slot-0 `C=Q·Z` at a **recomputed** Fiat–Shamir index (spender `idx[0]` ignored) and binds packed stmt `noteRoot`/`seq` to the NFT. Digest-only, dummy-short-path, dummy-no-L0, dummy-unbound, dummy-consistent, and cross-statement packed all fail. Shipped test: 36× slot-0 op-cost exceeds the 10KB density budget. Remaining 35 FS slots and FRI *fold* stay on `verifyFri` (0zkbrewer #2: this is one bound prefix, not a full on-chain FRI fold).
 - Proof ~64 KB, **10 shards**, 252 Merkle openings, unlocking max 6414, Chipnet successor **63992 bytes**.
 - Any-amount one set; Pedersen-hidden note amounts. On-chain PAA1 zeros the reserve field; pool UTXO is `STATE_BASE` only. Reserve conservation is in the AIR / `verifyFri`. `runMixSuccessor` still updates machine reserve, noteRoot, and nullifierRoot.
 - Comparison table in `COMPARISON.md` (checkable axes only).
@@ -17,6 +17,7 @@ and **not** a “better than XMR/Zcash/Aztec” cryptanalysis.
 ## Not done (honest)
 
 - Full DEEP-ALI / 128-bit algebraic note-tree hash inside the AIR (note tree is still SHA-256; AIR binds public reserves/digest).
+- On-chain FRI *fold* of all layers / all 36 C=QZ slots (density). A 1024-wide tree that plants honest Q at the FS index is not rejected by Merkle+slot-0 alone.
 - On-chain **value** hiding (pool UTXO sats remain public; only note amounts are committed).
 - 100 faucet-funded Chipnet wallets. VM eval of the same bytecode is the on-chain bar.
 - Formal paper proof. Rust worker still speaks the old n=32 wire (optional; TS is shipped).

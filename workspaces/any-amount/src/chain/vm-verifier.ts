@@ -25,6 +25,7 @@ import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import {
   collectFriOpenings,
   dummyFriOpenings,
+  dummyFriOpeningsWide,
   dummyFriShardUnlockings,
   dummyFriShardUnlockingsNoL0,
   dummyFriShardUnlockingsUnbound,
@@ -549,6 +550,47 @@ export function evaluateCookedLaterSlot(args: {
     ...args,
     airPacked: cooked,
     statement: args.statement,
+  });
+}
+
+/**
+ * 8-leaf dummy openings (short Merkle path) with qTable planted so membership
+ * would pass. Must fail the FRI_N path-depth gate (issue #2: synthetic tree).
+ */
+export function evaluateDummyShortPath(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+}): VmEval {
+  const honest = encodeAirPacked(args.statement, args.proof);
+  const dummy = dummyFriOpenings(8);
+  const packed = new Uint8Array(honest);
+  for (let r = 0; r < COMMITTED_LAYERS; r += 1) packed.set(dummy[0]!.root, r * 32);
+  for (let s = 0; s < FRI_QUERIES; s += 1) {
+    packed.set(dummy[s % dummy.length]!.left, AIR_OFF_QTABLE + s * 4);
+  }
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: packed,
+    kernelUnlockings: dummyFriShardUnlockings(),
+  });
+}
+
+/**
+ * Honest openings of proof A against packed AIR of a different statement.
+ * Independent fixtures must not assemble into one accept (issue #2).
+ */
+export function evaluateCrossPacked(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  proof: Uint8Array;
+  statement: PoolStatement;
+  otherPacked: Uint8Array;
+}): VmEval {
+  return evaluatePoolSuccessorVm({
+    ...args,
+    airPacked: args.otherPacked,
   });
 }
 

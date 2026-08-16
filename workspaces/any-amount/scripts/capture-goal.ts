@@ -18,11 +18,14 @@ import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, commitNote, type Note } from "../src/pool/notes.ts";
 import { concatBytes, sha256 } from "../src/pool/bytes.ts";
 import { emptyState } from "../src/pool/state.ts";
+import { encodeAirPacked } from "../src/chain/air-cqz.ts";
 import {
   evaluateDigestOnlyPool,
   evaluateDummyKernels,
   evaluateDummyConsistent,
   evaluateDummyNoL0,
+  evaluateDummyShortPath,
+  evaluateCrossPacked,
   evaluateDummyUnbound,
   evaluateCookedLaterSlot,
   evaluateCookedNTable,
@@ -161,6 +164,24 @@ const fakeNfVm = evaluatePoolSuccessorVm({
   },
   proof: fakeNfProof,
 });
+const dummyShortPath = evaluateDummyShortPath({
+  oldState: w.statement.oldState,
+  newState: w.statement.newState,
+  proof: raw,
+  statement: w.statement,
+});
+const otherDep = freshDeposit();
+const otherPacked = encodeAirPacked(
+  otherDep.d.statement,
+  encodeFriProof(proveFri(otherDep.d.statement, wDeposit(otherDep.note, otherDep.d.index, otherDep.d.path))),
+);
+const crossPacked = evaluateCrossPacked({
+  oldState: w.statement.oldState,
+  newState: w.statement.newState,
+  proof: raw,
+  statement: w.statement,
+  otherPacked,
+});
 const dummyNoL0 = evaluateDummyNoL0({
   oldState: w.statement.oldState,
   newState: w.statement.newState,
@@ -221,6 +242,8 @@ const vmLog = {
   sequence99: { accepted: seq99.accepted, error: seq99.error },
   fakeMembership: { accepted: fakeMem.accepted, error: fakeMem.error },
   fakeNullifier: { accepted: fakeNfVm.accepted, error: fakeNfVm.error },
+  dummyShortPath: { accepted: dummyShortPath.accepted, error: dummyShortPath.error },
+  crossPacked: { accepted: crossPacked.accepted, error: crossPacked.error },
   dummyNoL0: { accepted: dummyNoL0.accepted, error: dummyNoL0.error },
   dummyUnbound: { accepted: dummyUnbound.accepted, error: dummyUnbound.error },
   dummyConsistent: { accepted: dummyConsistent.accepted, error: dummyConsistent.error },

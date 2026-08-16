@@ -1,5 +1,5 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
-import { FRI_QUERIES } from "../backends/circle/params.ts";
+import { FRI_LOG_N, FRI_QUERIES } from "../backends/circle/params.ts";
 import { AIR_OFF_QTABLE } from "./air-cqz.ts";
 
 /** Fixed kernel-input count in the pool lock (must be known at genesis). */
@@ -10,8 +10,8 @@ export const FRI_KERNEL_INPUTS = 10;
  * Stack: left right steps layerIndex
  * layerIndex 0..6 → layerRoots[i].
  * layerIndex 16..22 → layerRoots[i-16] (extra honest Q queries).
- * Actual layer 0 (0 or 16): opened felt must equal some packed qTable entry
- * so a dummy tree cannot skip the Q bind by using 16+.
+ * Actual layer 0 (0 or 16): opened felt must equal some packed qTable entry.
+ * Steps length must be (FRI_LOG_N-1-layer)*33 so an 8-leaf dummy cannot walk.
  */
 export const FRI_LAYER_UNBOUND = 16;
 
@@ -27,6 +27,16 @@ OP_DUP
 OP_0
 OP_EQUAL
 OP_TOALTSTACK
+OP_DUP
+<${FRI_LOG_N - 1}>
+OP_SWAP
+OP_SUB
+<33>
+OP_MUL
+OP_2 OP_PICK
+OP_SIZE
+OP_NIP
+OP_NUMEQUALVERIFY
 OP_DUP
 OP_TOALTSTACK
 <32> OP_MUL
