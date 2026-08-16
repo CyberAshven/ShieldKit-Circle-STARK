@@ -39,7 +39,8 @@ npx tsx src/cli.ts pool measure-tx
 npx tsx src/cli.ts serve
 ```
 
-Chipnet fold txs and the JSON-RPC land path: [`MILESTONE.md`](MILESTONE.md), [`STATUS.md`](STATUS.md).
+Chipnet fold txs and the JSON-RPC land path: [`MILESTONE.md`](MILESTONE.md), [`STATUS.md`](STATUS.md).  
+Next four increments: [`ROADMAP.md`](ROADMAP.md).
 
 Wallet files stay under `.local/` (gitignored). Never pass a seed on the command line.
 
