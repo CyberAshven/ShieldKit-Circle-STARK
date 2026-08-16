@@ -1,4 +1,4 @@
-# ABL any-amount pool (Chipnet lab)
+# Any-amount Chipnet lab
 
 New profile on `@ABLalgorithm`. **Does not edit** the sealed Fv1 lane
 (`research-lanes/bch-shielded-pool-design/`). Fv1 stays the joint 0.1-ticket
