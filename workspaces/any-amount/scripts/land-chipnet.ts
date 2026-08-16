@@ -7,7 +7,8 @@ import { join } from "node:path";
 import { binToHex, hexToBin } from "@bitauth/libauth";
 import { loadLabWallet } from "../src/chain/wallet.ts";
 import { broadcast, connectChipnet, getTx, listUnspent } from "../src/chain/electrum.ts";
-import { broadcastP2p } from "../src/chain/p2p.ts";
+import { rpcConfigFromEnv } from "../src/chain/bchn-rpc.ts";
+import { broadcastSized } from "../src/chain/broadcast-tx.ts";
 import {
   compileCovenantSpend,
   compileCovenantSuccessor,
@@ -32,37 +33,38 @@ async function broadcastRetry(
   client: Awaited<ReturnType<typeof connectChipnet>>,
   raw: Uint8Array,
   expectedTxid: string,
-): Promise<string> {
-  const rawHex = binToHex(raw);
-  let last: Error | undefined;
-  for (let i = 0; i < 3; i += 1) {
-    try {
-      return await broadcast(client, rawHex);
-    } catch (e) {
-      last = e instanceof Error ? e : new Error(String(e));
-      const msg = last.message.toLowerCase();
-      if (
-        !msg.includes("missing") &&
-        !msg.includes("orphan") &&
-        !msg.includes("bad-txns-inputs") &&
-        !msg.includes("timed out") &&
-        !msg.includes("tx-size")
-      ) {
-        break;
+): Promise<{ txid: string; path: string }> {
+  const sent = await broadcastSized({
+    raw,
+    electrum: async (hex) => {
+      let last: Error | undefined;
+      for (let i = 0; i < 3; i += 1) {
+        try {
+          return await broadcast(client, hex);
+        } catch (e) {
+          last = e instanceof Error ? e : new Error(String(e));
+          const msg = last.message.toLowerCase();
+          if (
+            !msg.includes("missing") &&
+            !msg.includes("orphan") &&
+            !msg.includes("bad-txns-inputs") &&
+            !msg.includes("timed out")
+          ) {
+            break;
+          }
+          await sleep(1200 * (i + 1));
+        }
       }
-      await sleep(1200 * (i + 1));
-    }
-  }
-  try {
-    await getTx(client, expectedTxid);
-    return expectedTxid;
-  } catch {
-    const p2p = await broadcastP2p(raw);
-    if (p2p.ok) return expectedTxid;
-    throw new Error(
-      `${last?.message ?? "electrum"}; p2p ${p2p.host}:${p2p.port} ${p2p.reject ?? "fail"} computed=${expectedTxid}`,
-    );
-  }
+      try {
+        await getTx(client, expectedTxid);
+        return expectedTxid;
+      } catch {
+        throw last ?? new Error("electrum broadcast failed");
+      }
+    },
+    rpc: raw.length > 100_000 ? rpcConfigFromEnv() : undefined,
+  });
+  return sent;
 }
 
 async function waitForTxid(
@@ -117,7 +119,7 @@ async function landEnvelope(
     if (picked.tx_pos !== 0) {
       step = "prep-vout0";
       const prep = compileSelfSendVout0(wallet, picked);
-      prepTxid = await broadcastRetry(client, prep.raw, prep.txid);
+      prepTxid = (await broadcastRetry(client, prep.raw, prep.txid)).txid;
       await waitForTxid(client, prep.txid);
       picked = { tx_hash: prep.txid, tx_pos: 0, value: prep.value, height: 0 };
     }
@@ -131,7 +133,7 @@ async function landEnvelope(
       envelope,
       slotKernels: slots,
     });
-    const genesisTxid = await broadcastRetry(client, genesis.raw, genesis.txid);
+    const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;
     await waitForTxid(client, genesisTxid);
     if (genesis.changeValue === undefined || genesis.changeValue < 200_000) {
       return { envelope, slots, ok: false, genesis: genesisTxid, prep: prepTxid ?? null, error: `change too small ${genesis.changeValue}` };
@@ -143,7 +145,7 @@ async function landEnvelope(
       1_000,
       slots,
     );
-    const kernelTxid = await broadcastRetry(client, funded.raw, funded.txid);
+    const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);
     step = "successor";
     const successor = compileCovenantSuccessor({
@@ -166,8 +168,8 @@ async function landEnvelope(
       extraKernels: funded.extra,
     });
     writeFileSync(join(scratch, `successor-${envelope}.hex`), binToHex(successor.raw));
-    const succTxid = await broadcastRetry(client, successor.raw, successor.txid);
-    const p2p = successor.txBytes > 100_000 ? { used: true, txBytes: successor.txBytes } : null;
+    const sent = await broadcastRetry(client, successor.raw, successor.txid);
+    const succTxid = sent.txid;
     return {
       envelope,
       slots,
@@ -179,7 +181,7 @@ async function landEnvelope(
       successor: succTxid,
       txBytes: successor.txBytes,
       unlockingBytes: successor.unlockingBytes,
-      p2p: p2p ?? null,
+      broadcastPath: sent.path,
       explorer: {
         genesis: `https://chipnet.imaginary.cash/tx/${genesisTxid}`,
         kernels: `https://chipnet.imaginary.cash/tx/${kernelTxid}`,

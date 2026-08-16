@@ -79,7 +79,7 @@ Block (3+ conf on local BCHN): `000000001abbed79d00f1d2d3e47c16a62114c40da6f559b
 
 Public miners will not *relay* a 270 KB tx. This one got in because it was submitted to the lab BCHN mempool and mined. ASICSeer solo is pointed at that BCHN (`bitcoincashd.startos:48332`). Stratum for more hash: `start9oslinux.local:3333` (or `192.168.0.55:3333`), user `bchtest:qrzq5f9ltv70u4su7d40agd4nlnp8qlgqcma6x2tvp`.
 
-**10-fold consensus successor landed on Chipnet** via BCHN JSON-RPC `sendrawtransaction` (P2P `inv` still rejects 301279 as standard 100000). Local BCHN size **301279**, 59 inputs, 2+ conf:
+**10-fold consensus successor landed on Chipnet** via BCHN JSON-RPC `sendrawtransaction`. Shipped land path: Electrum only if tx ≤ 100000; larger spends use HTTP `sendrawtransaction` (not Electrum, not P2P `inv`). Local BCHN size **301279**, 59 inputs, 2+ conf:
 
 | Step | txid |
 | --- | --- |
