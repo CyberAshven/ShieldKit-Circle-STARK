@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { cashAssemblyToBin } from "@bitauth/libauth";
 import { add, encodeLe, mul } from "../src/backends/circle/m31.ts";
+import { openingMaskFelt } from "../src/backends/circle/witness-mask.ts";
 import { addPoints, CIRCLE_GEN, scalarMul } from "../src/backends/circle/group.ts";
 import { interpolateCircle } from "../src/backends/circle/interpolate.ts";
 import { applyDeposit } from "../src/pool/transition.ts";
@@ -243,7 +244,9 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const slotNqz = nqzAt(d.statement, packedI0);
     assert.equal(mul(slotNqz.q, slotNqz.z), slotNqz.n, "JS slot0 Q*Z=N");
     const qPacked = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
-    assert.deepEqual(qPacked, encodeLe(slotNqz.q));
+    const maskedQ = add(slotNqz.q, openingMaskFelt(proof.viewingCommit!));
+    assert.deepEqual(qPacked, encodeLe(maskedQ), "packed Q is opening-masked");
+    assert.notDeepEqual(qPacked, encodeLe(slotNqz.q));
   });
 
   it("fused slot-0 C=Q·Z accepts honest packed blob and rejects tampered Q", () => {
