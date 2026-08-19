@@ -554,7 +554,7 @@ export async function broadcastCovenantGenesis(
     if (picked.tx_pos !== 0) {
       const prep = compileSelfSendVout0(wallet, picked);
       prepTxid = await broadcastWithRetry(client, binToHex(prep.raw));
-      picked = { tx_hash: prep.txid, tx_pos: 0, value: prep.value };
+      picked = { tx_hash: prep.txid, tx_pos: 0, value: prep.value, height: 0 };
       await waitForTx(client, prep.txid);
     }
     const measured = compileCovenantSpend({

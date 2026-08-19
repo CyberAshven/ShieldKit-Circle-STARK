@@ -185,7 +185,7 @@ export function dummyFriOpenings(count = FRI_KERNEL_INPUTS): FriOpening[] {
 }
 
 export function dummyFriShardUnlockings(): Uint8Array[] {
-  return shardFriOpenings(dummyFriOpenings()).map(encodeFriBatchUnlocking);
+  return shardFriOpenings(dummyFriOpenings()).map((batch) => encodeFriBatchUnlocking(batch));
 }
 
 /** Same dummy 8-leaf tree, but every opening uses layerIndex 16+k so a skip-bind kernel would walk without a Q check. */
@@ -197,7 +197,7 @@ export function dummyFriOpeningsUnbound(count = FRI_KERNEL_INPUTS): FriOpening[]
 }
 
 export function dummyFriShardUnlockingsUnbound(): Uint8Array[] {
-  return shardFriOpenings(dummyFriOpeningsUnbound()).map(encodeFriBatchUnlocking);
+  return shardFriOpenings(dummyFriOpeningsUnbound()).map((batch) => encodeFriBatchUnlocking(batch));
 }
 
 /** Dummy 8-leaf openings that never use actual layer 0 (only 17–22). */
@@ -209,7 +209,7 @@ export function dummyFriOpeningsNoL0(count = FRI_KERNEL_INPUTS): FriOpening[] {
 }
 
 export function dummyFriShardUnlockingsNoL0(): Uint8Array[] {
-  return shardFriOpenings(dummyFriOpeningsNoL0()).map(encodeFriBatchUnlocking);
+  return shardFriOpenings(dummyFriOpeningsNoL0()).map((batch) => encodeFriBatchUnlocking(batch));
 }
 
 /** FRI_N-wide dummy tree (honest path depth) so isolated walk tests can pass the depth gate. */

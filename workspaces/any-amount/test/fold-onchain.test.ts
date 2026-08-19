@@ -148,6 +148,20 @@ describe("on-chain Circle fold", () => {
     assert.equal(ev.accepted, true, ev.error ?? "query-10 fold");
   });
 
+  it("one-query fold kernel accepts query 35 with density-padded unlocking", () => {
+    const d = deposit();
+    const proof = proveFri(d.statement, d.witness);
+    const ev = evaluateFoldKernelOnly({
+      statement: d.statement,
+      proof: encodeFriProof(proof),
+      nFold: 1,
+      queryIndex: 35,
+    });
+    assert.equal(ev.accepted, true, ev.error ?? "query-35 fold");
+    assert.ok(ev.unlockingBytes <= 10_000);
+    assert.ok(ev.unlockingBytes >= 6_000, `query-35 unlocking ${ev.unlockingBytes} should carry density pad`);
+  });
+
   it("honest successor still VM-accepts after on-chain fold", () => {
     const d = deposit();
     const proof = proveFri(d.statement, d.witness);

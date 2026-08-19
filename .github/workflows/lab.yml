@@ -4,9 +4,11 @@ on:
   push:
     branches:
       - '@ABLalgorithm'
+      - main
   pull_request:
     branches:
       - '@ABLalgorithm'
+      - main
 
 permissions:
   contents: read

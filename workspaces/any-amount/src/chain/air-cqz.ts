@@ -27,6 +27,8 @@ import { FRI_OPEN_MASK_TAG, VIEWING_TAG, openingMaskAt } from "../backends/circl
 import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 import { circleDomain } from "../backends/circle/fri.ts";
 import { COMMITTED_LAYERS, FRI_FINAL, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
+import { uniqueQueryIndices } from "../backends/circle/query-sample.ts";
+import { densityPadUnlocking, KERNEL_UNLOCK_PAD_HIGH } from "./envelope.ts";
 import { encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
 
 export const AIR_PACKED_SIZE = 1608;
@@ -262,13 +264,7 @@ export function fiatShamirQueryIndices(
 ): number[] {
   const grindSeed = hash.digest(concatBytes(digest, proof.traceRoot, ...proof.layerRoots));
   const seed = hash.digest(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries")));
-  const idx: number[] = [];
-  let h = seed;
-  while (idx.length < FRI_QUERIES) {
-    h = hash.digest(concatBytes(h, new TextEncoder().encode("q"), Uint8Array.of(idx.length)));
-    idx.push(((h[0]! << 8) | h[1]!) % FRI_N);
-  }
-  return idx;
+  return uniqueQueryIndices(hash, seed, FRI_N, FRI_QUERIES);
 }
 
 export function encodeAirPacked(
@@ -639,51 +635,186 @@ OP_SHA256
 }
 
 /**
+ * Stack: blob orbit → blob has.
+ * Linear scan of 2-byte LE orbits. Empty blob → 0.
+ * OP_SIZE does not consume the item.
+ */
+export function orbitHasAsm(): string {
+  return `
+OP_TOALTSTACK
+<0>
+OP_BEGIN
+  OP_OVER
+  OP_SIZE
+  OP_NIP
+  OP_OVER
+  OP_SWAP
+  OP_GREATERTHANOREQUAL
+  OP_IF
+    OP_DROP
+    OP_0
+    OP_1
+  OP_ELSE
+    OP_OVER
+    OP_OVER
+    OP_SPLIT
+    OP_NIP
+    <2>
+    OP_SPLIT
+    OP_DROP
+    OP_BIN2NUM
+    OP_FROMALTSTACK
+    OP_DUP
+    OP_TOALTSTACK
+    OP_NUMEQUAL
+    OP_IF
+      OP_DROP
+      OP_1
+      OP_1
+    OP_ELSE
+      <2>
+      OP_ADD
+      OP_0
+    OP_ENDIF
+  OP_ENDIF
+OP_UNTIL
+OP_FROMALTSTACK
+OP_DROP
+`;
+}
+
+/**
+ * Stack: packed, h, orbits, idxs → packed, h', orbits', idxs'
+ * Mix-in is current unique count (idxs size / 2). Duplicate orbits are skipped.
+ */
+export function uniqueQueryAttemptAsm(): string {
+  return `
+OP_TOALTSTACK
+OP_TOALTSTACK
+<0x71>
+OP_CAT
+OP_FROMALTSTACK
+OP_DUP
+OP_TOALTSTACK
+OP_SIZE
+OP_NIP
+<2>
+OP_DIV
+<1>
+OP_NUM2BIN
+OP_CAT
+OP_SHA256
+OP_DUP
+<2>
+OP_SPLIT
+OP_DROP
+${BE16_UNSIGNED}
+<${FRI_N}>
+OP_MOD
+OP_DUP
+<${FRI_N / 2}>
+OP_MOD
+OP_FROMALTSTACK
+OP_SWAP
+${orbitHasAsm()}
+OP_IF
+  OP_NIP
+  OP_FROMALTSTACK
+OP_ELSE
+  OP_SWAP
+  OP_DUP
+  OP_TOALTSTACK
+  <${FRI_N / 2}>
+  OP_MOD
+  <2>
+  OP_NUM2BIN
+  OP_CAT
+  OP_FROMALTSTACK
+  OP_FROMALTSTACK
+  OP_SWAP
+  <2>
+  OP_NUM2BIN
+  OP_CAT
+OP_ENDIF
+`;
+}
+
+/**
+ * Stack: packed, seed → packed, index.
+ * Rejection-samples until `need` unique first-fold orbits (need = slot+1).
+ */
+function uniqueFsNeedAsm(need: number): string {
+  if (!Number.isInteger(need) || need < 1 || need > FRI_QUERIES) {
+    throw new Error(`unique FS need ${need}`);
+  }
+  return `
+OP_0
+OP_0
+OP_BEGIN
+  ${uniqueQueryAttemptAsm()}
+  OP_SIZE
+  <${2 * need}>
+  OP_GREATERTHANOREQUAL
+OP_UNTIL
+OP_NIP
+OP_NIP
+OP_SIZE
+<2>
+OP_SUB
+OP_SPLIT
+OP_NIP
+OP_BIN2NUM
+`;
+}
+
+/**
  * Stack: packed → packed, i. Altstack top = slot (0..35).
- * Recomputes FS query index for that slot (spender table ignored).
+ * Recomputes unique-orbit FS index for that slot (spender table ignored).
  */
 export function fsIndexFromAltSlotAsm(): string {
   return `
 ${fsQuerySeedAsm()}
-<0>
+OP_0
+OP_0
 OP_BEGIN
-  OP_TOALTSTACK
-  <0x71> OP_CAT
+  ${uniqueQueryAttemptAsm()}
+  OP_SIZE
   OP_FROMALTSTACK
-  OP_DUP OP_TOALTSTACK
-  <1> OP_NUM2BIN
-  OP_CAT
-  OP_SHA256
-  OP_FROMALTSTACK
-  <1> OP_ADD
   OP_DUP
-  OP_FROMALTSTACK
-  OP_DUP OP_TOALTSTACK
-  OP_NIP
-  OP_OVER
-  OP_SWAP
-  OP_GREATERTHAN
+  OP_TOALTSTACK
+  <1>
+  OP_ADD
+  <2>
+  OP_MUL
+  OP_GREATERTHANOREQUAL
 OP_UNTIL
-OP_DROP
+OP_NIP
+OP_NIP
+OP_SIZE
+<2>
+OP_SUB
+OP_SPLIT
+OP_NIP
+OP_BIN2NUM
+`;
+}
+
+/** Stack: packed → packed, i. Unique-orbit FS for a compile-time slot. */
+export function fsIndexSlotAsm(slot: number): string {
+  if (slot === 0) {
+    return `
+${fsQuerySeedAsm()}
+<0x71> OP_CAT
+<0x00> OP_CAT
+OP_SHA256
 <2> OP_SPLIT OP_DROP
 ${BE16_UNSIGNED}
 <${FRI_N}> OP_MOD
 `;
-}
-
-/** Stack: packed → packed, i. Unrolled FS for a compile-time slot. */
-export function fsIndexSlotAsm(slot: number): string {
-  const rounds: string[] = [];
-  for (let i = 0; i <= slot; i += 1) {
-    const b = i.toString(16).padStart(2, "0");
-    rounds.push(`<0x71> OP_CAT\n<0x${b}> OP_CAT\nOP_SHA256`);
   }
   return `
 ${fsQuerySeedAsm()}
-${rounds.join("\n")}
-<2> OP_SPLIT OP_DROP
-${BE16_UNSIGNED}
-<${FRI_N}> OP_MOD
+${uniqueFsNeedAsm(slot + 1)}
 `;
 }
 
@@ -1150,13 +1281,12 @@ export function cqzKernelUnlocking(): Uint8Array {
 export function slotsKernelUnlocking(start: number): Uint8Array {
   const redeem = compileSlotsKernel(start);
   const startPush = start === 0 ? Uint8Array.of(0x00) : start <= 16 ? Uint8Array.of(0x50 + start) : Uint8Array.of(1, start);
-  const dummy = Uint8Array.of(0x00);
   const body = pushRedeem(redeem);
-  const out = new Uint8Array(dummy.length + startPush.length + body.length);
-  out.set(dummy, 0);
-  out.set(startPush, dummy.length);
-  out.set(body, dummy.length + startPush.length);
-  return out;
+  const rest = new Uint8Array(startPush.length + body.length);
+  rest.set(startPush, 0);
+  rest.set(body, startPush.length);
+  const target = start < SLOT_KERNEL_COUNT ? rest.length + 1 : KERNEL_UNLOCK_PAD_HIGH;
+  return densityPadUnlocking(rest, target);
 }
 
 export function compileScalarMulFastLock(expected: CirclePoint): Uint8Array {

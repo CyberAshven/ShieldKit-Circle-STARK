@@ -92,7 +92,7 @@ describe("internal hash knob", () => {
       digest(data: Uint8Array) {
         return sha256(concatBytes(new TextEncoder().encode("PAA1-LAB-THIRD"), data));
       },
-    } as InternalHash;
+    } as unknown as InternalHash;
     assert.equal(resolveInternalHash(third), third);
     assert.throws(() => internalHash("lab-third" as InternalHashId), /unknown internal hash/);
 

@@ -7,6 +7,7 @@ export { hashLabPlugin } from "./backends/hash-lab.ts";
 export { circleFriPlugin, CIRCLE_FRI_NOT_SOUND_YET } from "./backends/circle/plugin.ts";
 export { DEFAULT_ZKP_FAMILY, defaultZkpPlugin, zkpPluginByFamily, zkpPlugins } from "./plugins/registry.ts";
 export { proveFri, verifyFri, statementToEvals, unmaskFriProof } from "./backends/circle/fri.ts";
+export { firstFoldOrbit, uniqueQueryIndices } from "./backends/circle/query-sample.ts";
 export {
   DEFAULT_INTERNAL_HASH_ID,
   INTERNAL_HASH_IDS,

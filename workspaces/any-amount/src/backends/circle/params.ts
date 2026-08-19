@@ -16,7 +16,7 @@ export const FRI_LOG_N = 10;
 export const FRI_QUERIES = 36;
 export const GRIND_BITS = 20;
 export const FRI_FINAL = 8;
-export const FRI_VERSION = 6;
+export const FRI_VERSION = 7;
 export const COMMITTED_LAYERS = Math.log2(FRI_N / FRI_FINAL); // 7
 /** Cubic merkle mix ⇒ deg(C) ~ 3T, Q = C/Z_H ⇒ rate 2/B. */
 export const RATE: "2/B" = "2/B";
@@ -49,7 +49,7 @@ export const CONJECTURAL_BITS = conjecturalBits({
 });
 
 export function assertSoundParams(): void {
-  if (FRI_N === 32 && FRI_QUERIES === 8) {
+  if ((FRI_N as number) === 32 && (FRI_QUERIES as number) === 8) {
     throw new Error("refusing unsound bench params n=32 q=8");
   }
   if (CONJECTURAL_BITS < SOUNDNESS_FLOOR) {

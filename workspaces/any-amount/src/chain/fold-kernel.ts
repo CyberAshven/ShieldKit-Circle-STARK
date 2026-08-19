@@ -7,6 +7,7 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { COMMITTED_LAYERS, FRI_QUERIES } from "../backends/circle/params.ts";
 import { AIR_OFF_IDX, BE16_UNSIGNED, SLOT_KERNEL_COUNT, fsIndexSlotAsm } from "./air-cqz.ts";
+import { densityPadUnlocking, KERNEL_UNLOCK_PAD_HIGH } from "./envelope.ts";
 import { FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { foldDefinesAsm, foldQueriesAsm } from "./fold-asm.ts";
 
@@ -93,6 +94,7 @@ export function foldKernelAsm(nFold = 1, queryIndex = 0): string {
     return `${extractQueryPairsAsm(foldQueryShardInput(qi), foldQueryPairIndex(qi))}\nOP_CAT`;
   }).join("\n");
   return `
+OP_DROP
 ${foldDefinesAsm()}
 <0> OP_INPUTBYTECODE
 <1> OP_SPLIT OP_NIP
@@ -168,5 +170,7 @@ function pushRedeem(data: Uint8Array): Uint8Array {
 }
 
 export function foldKernelUnlocking(nFold = 1, queryIndex = 0): Uint8Array {
-  return pushRedeem(compileFoldKernel(nFold, queryIndex));
+  const rest = pushRedeem(compileFoldKernel(nFold, queryIndex));
+  const target = queryIndex === 0 ? rest.length + 1 : KERNEL_UNLOCK_PAD_HIGH;
+  return densityPadUnlocking(rest, target);
 }

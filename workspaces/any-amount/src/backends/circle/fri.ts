@@ -42,6 +42,7 @@ import {
   TRACE_LEN,
   assertSoundParams,
 } from "./params.ts";
+import { uniqueQueryIndices } from "./query-sample.ts";
 import {
   airQuotientLde,
   algebraicC,
@@ -165,14 +166,7 @@ function foldLayer(
 }
 
 function queryIndices(hash: InternalHash, seed: Uint8Array, n: number, count: number): number[] {
-  const idx: number[] = [];
-  let h = seed;
-  while (idx.length < count) {
-    h = hash.digest(concatBytes(h, new TextEncoder().encode("q"), Uint8Array.of(idx.length)));
-    const v = (h[0]! << 8) | h[1]!;
-    idx.push(v % n);
-  }
-  return idx;
+  return uniqueQueryIndices(hash, seed, n, count);
 }
 
 function grindOk(hash: InternalHash, digest: Uint8Array, nonce: number): boolean {
@@ -680,6 +674,7 @@ export function proofByteLength(p: FriProof): number {
 }
 
 export { add, bytesToHex, COMMITTED_LAYERS, FRI_LOG_N, FRI_N, FRI_QUERIES, TRACE_LEN };
+export { firstFoldOrbit, sampleUniqueQueryIndices, uniqueQueryIndices } from "./query-sample.ts";
 export {
   freshViewingKey,
   unmaskAuth,
