@@ -2,10 +2,11 @@
  * Dedicated Circle-FRI fold kernel. First push of each grouped FRI unlocking
  * is (left||right)×7×queriesInShard. Kernel q reads shard (q % 10) and slices
  * pair group floor(q/10). One query per redeem (density).
+ * Packed idx is bound to recomputed FS; an even layer-0 pair cannot hide a cooked index.
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { COMMITTED_LAYERS, FRI_QUERIES } from "../backends/circle/params.ts";
-import { AIR_OFF_IDX, SLOT_KERNEL_COUNT } from "./air-cqz.ts";
+import { AIR_OFF_IDX, BE16_UNSIGNED, SLOT_KERNEL_COUNT, fsIndexSlotAsm } from "./air-cqz.ts";
 import { FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { foldDefinesAsm, foldQueriesAsm } from "./fold-asm.ts";
 
@@ -99,8 +100,15 @@ ${foldDefinesAsm()}
 OP_0
 ${pulls}
 OP_OVER
+${fsIndexSlotAsm(queryIndex)}
+OP_TOALTSTACK
 <${AIR_OFF_IDX + queryIndex * 2}> OP_SPLIT OP_NIP
 <${nFold * 2}> OP_SPLIT OP_DROP
+OP_DUP
+<2> OP_SPLIT OP_DROP
+${BE16_UNSIGNED}
+OP_FROMALTSTACK
+OP_NUMEQUALVERIFY
 ${foldQueriesAsm(nFold)}
 OP_1
 `;
