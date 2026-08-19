@@ -184,7 +184,7 @@ Do **not** relabel `356630bd…` as fold.
 
 - A theorem that FRI openings hide the statement (degree-0 offset is not T-recoverable on the 2026-08-19 pack path; that is not statistical ZK of the FRI polynomial).
 - A theorem that the whole STARK is statistically ZK. Published note preimage is one-time-padded; FRI openings stay on public `onChainCells`.
-- Hidden pool-UTXO value (output is `STATE_BASE`). Note amounts are tagged SHA-256 commits; the public net is committed in `encodeStatement`.
+- Hidden pool-UTXO value (output is `STATE_BASE`). Note amounts are tagged SHA-256 commits; the public net and reserve are hiding tagged hashes in `encodeStatement` (not Bulletproofs/Orchard).
 - Zcash / Monero / Voidify parity.
 
 Earlier standard 6-slot spends without the current fold lock:

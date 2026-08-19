@@ -5,7 +5,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeTransaction } from "@bitauth/libauth";
 import { encodeFriProof, proveFri, verifyFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
-import { commitAmount } from "../src/amounts/hash-commit.ts";
+import { commitAmount, commitPublicNet, commitReserve } from "../src/amounts/hash-commit.ts";
+import { encodeStatement } from "../src/pool/statement.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, commitNote, type Note } from "../src/pool/notes.ts";
 import { emptyState, encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
@@ -104,6 +105,41 @@ describe("hash/PQ note-amount commit", () => {
       const pub = encodePublicPaa1(built.statement.newState);
       assert.deepEqual(pub.subarray(16, 24), new Uint8Array(8));
     }
+  });
+
+  it("public net and reserve are hiding commits; blind stays off encodeStatement", () => {
+    const note: Note = { amountSats: AMT_A, rho: rnd32(), ownerSecret: rnd32() };
+    const d = applyDeposit(machine(), note);
+    const enc = encodeStatement(d.statement);
+    assert.equal(containsBytes(enc, d.statement.netBlind), false, "net blind is not in the encoding");
+    for (const amt of [AMT_A, d.statement.oldState.reserveSats, d.statement.newState.reserveSats]) {
+      if (amt === 0n) continue;
+      for (const raw of amountEncodings(amt)) {
+        assert.equal(containsBytes(enc, raw), false, `encodeStatement must not carry ${amt}`);
+      }
+    }
+    const netCommit = enc.slice(9, 41);
+    assert.deepEqual(
+      netCommit,
+      commitPublicNet(d.statement.publicAmountSats, d.statement.payoutLockingDigest, d.statement.netBlind),
+    );
+    assert.notDeepEqual(
+      netCommit,
+      commitPublicNet(d.statement.publicAmountSats, d.statement.payoutLockingDigest, new Uint8Array(32)),
+      "zero-blind net commit would be brute-forceable from payout",
+    );
+    const rsvOff = 9 + 32 + 128 + 128;
+    assert.deepEqual(enc.slice(rsvOff, rsvOff + 32), commitReserve(d.statement.oldState.reserveSats, d.statement.netBlind));
+    assert.deepEqual(
+      enc.slice(rsvOff + 32, rsvOff + 64),
+      commitReserve(d.statement.newState.reserveSats, d.statement.netBlind),
+    );
+    const other = applyDeposit(machine(), note);
+    assert.notDeepEqual(
+      encodeStatement(d.statement).slice(9, 41),
+      encodeStatement(other.statement).slice(9, 41),
+      "fresh netBlind must rerandomize the public-net commit",
+    );
   });
 
   it("forged amount commit rejects verifyFri; honest accepts", () => {

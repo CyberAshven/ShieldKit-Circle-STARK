@@ -126,13 +126,16 @@ describe("statistical ZK of the published witness", () => {
     const commit = decoded.viewingCommit!;
     for (const q of decoded.queries) {
       const rawQ = nqzAt(w.statement, q.index).q;
-      const r = openingMaskAt(commit, q.index);
+      const zQ = nqzAt(w.statement, q.index).z;
+      const r = openingMaskAt(commit, q.index, undefined, zQ);
       assert.notEqual(q.layers[0]!.value, rawQ, "opening is not plaintext Q");
       assert.equal(q.layers[0]!.value, add(rawQ, r));
+      const rOn = openingMaskAt(commit, q.index, undefined, 0n);
+      if (zQ !== 0n) assert.notEqual(r, rOn, "off-domain Z·R must move openings off the trace");
     }
     const q0 = decoded.queries[0]!;
     const rawQ0 = nqzAt(w.statement, q0.index).q;
-    const r0 = openingMaskAt(commit, q0.index);
+    const r0 = openingMaskAt(commit, q0.index, undefined, nqzAt(w.statement, q0.index).z);
     const poolUnlock = tx.inputs[0]!.unlockingBytecode;
     assert.equal(containsBytes(poolUnlock, encodeLe(add(rawQ0, r0))), true, "packed Q is masked");
     const packed = encodeAirPacked(w.statement, raw);
@@ -151,7 +154,7 @@ describe("statistical ZK of the published witness", () => {
     };
     for (let i = 0; i < TRACE_LEN; i += 1) {
       const fromCells = sub(tAt(i), cells[i]!);
-      const rI = openingMaskAt(commit, i);
+      const rI = openingMaskAt(commit, i, undefined, 0n);
       assert.notEqual(fromCells, rI, `T(domain[${i}])-cell must not be the opening mask`);
       assert.notEqual(sub(tAt(i), 1n), rI, `T(domain[${i}])-1 must not be the opening mask`);
       assert.notEqual(sub(tAt(i), 2n), rI, `T(domain[${i}])-2 must not be the opening mask`);
@@ -163,7 +166,12 @@ describe("statistical ZK of the published witness", () => {
       const zVal = nqzAt(w.statement, idx).z;
       if (zVal === 0n) continue;
       const fromQn = sub(qP, mul(nP, inv(zVal)));
-      assert.notEqual(fromQn, openingMaskAt(commit, idx), `qTable[${s}]-nTable/Z must not be the opening mask`);
+      const zFull = nqzAt(w.statement, idx).z;
+      assert.notEqual(
+        fromQn,
+        openingMaskAt(commit, idx, undefined, zFull),
+        `qTable[${s}]-nTable/Z must not be the opening mask`,
+      );
     }
     assert.equal(vm.accepted, true, vm.error ?? "honest VM still accepts");
   });

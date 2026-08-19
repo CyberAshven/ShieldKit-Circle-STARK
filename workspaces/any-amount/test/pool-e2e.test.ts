@@ -204,7 +204,10 @@ describe("pool e2e mix", () => {
     }
     const q0 = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
     const slot = nqzAt(mix.statement, decoded.queries[0]!.index);
-    const maskedQ = add(slot.q, openingMaskAt(decoded.viewingCommit!, decoded.queries[0]!.index));
+    const maskedQ = add(
+      slot.q,
+      openingMaskAt(decoded.viewingCommit!, decoded.queries[0]!.index, undefined, slot.z),
+    );
     assert.deepEqual(q0, encodeLe(maskedQ));
     assert.equal(decoded.queries[0]!.layers[0]!.value, maskedQ);
     assert.notEqual(decoded.queries[0]!.layers[0]!.value, slot.q);

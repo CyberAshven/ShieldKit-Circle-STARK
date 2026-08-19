@@ -208,9 +208,10 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
   const big = circleDomain(FRI_N);
   const viewingKey = freshViewingKey();
   const vCommit = viewingCommit(viewingKey, hash);
-  const { qLde } = airQuotientLde(statement, small, big, hash);
-  const maskCoeffs = openingMaskCoeffs(vCommit, hash);
-  const tLde = qLde.map((q, i) => add(q, evalMaskPoly(maskCoeffs, i)));
+  const { qLde, zLde } = airQuotientLde(statement, small, big, hash);
+  const onC = openingMaskCoeffs(vCommit, hash, "on");
+  const offC = openingMaskCoeffs(vCommit, hash, "off");
+  const tLde = qLde.map((q, i) => add(q, add(evalMaskPoly(onC, i), mul(zLde[i]!, evalMaskPoly(offC, i)))));
   const traceTree = new MerkleTree(tLde, hash);
 
   let domain = big;
@@ -289,9 +290,12 @@ export function proveFromTLde(
   const digest = hash.digest(encodeStatement(statement, hash));
   const viewingKey = freshViewingKey();
   const vCommit = viewingCommit(viewingKey, hash);
-  const maskCoeffs = openingMaskCoeffs(vCommit, hash);
-  const masked = tLde.map((q, i) => add(q, evalMaskPoly(maskCoeffs, i)));
   const big = circleDomain(FRI_N);
+  const small = circleDomain(TRACE_LEN);
+  const { zLde } = airQuotientLde(statement, small, big, hash);
+  const onC = openingMaskCoeffs(vCommit, hash, "on");
+  const offC = openingMaskCoeffs(vCommit, hash, "off");
+  const masked = tLde.map((q, i) => add(q, add(evalMaskPoly(onC, i), mul(zLde[i]!, evalMaskPoly(offC, i)))));
   const traceTree = new MerkleTree(masked, hash);
   let domain = big;
   let evals = masked.slice();
@@ -434,7 +438,9 @@ export function verifyFri(
     }
     const nAt = nLde[query.index]!;
     const zAt = zLde[query.index]!;
-    const openMask = proof.viewingCommit ? openingMaskAt(proof.viewingCommit, query.index, hash) : 0n;
+    const openMask = proof.viewingCommit
+      ? openingMaskAt(proof.viewingCommit, query.index, hash, zAt)
+      : 0n;
     if (mul(sub(query.traceValue, openMask), zAt) !== nAt) {
       return { ok: false, reason: "N != Q*Z" };
     }
@@ -683,6 +689,7 @@ export {
   openingMaskCoeffs,
   evalMaskPoly,
   OPEN_MASK_DEGREE,
+  OPEN_MASK_OFF_DEGREE,
   VIEWING_PAD_LEN,
 } from "./witness-mask.ts";
 export {

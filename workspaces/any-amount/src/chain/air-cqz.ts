@@ -41,7 +41,7 @@ export const AIR_STMT_LEN = 433;
 export const AIR_OFF_DIGEST = AIR_OFF_STMT;
 export const AIR_OFF_PUB_OLD = AIR_OFF_STMT + 32;
 export const AIR_OFF_PUB_NEW = AIR_OFF_STMT + 32 + 128;
-/** Packed viewing-commit (32). Prover derives a degree-3 mask poly; the felt is not stored. */
+/** Packed viewing-commit (32). Prover derives R_on + Z·R_off; the felt is not stored. */
 export const AIR_OFF_OPEN_MASK = 812;
 export const AIR_VIEWING_COMMIT_LEN = 32;
 export const AIR_OFF_QTABLE = 957;
@@ -294,7 +294,7 @@ export function encodeAirPacked(
   const qIdx = fiatShamirQueryIndices(digest, p, hash);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     const i = qIdx[s]!;
-    const r = openingMaskAt(commit, i, hash);
+    const r = openingMaskAt(commit, i, hash, zLde[i]!);
     packed.set(encodeLe(add(qLde[i]!, r)), AIR_OFF_QTABLE + s * 4);
     packed.set(encodeLe(add(nLde[i]!, mul(r, zLde[i]!))), AIR_OFF_NTABLE + s * 4);
     packed[AIR_OFF_IDX + s * 2] = (i >> 8) & 0xff;

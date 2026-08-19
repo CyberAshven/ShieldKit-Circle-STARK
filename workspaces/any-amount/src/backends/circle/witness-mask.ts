@@ -6,6 +6,7 @@
 import { concatBytes, readU64BE, writeU64BE } from "../../pool/bytes.ts";
 import type { FriAuth } from "./air.ts";
 import { defaultInternalHash, type InternalHash } from "./internal-hash.ts";
+import { add, mul } from "./m31.ts";
 
 export const VIEWING_TAG = new TextEncoder().encode("PAA1-VIEW-v1");
 export const FRI_OPEN_MASK_TAG = new TextEncoder().encode("fri-open-mask");
@@ -44,7 +45,8 @@ export function unmaskAuth(auth: FriAuth, key: Uint8Array): FriAuth {
 
 /**
  * Degree-0 mask felt. Leftover for contrast tests: opened[i]−opened[j] = Q[i]−Q[j]
- * because the constant cancels. Production openings use `openingMaskAt` (degree 3).
+ * because the constant cancels. Production openings use `openingMaskAt` (on-domain
+ * poly plus off-domain Z·R, ePrint 2024/1037-style).
  */
 export function openingMaskFelt(commit: Uint8Array, hash: InternalHash = defaultInternalHash()): bigint {
   if (commit.length !== 32) throw new Error("viewing commit width");
@@ -57,8 +59,10 @@ export function openingMaskFelt(commit: Uint8Array, hash: InternalHash = default
   return n % 2147483647n;
 }
 
-/** Four SHA-256-derived coeffs. Not a full 2024/1037 HVZK theorem (off-domain R of query-count degree). */
-export const OPEN_MASK_DEGREE = 3;
+/** On-domain index poly degree. Off-domain Z·R uses OPEN_MASK_OFF_DEGREE. */
+export const OPEN_MASK_DEGREE = 7;
+/** Off-trace randomizer degree (ePrint 2024/1037 ZH·R). Not a Lean HVZK theorem. */
+export const OPEN_MASK_OFF_DEGREE = 35;
 
 function feltFromHash(h: Uint8Array): bigint {
   const n =
@@ -69,11 +73,19 @@ function feltFromHash(h: Uint8Array): bigint {
   return n % 2147483647n;
 }
 
-export function openingMaskCoeffs(commit: Uint8Array, hash: InternalHash = defaultInternalHash()): bigint[] {
+export function openingMaskCoeffs(
+  commit: Uint8Array,
+  hash: InternalHash = defaultInternalHash(),
+  which: "on" | "off" = "on",
+): bigint[] {
   if (commit.length !== 32) throw new Error("viewing commit width");
+  const deg = which === "on" ? OPEN_MASK_DEGREE : OPEN_MASK_OFF_DEGREE;
+  const stream = which === "on" ? 0 : 1;
   const out: bigint[] = [];
-  for (let k = 0; k <= OPEN_MASK_DEGREE; k += 1) {
-    out.push(feltFromHash(hash.digest(concatBytes(VIEWING_TAG, commit, FRI_OPEN_MASK_TAG, Uint8Array.of(k)))));
+  for (let k = 0; k <= deg; k += 1) {
+    out.push(
+      feltFromHash(hash.digest(concatBytes(VIEWING_TAG, commit, FRI_OPEN_MASK_TAG, Uint8Array.of(stream, k)))),
+    );
   }
   return out;
 }
@@ -90,10 +102,15 @@ export function evalMaskPoly(coeffs: readonly bigint[], index: number): bigint {
   return acc;
 }
 
+/** R_on(i) + Z(i)·R_off(i). Z=0 on the trace so AIR-on-H is only R_on. */
 export function openingMaskAt(
   commit: Uint8Array,
   index: number,
   hash: InternalHash = defaultInternalHash(),
+  zAt = 0n,
 ): bigint {
-  return evalMaskPoly(openingMaskCoeffs(commit, hash), index);
+  const h = hash ?? defaultInternalHash();
+  const on = evalMaskPoly(openingMaskCoeffs(commit, h, "on"), index);
+  if (zAt === 0n) return on;
+  return add(on, mul(zAt, evalMaskPoly(openingMaskCoeffs(commit, h, "off"), index)));
 }

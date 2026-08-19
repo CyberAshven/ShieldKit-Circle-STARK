@@ -63,7 +63,7 @@ is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount
 ## Profiles
 
 - **Fv1** (joint, sealed): 0.1 ticket, public amount, PAF1. Size gate with toorik. Do not widen it on `main`.
-- **any-amount** (this workspace): type the number. Note amounts are a tagged SHA-256 commit; the public net is committed in `encodeStatement`. Pool UTXO stays `STATE_BASE`.
+- **any-amount** (this workspace): type the number. Note amounts are a tagged SHA-256 commit; the public net and reserve are hiding tagged hashes in `encodeStatement`. Pool UTXO stays `STATE_BASE`.
 - **hidden-amount UTXO**: same covenant + hidden pool output value (later CHIP). Not this increment.
 
 P2PKH is **not** the shielded pool. The pool is the **covenant UTXO**.
@@ -85,7 +85,7 @@ An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserv
 
 ## Confidential amounts
 
-`amountCommitIn` / `amountCommitOut` are 32-byte tagged internal-hash commits (`H(PAA1-HASH-AMT-v1 || amount_i64le || rho)`). Production `H` is SHA-256; BLAKE2s is the selectable alternate. `checkAuthRelation` requires them to match the opened note. `encodeStatement` writes `commitPublicNet` instead of the raw public i64. `encodeFriProof` one-time-pads rho/owner/amount. FRI openings and packed Q/N add a degree-3 SHA-256 mask polynomial \(R\) (not a degree-0 constant; not a full 2024/1037 HVZK theorem). Packed nTable is N+R(i)Z. Packed Newton T is not the AIR interpolant. The slot lock checks Q·Z=nTable without evaluating \(R\). Pool UTXO sats stay `STATE_BASE`. CashVM Merkle/FS is `OP_SHA256`; Poseidon2 is not a lock opcode. The old Pedersen module remains a comparison plugin only. Poseidon2 is not an option on this knob.
+`amountCommitIn` / `amountCommitOut` are 32-byte tagged internal-hash commits (`H(PAA1-HASH-AMT-v1 || amount_i64le || rho)`). Production `H` is SHA-256; BLAKE2s is the selectable alternate. `checkAuthRelation` requires them to match the opened note. `encodeStatement` writes hiding commits of the public net (`H(PAA1-HASH-NET-v1 || i64le || payout || blind32)`) and of old/new reserve (`PAA1-HASH-RSV-v1`); the blind is not in the encoding; public PAA1 cells zero the reserve field. That is still a tagged hash, not Bulletproofs or Orchard. `encodeFriProof` one-time-pads rho/owner/amount. FRI openings and packed Q/N add \(R_{\mathrm{on}}(i)+Z(i)R_{\mathrm{off}}(i)\) (SHA-256 coeffs; off-domain \(Z_H\cdot R\) as in ePrint 2024/1037). Not a Lean HVZK theorem. Packed nTable is N+R(i)Z. The 10 KB lock does not evaluate \(R\). Script cannot hide `STATE_BASE` or the miner-fee UTXO (those need a value-hiding CHIP). Packed Newton T is not the AIR interpolant. The slot lock checks Q·Z=nTable without evaluating \(R\). Pool UTXO sats stay `STATE_BASE`. CashVM Merkle/FS is `OP_SHA256`; Poseidon2 is not a lock opcode. The old Pedersen module remains a comparison plugin only. Poseidon2 is not an option on this knob.
 
 Partial withdraw mints a **new change note**: leftover amount, same `ownerSecret`, **fresh `rho`**, new Merkle index. Reusing `rho` would make `nullifierOf(change) == nullifierOf(spent)` and the next spend dies (`nullifier already used`).
 
@@ -131,7 +131,7 @@ Toorik’s ShieldKit-SDK `designs/fri` splits **Rust `fri-prover` / `fri-worker`
 
 ### Why not Fv1 0.1?
 
-Fv1 is the joint **size gate** with toorik (fixed ticket, smaller AIR). It is a better first *measurement*, not the product. The product is one set, any amount (Nova / Zcash / Aztec amounts). Note amounts are hash-committed; the public net is committed in the statement. Do not widen sealed `PoolActionFv1` on `main`.
+Fv1 is the joint **size gate** with toorik (fixed ticket, smaller AIR). It is a better first *measurement*, not the product. The product is one set, any amount (Nova / Zcash / Aztec amounts). Note amounts are hash-committed; the public net and reserve are hiding tagged hashes in the statement (not Bulletproofs/Orchard). Do not widen sealed `PoolActionFv1` on `main`.
 
 ### Why a fresh rho on change?
 

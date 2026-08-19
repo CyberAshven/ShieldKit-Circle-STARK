@@ -10,8 +10,8 @@ Chipnet Circle-FRI shielded covenant. ZKP plugin hook is **off-chain + registry*
 
 1. **36 on-chain folds** — lock+VM+measure done (382203 B). Chipnet land `b1415faf…` height 319402. `18c74b49…` remains the 10-fold land.
 2. **Conservation on chain** — done (`4414ff3`). seq+1 and reserve-field=0 on the lock; leak test on successor hex. Hidden reserve **value** residuals stay in `verifyFri`.
-3. **Replace Pedersen** — done. Production path is tagged SHA-256 (`hash-commit.ts`), bound in `checkAuthRelation`. `encodeStatement` commits the public net. Pedersen remains a comparison plugin.
-4. **Statistical ZK** — published preimage OTP; FRI openings use a degree-3 SHA-256 mask poly \(R\) so opened diffs are not plaintext Q diffs (degree-0 contrast still cancels). Packed N is N+R(i)Z. Packed Newton T is not the AIR interpolant. Not full 2024/1037 HVZK. CashVM hash is `OP_SHA256`, not Poseidon2-in-script. Not better-than-XMR/Zcash/StarkWare-as-theorem.
+3. **Replace Pedersen** — done. Production path is tagged SHA-256 (`hash-commit.ts`), bound in `checkAuthRelation`. `encodeStatement` hiding-commits the public net and reserve (`PAA1-HASH-NET-v1` / `PAA1-HASH-RSV-v1` + blind32). Pedersen remains a comparison plugin. Not Bulletproofs/Orchard.
+4. **Statistical ZK** — published preimage OTP; FRI openings use \(R_{\mathrm{on}}+Z R_{\mathrm{off}}\) (SHA-256; off-domain as 2024/1037; deg 7 / 35). Degree-0 contrast still cancels. 10 KB lock does not evaluate \(R\). Cannot Maxwell-hide `STATE_BASE` or the fee UTXO in script. Not a Lean HVZK theorem.
 
 Each increment: tests + measure + honest docs + commit + push `@ABLalgorithm` (origin and upstream), then stop and start the next.
 

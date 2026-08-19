@@ -1,7 +1,7 @@
 import { IncrementalMerkle, NullifierSet, commitNote, freshRho, nullifierOf, type Note } from "./notes.ts";
 import { type AnyAmountState } from "./state.ts";
 import type { ActionKind, PoolStatement } from "./statement.ts";
-import { commitAmount } from "../amounts/hash-commit.ts";
+import { commitAmount, freshNetBlind } from "../amounts/hash-commit.ts";
 import { isZero32, ZERO32 } from "./bytes.ts";
 
 export type PoolMachine = {
@@ -30,6 +30,7 @@ export function applyDeposit(
     profile: "any-amount-v0",
     action: "DEPOSIT",
     publicAmountSats: note.amountSats,
+    netBlind: freshNetBlind(),
     oldState,
     newState,
     noteCommitment: leaf,
@@ -97,6 +98,7 @@ export function applyWithdraw(
     profile: "any-amount-v0",
     action: "WITHDRAW",
     publicAmountSats: -withdrawSats,
+    netBlind: freshNetBlind(),
     oldState,
     newState,
     noteCommitment: leftover > 0n ? commitNote(change!, hash) : new Uint8Array(32),
@@ -129,6 +131,7 @@ export function checkPublicTransition(s: PoolStatement): void {
     }
   }
   if (s.newState.reserveSats < 0n) throw new Error("over-withdraw");
+  if (s.netBlind.length !== 32) throw new Error("net blind width");
   if (s.amountCommitIn.length !== 32 || s.amountCommitOut.length !== 32) {
     throw new Error("amount commit width");
   }
@@ -179,6 +182,7 @@ export function applyAggregate(
     profile: "any-amount-v0",
     action: net >= 0n ? "DEPOSIT" : "WITHDRAW",
     publicAmountSats: net,
+    netBlind: freshNetBlind(),
     oldState: machine.state,
     newState: next.state,
     noteCommitment: next.state.noteRoot,

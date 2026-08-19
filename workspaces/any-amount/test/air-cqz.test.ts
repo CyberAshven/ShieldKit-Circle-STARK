@@ -246,7 +246,7 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     assert.equal(mul(slotNqz.q, slotNqz.z), slotNqz.n, "JS slot0 Q*Z=N");
     const qPacked = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
     const nPacked = packed.slice(AIR_OFF_NTABLE, AIR_OFF_NTABLE + 4);
-    const r = openingMaskAt(proof.viewingCommit!, packedI0);
+    const r = openingMaskAt(proof.viewingCommit!, packedI0, undefined, slotNqz.z);
     const maskedQ = add(slotNqz.q, r);
     const maskedN = add(slotNqz.n, mul(r, slotNqz.z));
     assert.deepEqual(qPacked, encodeLe(maskedQ), "packed Q is opening-masked");
