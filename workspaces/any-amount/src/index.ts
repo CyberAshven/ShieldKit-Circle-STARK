@@ -6,6 +6,14 @@ export { runMixSuccessor, mixChangedRootsAndReserve, publicPoolView } from "./po
 export { hashLabPlugin } from "./backends/hash-lab.ts";
 export { circleFriPlugin, CIRCLE_FRI_NOT_SOUND_YET } from "./backends/circle/plugin.ts";
 export { proveFri, verifyFri, statementToEvals, unmaskFriProof } from "./backends/circle/fri.ts";
+export {
+  DEFAULT_INTERNAL_HASH_ID,
+  INTERNAL_HASH_IDS,
+  defaultInternalHash,
+  internalHash,
+  type InternalHash,
+  type InternalHashId,
+} from "./backends/circle/internal-hash.ts";
 export { soundnessWorksheet } from "./backends/circle/soundness.ts";
 export { evaluateProofOnVm } from "./chain/vm-verifier.ts";
 export { compileCovenantSpend, compileCovenantSuccessor } from "./chain/covenant-spend.ts";

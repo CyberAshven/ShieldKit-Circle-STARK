@@ -7,6 +7,7 @@
  *   260   Newton even
  *   392   Newton odd
  *   524   FS digest + two public PAA1 cells
+ *   812   viewing-commit 32 (lock SHA-256s to mask felt; felt is not packed)
  *   957   Q table (36×4)
  *   1101  FS indices
  *   1173  on-chain cells
@@ -16,13 +17,14 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { encodeStatement, type PoolStatement } from "../pool/statement.ts";
 import { encodePublicPaa1 } from "../pool/state.ts";
-import { concatBytes, sha256, writeU32BE } from "../pool/bytes.ts";
+import { concatBytes, writeU32BE } from "../pool/bytes.ts";
 import { airQuotientLde, onChainCells } from "../backends/circle/air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
 import { add, encodeLe, M31, mul, sub, type M31El } from "../backends/circle/m31.ts";
-import { openingMaskFelt } from "../backends/circle/witness-mask.ts";
+import { FRI_OPEN_MASK_TAG, VIEWING_TAG, openingMaskFelt } from "../backends/circle/witness-mask.ts";
+import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 import { circleDomain } from "../backends/circle/fri.ts";
 import { COMMITTED_LAYERS, FRI_FINAL, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
 import { encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
@@ -39,8 +41,9 @@ export const AIR_STMT_LEN = 433;
 export const AIR_OFF_DIGEST = AIR_OFF_STMT;
 export const AIR_OFF_PUB_OLD = AIR_OFF_STMT + 32;
 export const AIR_OFF_PUB_NEW = AIR_OFF_STMT + 32 + 128;
-/** Degree-0 opening mask felt (LE). 524+32+128+128=812; Q table still at 957. */
+/** Packed viewing-commit (32). Lock derives the degree-0 mask felt; the felt is not stored. */
 export const AIR_OFF_OPEN_MASK = 812;
+export const AIR_VIEWING_COMMIT_LEN = 32;
 export const AIR_OFF_QTABLE = 957;
 export const AIR_OFF_IDX = 1101;
 export const AIR_OFF_CELLS = 1173;
@@ -242,28 +245,43 @@ export function vanishingUnrolledAsm(xs: M31El[] = TRACE_XS): string {
   return lines.join("\n");
 }
 
-export function statementNewton(statement: PoolStatement): { even: M31El[]; odd: M31El[] } {
-  const interp = interpolateCircle(smallDomain, onChainCells(statement));
+export function statementNewton(
+  statement: PoolStatement,
+  mask: M31El = 0n,
+  hash: InternalHash = defaultInternalHash(),
+): { even: M31El[]; odd: M31El[] } {
+  const cells = onChainCells(statement, hash).map((v) => add(v, mask));
+  const interp = interpolateCircle(smallDomain, cells);
   return { even: interp.even, odd: interp.odd };
 }
 
-export function fiatShamirQueryIndices(digest: Uint8Array, proof: FriProof): number[] {
-  const grindSeed = sha256(concatBytes(digest, proof.traceRoot, ...proof.layerRoots));
-  const seed = sha256(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries")));
+export function fiatShamirQueryIndices(
+  digest: Uint8Array,
+  proof: FriProof,
+  hash: InternalHash = defaultInternalHash(),
+): number[] {
+  const grindSeed = hash.digest(concatBytes(digest, proof.traceRoot, ...proof.layerRoots));
+  const seed = hash.digest(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries")));
   const idx: number[] = [];
   let h = seed;
   while (idx.length < FRI_QUERIES) {
-    h = sha256(concatBytes(h, new TextEncoder().encode("q"), Uint8Array.of(idx.length)));
+    h = hash.digest(concatBytes(h, new TextEncoder().encode("q"), Uint8Array.of(idx.length)));
     idx.push(((h[0]! << 8) | h[1]!) % FRI_N);
   }
   return idx;
 }
 
-export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | FriProof): Uint8Array {
+export function encodeAirPacked(
+  statement: PoolStatement,
+  proof: Uint8Array | FriProof,
+  hash: InternalHash = defaultInternalHash(),
+): Uint8Array {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
-  const interp = statementNewton(statement);
-  const { qLde, nLde, zLde } = airQuotientLde(statement, smallDomain, bigDomain);
-  const digest = sha256(encodeStatement(statement));
+  const commit = p.viewingCommit && p.viewingCommit.length === 32 ? p.viewingCommit : new Uint8Array(32);
+  const openMask = openingMaskFelt(commit, hash);
+  const interp = statementNewton(statement, openMask, hash);
+  const { qLde, nLde } = airQuotientLde(statement, smallDomain, bigDomain, hash);
+  const digest = hash.digest(encodeStatement(statement, hash));
   const packed = new Uint8Array(AIR_PACKED_SIZE);
   for (let r = 0; r < COMMITTED_LAYERS; r += 1) {
     packed.set(p.layerRoots[r] ?? new Uint8Array(32), AIR_OFF_ROOTS + r * 32);
@@ -279,16 +297,15 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
   packed.set(digest, AIR_OFF_DIGEST);
   packed.set(encodePublicPaa1(statement.oldState), AIR_OFF_PUB_OLD);
   packed.set(encodePublicPaa1(statement.newState), AIR_OFF_PUB_NEW);
-  const qIdx = fiatShamirQueryIndices(digest, p);
-  const openMask = p.viewingCommit ? openingMaskFelt(p.viewingCommit) : 0n;
-  packed.set(encodeLe(openMask), AIR_OFF_OPEN_MASK);
+  packed.set(commit, AIR_OFF_OPEN_MASK);
+  const qIdx = fiatShamirQueryIndices(digest, p, hash);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     packed.set(encodeLe(add(qLde[qIdx[s]!]!, openMask)), AIR_OFF_QTABLE + s * 4);
     packed.set(encodeLe(nLde[qIdx[s]!]!), AIR_OFF_NTABLE + s * 4);
     packed[AIR_OFF_IDX + s * 2] = (qIdx[s]! >> 8) & 0xff;
     packed[AIR_OFF_IDX + s * 2 + 1] = qIdx[s]! & 0xff;
   }
-  const cells = onChainCells(statement);
+  const cells = onChainCells(statement, hash);
   while (cells.length < TRACE_LEN) cells.push(0n);
   packed.set(encodeFeltBlob(cells.slice(0, TRACE_LEN)), AIR_OFF_CELLS);
   for (let i = 0; i < FRI_FINAL; i += 1) {
@@ -297,8 +314,12 @@ export function encodeAirPacked(statement: PoolStatement, proof: Uint8Array | Fr
   return packed;
 }
 
-export function nqzAt(statement: PoolStatement, index: number): { n: M31El; z: M31El; q: M31El } {
-  const { nLde, zLde, qLde } = airQuotientLde(statement, smallDomain, bigDomain);
+export function nqzAt(
+  statement: PoolStatement,
+  index: number,
+  hash: InternalHash = defaultInternalHash(),
+): { n: M31El; z: M31El; q: M31El } {
+  const { nLde, zLde, qLde } = airQuotientLde(statement, smallDomain, bigDomain, hash);
   return { n: nLde[index]!, z: zLde[index]!, q: qLde[index]! };
 }
 
@@ -369,6 +390,34 @@ function defineFn(asm: string, index: number, name: string): string {
 
 function defineNewtonFn(): string {
   return defineFn(newtonFromBlobAsm(), 0, "newton");
+}
+
+/** Packed viewing-commit → mask felt. Matches openingMaskFelt for SHA-256. */
+function maskCFromInput0Asm(): string {
+  return `
+<0> OP_INPUTBYTECODE
+<1> OP_SPLIT OP_NIP
+<2> OP_SPLIT OP_NIP
+<${AIR_OFF_OPEN_MASK}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+${hexPush(VIEWING_TAG)} OP_SWAP OP_CAT
+${hexPush(FRI_OPEN_MASK_TAG)} OP_CAT
+OP_SHA256
+<4> OP_SPLIT OP_DROP
+<3> OP_SPLIT
+<0x7f> OP_AND
+OP_CAT
+OP_BIN2NUM
+<2147483647> OP_MOD
+`;
+}
+
+function defineMaskCFn(index: number): string {
+  return defineFn(maskCFromInput0Asm(), index, "maskc");
+}
+
+function invokeMaskC(index: number): string {
+  return `<${index}> OP_INVOKE`;
 }
 
 /** Stack: even odd x y → T(x,y). Requires newton fn 0. Alt-clean. */
@@ -658,6 +707,7 @@ export function slotCqzAsm(slot = 0): string {
   const nOff = AIR_OFF_NTABLE + slot * 4;
   return `
 ${defineNewtonFn()}
+${defineMaskCFn(1)}
 ${packedMagicAsm()}
 ${fsIndexSlotAsm(slot)}
 OP_SWAP
@@ -665,10 +715,7 @@ OP_DUP
 <${qOff}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
 OP_BIN2NUM
-OP_OVER
-<${AIR_OFF_OPEN_MASK}> OP_SPLIT OP_NIP
-<4> OP_SPLIT OP_DROP
-OP_BIN2NUM
+${invokeMaskC(1)}
 ${M31_SUB}
 OP_TOALTSTACK
 OP_DUP
@@ -702,6 +749,8 @@ OP_2OVER
 OP_3 OP_PICK
 OP_3 OP_PICK
 ${evalTFromBlobAsm()}
+${invokeMaskC(1)}
+${M31_SUB}
 OP_TOALTSTACK
 OP_2DUP
 ${g64}
@@ -711,6 +760,8 @@ OP_5 OP_PICK
 OP_3 OP_PICK
 OP_3 OP_PICK
 ${evalTFromBlobAsm()}
+${invokeMaskC(1)}
+${M31_SUB}
 OP_TOALTSTACK
 OP_2DUP
 ${g64}
@@ -720,6 +771,8 @@ OP_7 OP_PICK
 OP_3 OP_PICK
 OP_3 OP_PICK
 ${evalTFromBlobAsm()}
+${invokeMaskC(1)}
+${M31_SUB}
 OP_TOALTSTACK
 OP_2DROP
 OP_2DROP
@@ -804,8 +857,8 @@ OP_BIN2NUM
 `;
 }
 
-/** Stack: packed even odd → same. even/odd interpolate AIR-relevant packed cells. */
-export function bindTToCellsAsm(): string {
+/** Stack: packed even odd → same. even/odd interpolate AIR-relevant packed cells + mask. */
+export function bindTToCellsAsm(maskFn = 1): string {
   const needed = new Set([3, 18, 23, 24]);
   const lines: string[] = [];
   for (const { i, j, x, y } of conjugatePairs().filter((p) => needed.has(p.i) || needed.has(p.j))) {
@@ -818,8 +871,12 @@ ${pushFelt(x)}
 <0> OP_INVOKE
 OP_4 OP_PICK
 ${extractCellAsm(i)}
+${invokeMaskC(maskFn)}
+${M31_ADD}
 OP_5 OP_PICK
 ${extractCellAsm(j)}
+${invokeMaskC(maskFn)}
+${M31_ADD}
 OP_2DUP
 ${M31_ADD}
 OP_4 OP_PICK
@@ -1041,6 +1098,7 @@ ${defineNewtonFn()}
 ${defineFn(evalTFromBlobAsm(), 1, "evalT")}
 ${defineFn(SCALAR_MUL_FAST, 2, "fast")}
 ${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
+${defineMaskCFn(4)}
 ${packedMagicAsm()}
 OP_DUP
 <${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
@@ -1051,7 +1109,7 @@ OP_DUP
 <${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
 OP_FROMALTSTACK
 OP_SWAP
-${bindTToCellsAsm()}
+${bindTToCellsAsm(4)}
 OP_TOALTSTACK
 OP_TOALTSTACK
 ${bindCellsToStatementAsm()}
@@ -1082,6 +1140,7 @@ export function compileBindTLock(): Uint8Array {
   return compileOrThrow(
     `
 ${defineNewtonFn()}
+${defineMaskCFn(1)}
 ${packedMagicAsm()}
 OP_DUP
 <${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
@@ -1137,6 +1196,7 @@ export const BIND_T_KERNEL = `
 <1> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_NIP
 ${defineNewtonFn()}
+${defineMaskCFn(1)}
 ${packedMagicAsm()}
 ${bindPackedStmtToPaa1Asm()}
 OP_DUP

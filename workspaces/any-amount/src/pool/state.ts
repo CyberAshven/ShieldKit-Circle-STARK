@@ -1,5 +1,6 @@
 import { bytesToHex, hexToBytes, readU64BE, writeU64BE } from "./bytes.ts";
 import { emptyMerkleRoot } from "./notes.ts";
+import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 
 function writeU32BE(value: bigint): Uint8Array {
   if (value < 0n || value > 0xffffffffn) throw new Error("u32 out of range");
@@ -39,7 +40,10 @@ function assertLen(value: Uint8Array, n: number, name: string): Uint8Array {
   return value;
 }
 
-export function emptyState(poolInstanceId: Uint8Array): AnyAmountState {
+export function emptyState(
+  poolInstanceId: Uint8Array,
+  hash: InternalHash = defaultInternalHash(),
+): AnyAmountState {
   return {
     magic: ANY_STATE_MAGIC,
     version: ANY_STATE_VERSION,
@@ -48,7 +52,7 @@ export function emptyState(poolInstanceId: Uint8Array): AnyAmountState {
     depositCount: 0n,
     withdrawalCount: 0n,
     poolInstanceId: assertLen(poolInstanceId, 32, "poolInstanceId"),
-    noteRoot: emptyMerkleRoot(),
+    noteRoot: emptyMerkleRoot(undefined, hash),
     nullifierRoot: new Uint8Array(32),
   };
 }

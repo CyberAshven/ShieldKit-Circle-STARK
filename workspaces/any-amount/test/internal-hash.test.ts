@@ -1,0 +1,93 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  DEFAULT_INTERNAL_HASH_ID,
+  INTERNAL_HASH_IDS,
+  defaultInternalHash,
+  internalHash,
+} from "../src/backends/circle/internal-hash.ts";
+import { decodeFriProof, encodeFriProof, proveFri, verifyFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
+import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
+import { IncrementalMerkle, NullifierSet, commitNote, type Note } from "../src/pool/notes.ts";
+import { emptyState } from "../src/pool/state.ts";
+import { commitAmount } from "../src/amounts/hash-commit.ts";
+import { MerkleTree } from "../src/backends/circle/merkle.ts";
+import { sha256 } from "../src/pool/bytes.ts";
+
+function rnd32(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(32));
+}
+
+function machine(hash = defaultInternalHash()) {
+  return {
+    state: emptyState(rnd32(), hash),
+    notes: new IncrementalMerkle(undefined, hash),
+    nullifiers: new NullifierSet(hash),
+  };
+}
+
+describe("internal hash knob", () => {
+  it("default is CashVM SHA-256; blake2s is a second real implementation", () => {
+    assert.equal(DEFAULT_INTERNAL_HASH_ID, "sha256");
+    assert.deepEqual([...INTERNAL_HASH_IDS], ["sha256", "blake2s"]);
+    const msg = new TextEncoder().encode("paa1-hash-knob");
+    const sha = internalHash("sha256").digest(msg);
+    const blake = internalHash("blake2s").digest(msg);
+    assert.deepEqual(sha, sha256(msg));
+    assert.equal(sha.length, 32);
+    assert.equal(blake.length, 32);
+    assert.notDeepEqual(sha, blake);
+    assert.equal(defaultInternalHash().id, "sha256");
+  });
+
+  it("same-hash prove/verify accepts; mixed-hash rejects", () => {
+    const note: Note = { amountSats: 12_000n, rho: rnd32(), ownerSecret: rnd32() };
+    for (const id of INTERNAL_HASH_IDS) {
+      const hash = internalHash(id);
+      const d = applyDeposit(machine(hash), note);
+      const proof = proveFri(d.statement, wDeposit(note, d.index, d.path), { hash });
+      const ok = verifyFri(d.statement, proof, wDeposit(note, d.index, d.path), { hash });
+      assert.equal(ok.ok, true, `${id} same-hash: ${ok.ok ? "" : ok.reason}`);
+      const encoded = encodeFriProof(proof);
+      const decoded = decodeFriProof(encoded);
+      const pub = verifyFri(d.statement, decoded, {}, { hash });
+      assert.equal(pub.ok, true, `${id} encoded same-hash: ${pub.ok ? "" : pub.reason}`);
+    }
+
+    const hashA = internalHash("sha256");
+    const hashB = internalHash("blake2s");
+    const d = applyDeposit(machine(hashA), note);
+    const proofA = proveFri(d.statement, wDeposit(note, d.index, d.path), { hash: hashA });
+    const mixed = verifyFri(d.statement, proofA, wDeposit(note, d.index, d.path), { hash: hashB });
+    assert.equal(mixed.ok, false, "sha256 proof must not verify under blake2s");
+
+    const dB = applyDeposit(machine(hashB), note);
+    const proofB = proveFri(dB.statement, wDeposit(note, dB.index, dB.path), { hash: hashB });
+    const mixed2 = verifyFri(dB.statement, proofB, {}, { hash: hashA });
+    assert.equal(mixed2.ok, false, "blake2s proof must not verify under sha256");
+  });
+
+  it("selecting the hash changes merkle, note, nullifier, and amount commit together", () => {
+    const sha = internalHash("sha256");
+    const blake = internalHash("blake2s");
+    const note: Note = { amountSats: 9_000n, rho: rnd32(), ownerSecret: rnd32() };
+    assert.notDeepEqual(commitNote(note, sha), commitNote(note, blake));
+    assert.notDeepEqual(commitAmount(note.amountSats, note.rho, sha), commitAmount(note.amountSats, note.rho, blake));
+    const treeSha = new MerkleTree([1n, 2n, 3n, 4n], sha);
+    const treeBlake = new MerkleTree([1n, 2n, 3n, 4n], blake);
+    assert.notDeepEqual(treeSha.root, treeBlake.root);
+    assert.equal(MerkleTree.verify(1n, 0, treeSha.path(0), treeSha.root, sha), true);
+    assert.equal(MerkleTree.verify(1n, 0, treeSha.path(0), treeSha.root, blake), false);
+  });
+
+  it("default prove/verify path stays SHA-256", () => {
+    const note: Note = { amountSats: 4_000n, rho: rnd32(), ownerSecret: rnd32() };
+    const d = applyDeposit(machine(), note);
+    const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
+    assert.equal(verifyFri(d.statement, proof).ok, true);
+    const w = applyWithdraw(d.machine, note, d.index, rnd32(), 1_000n);
+    assert.ok(w.change);
+    const inner = proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created));
+    assert.equal(verifyFri(w.statement, inner).ok, true);
+  });
+});

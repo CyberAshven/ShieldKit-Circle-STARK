@@ -1,7 +1,8 @@
 import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
 import { IncrementalMerkle, commitNote, nullifierOf, type Note } from "../../pool/notes.ts";
-import { eq32, isZero32, sha256, ZERO32 } from "../../pool/bytes.ts";
+import { eq32, isZero32, ZERO32 } from "../../pool/bytes.ts";
 import { commitAmount } from "../../amounts/hash-commit.ts";
+import { defaultInternalHash, type InternalHash } from "./internal-hash.ts";
 import { add, el, inv, mul, sub, type M31El } from "./m31.ts";
 import { bytesToFelt4 } from "./felt-hash.ts";
 import { evalCirclePoly, interpolateCircle } from "./interpolate.ts";
@@ -65,8 +66,14 @@ function reserveFelt(v: bigint): M31El {
   return v % 2147483647n;
 }
 
-export function nativeWalk(leaf: Uint8Array, index: number, path: Uint8Array[], root: Uint8Array): boolean {
-  return IncrementalMerkle.verify(leaf, index, path, root);
+export function nativeWalk(
+  leaf: Uint8Array,
+  index: number,
+  path: Uint8Array[],
+  root: Uint8Array,
+  hash: InternalHash = defaultInternalHash(),
+): boolean {
+  return IncrementalMerkle.verify(leaf, index, path, root, hash);
 }
 
 /** Public Merkle root the membership opening must hit. */
@@ -83,13 +90,14 @@ export function checkAuthRelation(
   statement: PoolStatement,
   auth: FriAuth,
   _witness: FriWitness = {},
+  hash: InternalHash = defaultInternalHash(),
 ): { ok: true } | { ok: false; reason: string } {
   if (auth.rho.length !== 32 || auth.owner.length !== 32) {
     return { ok: false, reason: "leaf preimage width" };
   }
   const opened = openedNote(auth);
-  if (!eq32(auth.leaf, commitNote(opened))) return { ok: false, reason: "leaf preimage" };
-  const openedCommit = commitAmount(opened.amountSats, opened.rho);
+  if (!eq32(auth.leaf, commitNote(opened, hash))) return { ok: false, reason: "leaf preimage" };
+  const openedCommit = commitAmount(opened.amountSats, opened.rho, hash);
   if (!eq32(auth.amountCommit, openedCommit)) return { ok: false, reason: "amount commit" };
   if (statement.action === "DEPOSIT") {
     if (!eq32(statement.amountCommitOut, openedCommit)) return { ok: false, reason: "deposit amount commit" };
@@ -99,7 +107,7 @@ export function checkAuthRelation(
 
   const root = membershipRoot(statement);
   if (!eq32(auth.root, root)) return { ok: false, reason: "auth root != public noteRoot" };
-  if (!nativeWalk(auth.leaf, auth.index, auth.path, root)) {
+  if (!nativeWalk(auth.leaf, auth.index, auth.path, root, hash)) {
     return { ok: false, reason: "membership path" };
   }
   if (statement.action === "DEPOSIT") {
@@ -107,16 +115,16 @@ export function checkAuthRelation(
     if (!isZero32(statement.nullifier) || !isZero32(auth.nullifier)) {
       return { ok: false, reason: "deposit nullifier must be zero" };
     }
-    const append = checkAppend(statement, auth);
+    const append = checkAppend(statement, auth, hash);
     if (!append.ok) return append;
     return { ok: true };
   }
   if (!eq32(auth.nullifier, statement.nullifier)) return { ok: false, reason: "nullifier != statement" };
   if (isZero32(statement.nullifier)) return { ok: false, reason: "withdraw nullifier zero" };
-  const nf = nullifierOf(opened, statement.oldState.poolInstanceId);
+  const nf = nullifierOf(opened, statement.oldState.poolInstanceId, hash);
   if (!eq32(auth.nullifier, nf)) return { ok: false, reason: "nullifier preimage" };
   if (!eq32(statement.oldState.noteRoot, statement.newState.noteRoot)) {
-    const append = checkAppend(statement, auth);
+    const append = checkAppend(statement, auth, hash);
     if (!append.ok) return append;
   }
   return { ok: true };
@@ -129,10 +137,11 @@ export function checkAuthRelation(
 export function checkPublicAuthRelation(
   statement: PoolStatement,
   auth: FriAuth,
+  hash: InternalHash = defaultInternalHash(),
 ): { ok: true } | { ok: false; reason: string } {
   const root = membershipRoot(statement);
   if (!eq32(auth.root, root)) return { ok: false, reason: "auth root != public noteRoot" };
-  if (!nativeWalk(auth.leaf, auth.index, auth.path, root)) {
+  if (!nativeWalk(auth.leaf, auth.index, auth.path, root, hash)) {
     return { ok: false, reason: "membership path" };
   }
   if (statement.action === "DEPOSIT") {
@@ -140,14 +149,14 @@ export function checkPublicAuthRelation(
     if (!isZero32(statement.nullifier) || !isZero32(auth.nullifier)) {
       return { ok: false, reason: "deposit nullifier must be zero" };
     }
-    const append = checkAppend(statement, auth);
+    const append = checkAppend(statement, auth, hash);
     if (!append.ok) return append;
     return { ok: true };
   }
   if (!eq32(auth.nullifier, statement.nullifier)) return { ok: false, reason: "nullifier != statement" };
   if (isZero32(statement.nullifier)) return { ok: false, reason: "withdraw nullifier zero" };
   if (!eq32(statement.oldState.noteRoot, statement.newState.noteRoot)) {
-    const append = checkAppend(statement, auth);
+    const append = checkAppend(statement, auth, hash);
     if (!append.ok) return append;
   }
   return { ok: true };
@@ -156,11 +165,12 @@ export function checkPublicAuthRelation(
 function checkAppend(
   statement: PoolStatement,
   auth: FriAuth,
+  hash: InternalHash = defaultInternalHash(),
 ): { ok: true } | { ok: false; reason: string } {
-  if (!nativeWalk(ZERO32, auth.createdIndex, auth.createdPath, statement.oldState.noteRoot)) {
+  if (!nativeWalk(ZERO32, auth.createdIndex, auth.createdPath, statement.oldState.noteRoot, hash)) {
     return { ok: false, reason: "append old" };
   }
-  if (!nativeWalk(auth.createdLeaf, auth.createdIndex, auth.createdPath, statement.newState.noteRoot)) {
+  if (!nativeWalk(auth.createdLeaf, auth.createdIndex, auth.createdPath, statement.newState.noteRoot, hash)) {
     return { ok: false, reason: "append new" };
   }
   if (statement.action === "DEPOSIT" && !eq32(auth.createdLeaf, auth.leaf)) {
@@ -169,7 +179,11 @@ function checkAppend(
   return { ok: true };
 }
 
-export function authFromWitness(statement: PoolStatement, witness: FriWitness): FriAuth {
+export function authFromWitness(
+  statement: PoolStatement,
+  witness: FriWitness,
+  hash: InternalHash = defaultInternalHash(),
+): FriAuth {
   if (statement.action === "DEPOSIT") {
     const c = witness.created;
     if (!c) throw new Error("deposit requires created membership witness");
@@ -193,17 +207,17 @@ export function authFromWitness(statement: PoolStatement, witness: FriWitness): 
   if (!s) throw new Error("withdraw requires spent membership witness");
   const change = witness.created;
   return {
-    leaf: commitNote(s.note),
+    leaf: commitNote(s.note, hash),
     index: s.index,
     path: s.path,
     root: statement.oldState.noteRoot,
-    nullifier: nullifierOf(s.note, statement.oldState.poolInstanceId),
+    nullifier: nullifierOf(s.note, statement.oldState.poolInstanceId, hash),
     rho: s.note.rho,
     owner: s.note.ownerSecret,
     amountSats: s.note.amountSats,
     publicDeltaSats: statement.publicAmountSats < 0n ? -statement.publicAmountSats : statement.publicAmountSats,
     amountCommit: statement.amountCommitIn,
-    createdLeaf: change ? commitNote(change.note) : new Uint8Array(32),
+    createdLeaf: change ? commitNote(change.note, hash) : new Uint8Array(32),
     createdIndex: change ? change.index : 0,
     createdPath: change ? change.path : [],
   };
@@ -230,10 +244,10 @@ function lagrangeAt(k: number, small: CirclePoint[], p: CirclePoint): M31El {
  * Cells that may appear on-chain (NFT/kernel-bound). Never reserves, delta,
  * noteCommitment limbs, amount-commit, or nullifier — those stay in verifyFri.
  */
-export function onChainCells(statement: PoolStatement): M31El[] {
+export function onChainCells(statement: PoolStatement, hash: InternalHash = defaultInternalHash()): M31El[] {
   const cells: M31El[] = Array.from({ length: TRACE_LEN }, () => 0n);
   cells[3] = statement.action === "DEPOSIT" ? 1n : 2n;
-  cells[18] = m31FromBytes(sha256(encodeStatement(statement)));
+  cells[18] = m31FromBytes(hash.digest(encodeStatement(statement, hash)));
   cells[19] = m31FromBytes(statement.oldState.noteRoot);
   cells[20] = m31FromBytes(statement.newState.noteRoot);
   cells[21] = m31FromBytes(statement.oldState.nullifierRoot);
@@ -247,8 +261,9 @@ export function airNumeratorLde(
   statement: PoolStatement,
   smallDomain: CirclePoint[],
   bigDomain: CirclePoint[],
+  hash: InternalHash = defaultInternalHash(),
 ): M31El[] {
-  const cells = onChainCells(statement);
+  const cells = onChainCells(statement, hash);
   const tInterp = interpolateCircle(smallDomain, cells);
   const gen = smallDomain[1]!;
   const deposit = statement.action === "DEPOSIT";
@@ -266,8 +281,9 @@ export function airQuotientLde(
   statement: PoolStatement,
   smallDomain: CirclePoint[],
   bigDomain: CirclePoint[],
+  hash: InternalHash = defaultInternalHash(),
 ): { qLde: M31El[]; nLde: M31El[]; zLde: M31El[] } {
-  const nLde = airNumeratorLde(statement, smallDomain, bigDomain);
+  const nLde = airNumeratorLde(statement, smallDomain, bigDomain, hash);
   const zLde = vanishingOnTrace(bigDomain, smallDomain);
   const qLde = nLde.map((n, i) => {
     const z = zLde[i]!;
@@ -294,7 +310,7 @@ export function quotientAtDomain(
   return { qLde, cLde, zLde };
 }
 
-export function publicCells(statement: PoolStatement): M31El[] {
+export function publicCells(statement: PoolStatement, hash: InternalHash = defaultInternalHash()): M31El[] {
   const cells: M31El[] = Array.from({ length: TRACE_LEN }, () => 0n);
   const delta = statement.publicAmountSats;
   const absDelta = delta < 0n ? -delta : delta;
@@ -311,7 +327,7 @@ export function publicCells(statement: PoolStatement): M31El[] {
     statement.action === "DEPOSIT" ? statement.amountCommitOut : statement.amountCommitIn,
   );
   cells[17] = m31FromBytes(statement.nullifier);
-  cells[18] = m31FromBytes(sha256(encodeStatement(statement)));
+  cells[18] = m31FromBytes(hash.digest(encodeStatement(statement, hash)));
   cells[19] = m31FromBytes(statement.oldState.noteRoot);
   cells[20] = m31FromBytes(statement.newState.noteRoot);
   cells[21] = m31FromBytes(statement.oldState.nullifierRoot);
@@ -322,7 +338,11 @@ export function publicCells(statement: PoolStatement): M31El[] {
 }
 
 /** Field-only transition constraints. No Merkle / JS boolean flags. */
-export function algebraicC(cells: M31El[], statement: PoolStatement): M31El[] {
+export function algebraicC(
+  cells: M31El[],
+  statement: PoolStatement,
+  hash: InternalHash = defaultInternalHash(),
+): M31El[] {
   const r = Array.from({ length: TRACE_LEN }, () => 0n);
   const oldR = cells[0]!;
   const newR = cells[1]!;
@@ -333,7 +353,7 @@ export function algebraicC(cells: M31El[], statement: PoolStatement): M31El[] {
   r[2] = sub(oldR, reserveFelt(statement.oldState.reserveSats));
   r[3] = sub(newR, reserveFelt(statement.newState.reserveSats));
   r[4] = sub(cells[24]!, add(cells[23]!, 1n));
-  r[5] = sub(cells[18]!, m31FromBytes(sha256(encodeStatement(statement))));
+  r[5] = sub(cells[18]!, m31FromBytes(hash.digest(encodeStatement(statement, hash))));
   r[6] =
     statement.action === "DEPOSIT"
       ? sub(absD, reserveFelt(statement.publicAmountSats))
@@ -351,12 +371,16 @@ export function constraintResiduals(
   return algebraicC(cells, statement);
 }
 
-export function buildTrace(statement: PoolStatement, witness: FriWitness = {}): PoolTrace {
-  const auth = authFromWitness(statement, witness);
-  const mem = checkAuthRelation(statement, auth);
+export function buildTrace(
+  statement: PoolStatement,
+  witness: FriWitness = {},
+  hash: InternalHash = defaultInternalHash(),
+): PoolTrace {
+  const auth = authFromWitness(statement, witness, hash);
+  const mem = checkAuthRelation(statement, auth, witness, hash);
   if (!mem.ok) throw new Error(`unsatisfiable pool AIR: ${mem.reason}`);
-  const cells = publicCells(statement);
-  const residuals = algebraicC(cells, statement);
+  const cells = publicCells(statement, hash);
+  const residuals = algebraicC(cells, statement, hash);
   return { cells, residuals, auth };
 }
 

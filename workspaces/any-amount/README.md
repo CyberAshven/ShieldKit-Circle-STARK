@@ -13,8 +13,8 @@ size gate. This workspace is the product profile: one set, any amount.
 | `circle-fri-m31` backend | Live AIR + residual-quotient Circle FRI. `plugin.verify` needs no private witness. Worksheet **128 conjectural bits**. |
 | CashToken 128-byte `PAA1` state + 5-point successor | Live. Lock binds instance id, noteRoot (equal or append), nfRoot. Rewritten `noteRoot` fails the 2026 VM. |
 | Chipnet genesis / successor | `pool chipnet-covenant` / `pool chipnet-mix` when funded. Consensus-size lands use JSON-RPC `sendrawtransaction`, not Electrum/P2P. Not an OP_RETURN digest. |
-| Hidden amounts / confidential assets | Tagged SHA-256 note-amount commit (AIR-bound). Public net is committed in `encodeStatement`. Published proof one-time-pads rho/owner/amount (viewing key not in the encoding). Unlocking is packed AIR + redeem only. Pool UTXO **sats** stay public (`STATE_BASE`). Pedersen is a comparison plugin only. |
-| On-chain Circle FRI prefix | Pool lock + **10** Merkle kernels + bind-T + fold + `C=Q·Z`. Standard: **1** fold + **6** slots, **98979 B** compile (≤ 100 KB). Consensus: **36** folds + **36** slots, **383031 B**. Chipnet lands `2acb1196…` / `b1415faf…` are the pre-mask lock. Prior 10-fold land `18c74b49…` is not that land. Unlocking **and** redeem ≤ **10 KB**. Published note preimage is one-time-padded. FRI openings are offset (not raw Q). |
+| Hidden amounts / confidential assets | Tagged internal-hash note-amount commit (AIR-bound; default SHA-256). Public net is committed in `encodeStatement`. Published proof one-time-pads rho/owner/amount (viewing key not in the encoding). Unlocking is packed AIR + redeem only. Pool UTXO **sats** stay public (`STATE_BASE`). Pedersen is a comparison plugin only. |
+| On-chain Circle FRI prefix | Pool lock + **10** Merkle kernels + bind-T + fold + `C=Q·Z`. Standard: **1** fold + **6** slots (≤ 100 KB). Consensus: **36** folds + **36** slots (≤ 1 MB). Historical Chipnet txids stay in [`MILESTONE.md`](MILESTONE.md). Unlocking **and** redeem ≤ **10 KB**. Internal hash is a selectable knob (default SHA-256; BLAKE2s alternate). Packed Newton T interpolates masked cells; the opening-mask felt is derived, not stored. |
 | OPTN builtin register | **Not done.** Zero-touch: addon talks to `http://127.0.0.1:17432` if `pool serve` is running. |
 
 ## Why the lock binds the NFT cell
@@ -26,7 +26,7 @@ leaf preimage in the proof. Prove stays off-chain.
 
 ## Latest
 
-Opening-mask compile (standard **and** consensus): packed Q / FRI openings are `Q+c`; slot redeem subtracts `c` from offset 812. Same 100 KB path as the 6-slot Electrum land — new compiles use the new redeem hash. Historical Chipnet txids stay in [`MILESTONE.md`](MILESTONE.md).
+Internal-hash knob + Newton-T mask close: Merkle / Fiat–Shamir / note / nullifier / amount-net share one selectable hash (default **SHA-256**, alternate **BLAKE2s**). Same-hash prove/verify accepts; mixed-hash rejects. Packed Newton T interpolates opening-masked cells; the lock derives the degree-0 felt from the packed viewing-commit (offset 812 is the 32-byte commit, not the felt). Standard Chipnet land `c40f4948…` (**99742 B**, 1 fold, Electrum). Historical txids stay in [`MILESTONE.md`](MILESTONE.md).
 
 ## Commands (navigator)
 
@@ -41,7 +41,7 @@ npx tsx src/cli.ts wallet show
 npx tsx src/cli.ts faucet
 npx tsx src/cli.ts balance
 npx tsx src/cli.ts pool create
-npx tsx src/cli.ts pool deposit --sats 12000
+npx tsx src/cli.ts pool deposit --sats 12000   # optional --hash blake2s
 npx tsx src/cli.ts pool withdraw --sats 5000
 npx tsx src/cli.ts pool measure-tx     # must stay ≤100000 / ≤1000000
 npx tsx src/cli.ts lab e2e
@@ -61,4 +61,4 @@ Wallet files stay under `.local/` (gitignored). Never pass a seed on the command
 ## Plugins
 
 - `hash-lab-v0` — SHA-256 note commitments + incremental Merkle. Lab only.
-- `circle-fri-m31` — M31 Circle FRI of the pool AIR. `sound` follows the worksheet (≥100 bits).
+- `circle-fri-m31` — M31 Circle FRI of the pool AIR. `sound` follows the worksheet (≥100 bits). Internal hash default SHA-256; BLAKE2s is the off-chain alternate. Poseidon2 is not an option.

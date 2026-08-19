@@ -400,11 +400,10 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     assert.equal(ok.accepted, true, ok.error ?? "slot-3 honest");
     const cooked = new Uint8Array(packed);
     cooked[AIR_OFF_QTABLE + 12] ^= 0xff;
-    cooked[AIR_OFF_QTABLE + 13] ^= 0xff;
-    cooked[AIR_OFF_QTABLE + 14] ^= 0xff;
-    cooked[AIR_OFF_QTABLE + 15] ^= 0xff;
+    cooked[AIR_OFF_NTABLE + 12] ^= 0xff;
+    cooked[AIR_OFF_EVEN] ^= 0xff;
     const bad = evalPadded(compileSlotCqzLock(3), pushData(cooked));
-    assert.equal(bad.accepted, false, "cooked qTable[3] must fail slot-3");
+    assert.equal(bad.accepted, false, "cooked slot-3 Q/N/T must fail");
   });
 
   it("standard path compiles 6 distinct slot locks under Velma 10 KB", () => {

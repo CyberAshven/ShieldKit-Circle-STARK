@@ -15,7 +15,8 @@ export function applyDeposit(
   note: Note,
 ): { machine: PoolMachine; statement: PoolStatement; index: number; path: Uint8Array[] } {
   if (note.amountSats <= 0n) throw new Error("deposit amount must be > 0");
-  const leaf = commitNote(note);
+  const hash = machine.notes.hash;
+  const leaf = commitNote(note, hash);
   const oldState = machine.state;
   const { index, root, path } = machine.notes.append(leaf);
   const newState: AnyAmountState = {
@@ -35,7 +36,7 @@ export function applyDeposit(
     nullifier: new Uint8Array(32),
     payoutLockingDigest: new Uint8Array(32),
     amountCommitIn: new Uint8Array(ZERO32),
-    amountCommitOut: commitAmount(note.amountSats, note.rho),
+    amountCommitOut: commitAmount(note.amountSats, note.rho, hash),
   };
   checkPublicTransition(statement);
   return { machine: { ...machine, state: newState }, statement, index, path };
@@ -57,12 +58,13 @@ export function applyWithdraw(
 } {
   if (withdrawSats <= 0n) throw new Error("withdraw amount must be > 0");
   if (withdrawSats > note.amountSats) throw new Error("withdraw exceeds note");
-  const leaf = commitNote(note);
+  const hash = machine.notes.hash;
+  const leaf = commitNote(note, hash);
   const path = machine.notes.authPath(index);
-  if (!IncrementalMerkle.verify(leaf, index, path, machine.state.noteRoot)) {
+  if (!IncrementalMerkle.verify(leaf, index, path, machine.state.noteRoot, hash)) {
     throw new Error("note not in tree");
   }
-  const nf = nullifierOf(note, machine.state.poolInstanceId);
+  const nf = nullifierOf(note, machine.state.poolInstanceId, hash);
   const oldState = machine.state;
   const nullifierRoot = machine.nullifiers.add(nf);
 
@@ -77,7 +79,7 @@ export function applyWithdraw(
       rho: freshRho(),
       ownerSecret: note.ownerSecret,
     };
-    const inserted = machine.notes.append(commitNote(change));
+    const inserted = machine.notes.append(commitNote(change, hash));
     noteRoot = inserted.root;
     changeIndex = inserted.index;
     created = { note: change, index: inserted.index, path: inserted.path };
@@ -97,13 +99,13 @@ export function applyWithdraw(
     publicAmountSats: -withdrawSats,
     oldState,
     newState,
-    noteCommitment: leftover > 0n ? commitNote(change!) : new Uint8Array(32),
+    noteCommitment: leftover > 0n ? commitNote(change!, hash) : new Uint8Array(32),
     nullifier: nf,
     payoutLockingDigest,
-    amountCommitIn: commitAmount(note.amountSats, note.rho),
+    amountCommitIn: commitAmount(note.amountSats, note.rho, hash),
     amountCommitOut:
       leftover > 0n && change
-        ? commitAmount(change.amountSats, change.rho)
+        ? commitAmount(change.amountSats, change.rho, hash)
         : new Uint8Array(ZERO32),
   };
   checkPublicTransition(statement);
@@ -184,7 +186,7 @@ export function applyAggregate(
     payoutLockingDigest: new Uint8Array(32),
     amountCommitIn: last?.statement.amountCommitIn ?? new Uint8Array(ZERO32),
     amountCommitOut: deposited[0]
-      ? commitAmount(deposited[0].note.amountSats, deposited[0].note.rho)
+      ? commitAmount(deposited[0].note.amountSats, deposited[0].note.rho, next.notes.hash)
       : new Uint8Array(ZERO32),
   };
   return { machine: next, statement, deposited, change };

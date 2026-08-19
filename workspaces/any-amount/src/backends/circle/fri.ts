@@ -5,11 +5,16 @@ import {
   readU16BE,
   readU32BE,
   readU64BE,
-  sha256,
   writeU16BE,
   writeU32BE,
   writeU64BE,
 } from "../../pool/bytes.ts";
+import {
+  defaultInternalHash,
+  resolveInternalHash,
+  type InternalHash,
+  type InternalHashId,
+} from "./internal-hash.ts";
 import { commitNote } from "../../pool/notes.ts";
 import {
   freshViewingKey,
@@ -82,7 +87,12 @@ export type FriProof = {
   authMasked?: boolean;
 };
 
-export type VerifyFriOpts = { viewingKey?: Uint8Array };
+export type ProveFriOpts = { hash?: InternalHashId | InternalHash };
+export type VerifyFriOpts = { viewingKey?: Uint8Array; hash?: InternalHashId | InternalHash };
+
+function friHash(opts?: { hash?: InternalHashId | InternalHash }): InternalHash {
+  return resolveInternalHash(opts?.hash);
+}
 
 function log2n(n: number): number {
   return Math.round(Math.log2(n));
@@ -110,8 +120,8 @@ export function circleDomain(n: number = FRI_N): CirclePoint[] {
   return out;
 }
 
-function hashToM31(...parts: Uint8Array[]): M31El {
-  const h = sha256(concatBytes(...parts));
+function hashToM31(hash: InternalHash, ...parts: Uint8Array[]): M31El {
+  const h = hash.digest(concatBytes(...parts));
   let n = 0n;
   for (let i = 0; i < 8; i += 1) n = (n << 8n) | BigInt(h[i]!);
   return n % M31;
@@ -152,19 +162,19 @@ function foldLayer(
   return { domain: nextD, evals: nextE };
 }
 
-function queryIndices(seed: Uint8Array, n: number, count: number): number[] {
+function queryIndices(hash: InternalHash, seed: Uint8Array, n: number, count: number): number[] {
   const idx: number[] = [];
   let h = seed;
   while (idx.length < count) {
-    h = sha256(concatBytes(h, new TextEncoder().encode("q"), Uint8Array.of(idx.length)));
+    h = hash.digest(concatBytes(h, new TextEncoder().encode("q"), Uint8Array.of(idx.length)));
     const v = (h[0]! << 8) | h[1]!;
     idx.push(v % n);
   }
   return idx;
 }
 
-function grindOk(digest: Uint8Array, nonce: number): boolean {
-  const h = sha256(concatBytes(digest, writeU32BE(nonce), new TextEncoder().encode("grind")));
+function grindOk(hash: InternalHash, digest: Uint8Array, nonce: number): boolean {
+  const h = hash.digest(concatBytes(digest, writeU32BE(nonce), new TextEncoder().encode("grind")));
   let bits = 0;
   for (const b of h) {
     for (let i = 7; i >= 0; i -= 1) {
@@ -176,9 +186,9 @@ function grindOk(digest: Uint8Array, nonce: number): boolean {
   return bits >= GRIND_BITS;
 }
 
-function findGrind(digest: Uint8Array): number {
+function findGrind(hash: InternalHash, digest: Uint8Array): number {
   for (let nonce = 0; nonce < 1 << 24; nonce += 1) {
-    if (grindOk(digest, nonce)) return nonce;
+    if (grindOk(hash, digest, nonce)) return nonce;
   }
   throw new Error("grind failed");
 }
@@ -187,18 +197,19 @@ export function statementToEvals(statement: PoolStatement, domain: CirclePoint[]
   return publicEvals(statement, circleDomain(TRACE_LEN), domain);
 }
 
-export function proveFri(statement: PoolStatement, witness: FriWitness = {}): FriProof {
-  const trace = buildTrace(statement, witness);
+export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opts: ProveFriOpts = {}): FriProof {
+  const hash = friHash(opts);
+  const trace = buildTrace(statement, witness, hash);
   assertSatisfied(trace);
-  const digest = sha256(encodeStatement(statement));
+  const digest = hash.digest(encodeStatement(statement, hash));
   const small = circleDomain(TRACE_LEN);
   const big = circleDomain(FRI_N);
   const viewingKey = freshViewingKey();
-  const vCommit = viewingCommit(viewingKey);
-  const { qLde } = airQuotientLde(statement, small, big);
-  const openMask = openingMaskFelt(vCommit);
+  const vCommit = viewingCommit(viewingKey, hash);
+  const { qLde } = airQuotientLde(statement, small, big, hash);
+  const openMask = openingMaskFelt(vCommit, hash);
   const tLde = qLde.map((q) => add(q, openMask));
-  const traceTree = new MerkleTree(tLde);
+  const traceTree = new MerkleTree(tLde, hash);
 
   let domain = big;
   let evals = tLde.slice();
@@ -208,21 +219,22 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}): Fr
 
   const stopAt = FRI_FINAL;
   while (evals.length > stopAt) {
-    const tree = new MerkleTree(pairOrder(evals));
+    const tree = new MerkleTree(pairOrder(evals), hash);
     trees.push(tree);
     layers.push(evals);
     domains.push(domain);
-    const lambda = hashToM31(digest, Uint8Array.of(trees.length - 1), tree.root, new TextEncoder().encode("lambda"));
+    const lambda = hashToM31(hash, digest, Uint8Array.of(trees.length - 1), tree.root, new TextEncoder().encode("lambda"));
     const next = foldLayer(domain, evals, lambda);
     evals = next.evals;
     domain = next.domain;
   }
 
   const layerRoots = trees.map((t) => t.root);
-  const grindSeed = sha256(concatBytes(digest, traceTree.root, ...layerRoots));
-  const grindNonce = findGrind(grindSeed);
+  const grindSeed = hash.digest(concatBytes(digest, traceTree.root, ...layerRoots));
+  const grindNonce = findGrind(hash, grindSeed);
   const qIdx = queryIndices(
-    sha256(concatBytes(grindSeed, writeU32BE(grindNonce), new TextEncoder().encode("queries"))),
+    hash,
+    hash.digest(concatBytes(grindSeed, writeU32BE(grindNonce), new TextEncoder().encode("queries"))),
     FRI_N,
     FRI_QUERIES,
   );
@@ -265,32 +277,39 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}): Fr
 }
 
 /** FRI of a caller-supplied quotient LDE (mutation / cheat tests). Still carries auth. */
-export function proveFromTLde(statement: PoolStatement, tLde: M31El[], auth: FriAuth): FriProof {
-  const digest = sha256(encodeStatement(statement));
+export function proveFromTLde(
+  statement: PoolStatement,
+  tLde: M31El[],
+  auth: FriAuth,
+  opts: ProveFriOpts = {},
+): FriProof {
+  const hash = friHash(opts);
+  const digest = hash.digest(encodeStatement(statement, hash));
   const viewingKey = freshViewingKey();
-  const vCommit = viewingCommit(viewingKey);
-  const openMask = openingMaskFelt(vCommit);
+  const vCommit = viewingCommit(viewingKey, hash);
+  const openMask = openingMaskFelt(vCommit, hash);
   const masked = tLde.map((q) => add(q, openMask));
   const big = circleDomain(FRI_N);
-  const traceTree = new MerkleTree(masked);
+  const traceTree = new MerkleTree(masked, hash);
   let domain = big;
   let evals = masked.slice();
   const trees: MerkleTree[] = [];
   const layers: M31El[][] = [];
   while (evals.length > FRI_FINAL) {
-    const tree = new MerkleTree(pairOrder(evals));
+    const tree = new MerkleTree(pairOrder(evals), hash);
     trees.push(tree);
     layers.push(evals);
-    const lambda = hashToM31(digest, Uint8Array.of(trees.length - 1), tree.root, new TextEncoder().encode("lambda"));
+    const lambda = hashToM31(hash, digest, Uint8Array.of(trees.length - 1), tree.root, new TextEncoder().encode("lambda"));
     const next = foldLayer(domain, evals, lambda);
     evals = next.evals;
     domain = next.domain;
   }
   const layerRoots = trees.map((t) => t.root);
-  const grindSeed = sha256(concatBytes(digest, traceTree.root, ...layerRoots));
-  const grindNonce = findGrind(grindSeed);
+  const grindSeed = hash.digest(concatBytes(digest, traceTree.root, ...layerRoots));
+  const grindNonce = findGrind(hash, grindSeed);
   const qIdx = queryIndices(
-    sha256(concatBytes(grindSeed, writeU32BE(grindNonce), new TextEncoder().encode("queries"))),
+    hash,
+    hash.digest(concatBytes(grindSeed, writeU32BE(grindNonce), new TextEncoder().encode("queries"))),
     FRI_N,
     FRI_QUERIES,
   );
@@ -335,14 +354,14 @@ export function mutateTraceAndProve(statement: PoolStatement, bumpIndex: number,
   const big = circleDomain(FRI_N);
   const trace = buildTrace(statement, witness);
   assertSatisfied(trace);
-  const { qLde } = airQuotientLde(statement, small, big);
+  const { qLde } = airQuotientLde(statement, small, big, defaultInternalHash());
   const bumped = qLde.map((x, i) => (i === bumpIndex % qLde.length ? add(x, 1n) : add(x, 1n)));
   return proveFromTLde(statement, bumped, trace.auth);
 }
 
-function authPreimageOpen(auth: FriAuth): boolean {
+function authPreimageOpen(auth: FriAuth, hash: InternalHash): boolean {
   try {
-    return eq32(auth.leaf, commitNote(openedNote(auth)));
+    return eq32(auth.leaf, commitNote(openedNote(auth), hash));
   } catch {
     return false;
   }
@@ -353,19 +372,20 @@ function resolveAuthForVerify(
   proof: FriProof,
   witness: FriWitness,
   opts: VerifyFriOpts,
+  hash: InternalHash,
 ): { ok: true } | { ok: false; reason: string } {
   const key = opts.viewingKey ?? (proof.authMasked ? undefined : proof.viewingKey);
   if (key) {
     if (key.length !== VIEWING_PAD_LEN) return { ok: false, reason: "viewing key" };
-    const commit = proof.viewingCommit ?? viewingCommit(key);
-    if (!eq32(viewingCommit(key), commit)) return { ok: false, reason: "viewing key" };
+    const commit = proof.viewingCommit ?? viewingCommit(key, hash);
+    if (!eq32(viewingCommit(key, hash), commit)) return { ok: false, reason: "viewing key" };
     const opened = proof.authMasked ? unmaskAuth(proof.auth, key) : proof.auth;
-    return checkAuthRelation(statement, opened, witness);
+    return checkAuthRelation(statement, opened, witness, hash);
   }
-  if (authPreimageOpen(proof.auth)) {
-    return checkAuthRelation(statement, proof.auth, witness);
+  if (authPreimageOpen(proof.auth, hash)) {
+    return checkAuthRelation(statement, proof.auth, witness, hash);
   }
-  return checkPublicAuthRelation(statement, proof.auth);
+  return checkPublicAuthRelation(statement, proof.auth, hash);
 }
 
 /**
@@ -384,20 +404,22 @@ export function verifyFri(
   if (proof.final.length !== FRI_FINAL) return { ok: false, reason: "final width" };
   if (!proof.auth) return { ok: false, reason: "missing auth" };
 
+  const hash = friHash(opts);
   const cons = checkPublicConservation(statement);
   if (!cons.ok) return cons;
-  const auth = resolveAuthForVerify(statement, proof, witness, opts);
+  const auth = resolveAuthForVerify(statement, proof, witness, opts, hash);
   if (!auth.ok) return auth;
 
-  const cVec = algebraicC(publicCells(statement), statement);
+  const cVec = algebraicC(publicCells(statement, hash), statement, hash);
   if (cVec.some((r) => r !== 0n)) return { ok: false, reason: "algebraicC" };
-  const { nLde, zLde } = airQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain(FRI_N));
+  const { nLde, zLde } = airQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain(FRI_N), hash);
 
-  const digest = sha256(encodeStatement(statement));
-  const grindSeed = sha256(concatBytes(digest, proof.traceRoot, ...proof.layerRoots));
-  if (!grindOk(grindSeed, proof.grindNonce)) return { ok: false, reason: "grind" };
+  const digest = hash.digest(encodeStatement(statement, hash));
+  const grindSeed = hash.digest(concatBytes(digest, proof.traceRoot, ...proof.layerRoots));
+  if (!grindOk(hash, grindSeed, proof.grindNonce)) return { ok: false, reason: "grind" };
   const expectedIdx = queryIndices(
-    sha256(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries"))),
+    hash,
+    hash.digest(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries"))),
     FRI_N,
     FRI_QUERIES,
   );
@@ -405,12 +427,12 @@ export function verifyFri(
   for (let q = 0; q < proof.queries.length; q += 1) {
     const query = proof.queries[q]!;
     if (query.index !== expectedIdx[q]) return { ok: false, reason: `query ${q} index` };
-    if (!MerkleTree.verify(query.traceValue, query.index, query.tracePath, proof.traceRoot)) {
+    if (!MerkleTree.verify(query.traceValue, query.index, query.tracePath, proof.traceRoot, hash)) {
       return { ok: false, reason: "trace merkle" };
     }
     const nAt = nLde[query.index]!;
     const zAt = zLde[query.index]!;
-    const openMask = proof.viewingCommit ? openingMaskFelt(proof.viewingCommit) : 0n;
+    const openMask = proof.viewingCommit ? openingMaskFelt(proof.viewingCommit, hash) : 0n;
     if (mul(sub(query.traceValue, openMask), zAt) !== nAt) {
       return { ok: false, reason: "N != Q*Z" };
     }
@@ -425,10 +447,11 @@ export function verifyFri(
       const i = index % n;
       const j = partnerIndex(i, n);
       const layer = query.layers[r]!;
-      if (!MerkleTree.verifyPaired(layer.value, layer.partner, i, n, layer.path, proof.layerRoots[r]!)) {
+      if (!MerkleTree.verifyPaired(layer.value, layer.partner, i, n, layer.path, proof.layerRoots[r]!, hash)) {
         return { ok: false, reason: `merkle T L${r}` };
       }
       const lambda = hashToM31(
+        hash,
         digest,
         Uint8Array.of(r),
         proof.layerRoots[r]!,
@@ -528,7 +551,7 @@ function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; viewingC
 
 export function encodeFriProof(p: FriProof): Uint8Array {
   const key = p.viewingKey && p.viewingKey.length === VIEWING_PAD_LEN ? p.viewingKey : freshViewingKey();
-  const commit = viewingCommit(key);
+  const commit = p.viewingCommit && p.viewingCommit.length === 32 ? p.viewingCommit : viewingCommit(key);
   const published = p.authMasked ? p.auth : maskAuth(p.auth, key);
   const parts: Uint8Array[] = [
     Uint8Array.of(p.version, p.layerRoots.length, p.final.length, p.queries.length),
@@ -627,9 +650,13 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
   };
 }
 
-export function unmaskFriProof(proof: FriProof, key: Uint8Array): FriProof {
+export function unmaskFriProof(
+  proof: FriProof,
+  key: Uint8Array,
+  hash: InternalHash = defaultInternalHash(),
+): FriProof {
   if (key.length !== VIEWING_PAD_LEN) throw new Error("viewing key width");
-  if (proof.viewingCommit && !eq32(viewingCommit(key), proof.viewingCommit)) {
+  if (proof.viewingCommit && !eq32(viewingCommit(key, hash), proof.viewingCommit)) {
     throw new Error("viewing key");
   }
   return {
@@ -646,6 +673,15 @@ export function proofByteLength(p: FriProof): number {
 
 export { add, bytesToHex, COMMITTED_LAYERS, FRI_LOG_N, FRI_N, FRI_QUERIES, TRACE_LEN };
 export { freshViewingKey, unmaskAuth, viewingCommit, openingMaskFelt, VIEWING_PAD_LEN } from "./witness-mask.ts";
+export {
+  DEFAULT_INTERNAL_HASH_ID,
+  INTERNAL_HASH_IDS,
+  defaultInternalHash,
+  internalHash,
+  resolveInternalHash,
+  type InternalHash,
+  type InternalHashId,
+} from "./internal-hash.ts";
 export type { FriWitness, FriAuth };
 export { airQuotientLde, algebraicC, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wDeposit, wWithdraw } from "./air.ts";
 export { interpolateCircle, evalCirclePoly } from "./interpolate.ts";

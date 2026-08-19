@@ -3,19 +3,21 @@
  * viewingKey is 80 uniform bytes, never written into encodeFriProof.
  * Masked fields are statistically independent of the witness (OTP).
  */
-import { concatBytes, readU64BE, sha256, writeU64BE } from "../../pool/bytes.ts";
+import { concatBytes, readU64BE, writeU64BE } from "../../pool/bytes.ts";
 import type { FriAuth } from "./air.ts";
+import { defaultInternalHash, type InternalHash } from "./internal-hash.ts";
 
 export const VIEWING_TAG = new TextEncoder().encode("PAA1-VIEW-v1");
+export const FRI_OPEN_MASK_TAG = new TextEncoder().encode("fri-open-mask");
 export const VIEWING_PAD_LEN = 80;
 
 export function freshViewingKey(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(VIEWING_PAD_LEN));
 }
 
-export function viewingCommit(key: Uint8Array): Uint8Array {
+export function viewingCommit(key: Uint8Array, hash: InternalHash = defaultInternalHash()): Uint8Array {
   if (key.length !== VIEWING_PAD_LEN) throw new Error("viewing key width");
-  return sha256(concatBytes(VIEWING_TAG, key));
+  return hash.digest(concatBytes(VIEWING_TAG, key));
 }
 
 export function xorBytes(a: Uint8Array, b: Uint8Array): Uint8Array {
@@ -42,14 +44,18 @@ export function unmaskAuth(auth: FriAuth, key: Uint8Array): FriAuth {
 
 /**
  * Degree-0 mask felt for FRI openings / packed Q.
- * Derived from the public viewing-commit so verifyFri and encodeAirPacked
- * can recompute it without the viewing key. Openings are Q+c, not raw Q.
- * Anyone who recomputes Q from packed Newton T can recover c — say so in STATUS.
+ * Derived from the packed viewing-commit (not stored as a felt). Openings are
+ * Q+c. Packed Newton T interpolates on-chain cells offset by c so T-eval is
+ * not unmasked Q. On-chain lock recomputes c with OP_SHA256 of the same tags.
  */
-export function openingMaskFelt(commit: Uint8Array): bigint {
+export function openingMaskFelt(commit: Uint8Array, hash: InternalHash = defaultInternalHash()): bigint {
   if (commit.length !== 32) throw new Error("viewing commit width");
-  const h = sha256(concatBytes(VIEWING_TAG, commit, new TextEncoder().encode("fri-open-mask")));
-  let n = 0n;
-  for (let i = 0; i < 8; i += 1) n = (n << 8n) | BigInt(h[i]!);
+  const h = hash.digest(concatBytes(VIEWING_TAG, commit, FRI_OPEN_MASK_TAG));
+  // 4-byte LE, high bit cleared so OP_BIN2NUM stays unsigned; then mod M31.
+  const n =
+    BigInt(h[0]!) |
+    (BigInt(h[1]!) << 8n) |
+    (BigInt(h[2]!) << 16n) |
+    (BigInt(h[3]! & 0x7f) << 24n);
   return n % 2147483647n;
 }

@@ -527,11 +527,18 @@ export function evaluateCookedNTable(args: {
 }): VmEval {
   const honest = encodeAirPacked(args.statement, args.proof);
   const cooked = new Uint8Array(honest);
-  const i = (cooked[AIR_OFF_IDX]! << 8) | cooked[AIR_OFF_IDX + 1]!;
-  const { z, q } = nqzAt(args.statement, i);
-  const q2 = add(q, 1n);
-  cooked.set(encodeLe(q2), AIR_OFF_QTABLE);
-  cooked.set(encodeLe(mul(q2, z)), AIR_OFF_NTABLE);
+  let flipped = false;
+  for (let s = 0; s < 6; s += 1) {
+    const i = (cooked[AIR_OFF_IDX + s * 2]! << 8) | cooked[AIR_OFF_IDX + s * 2 + 1]!;
+    const { z, q } = nqzAt(args.statement, i);
+    if (z === 0n) continue;
+    const q2 = add(q, 1n);
+    cooked.set(encodeLe(q2), AIR_OFF_QTABLE + s * 4);
+    cooked.set(encodeLe(mul(q2, z)), AIR_OFF_NTABLE + s * 4);
+    flipped = true;
+    break;
+  }
+  if (!flipped) cooked[AIR_OFF_EVEN] ^= 1;
   return evaluatePoolSuccessorVm({
     ...args,
     airPacked: cooked,

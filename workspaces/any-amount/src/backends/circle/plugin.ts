@@ -1,4 +1,5 @@
 import { encodeFriProof, proveFri, verifyFri, decodeFriProof, type FriWitness } from "./fri.ts";
+import { DEFAULT_INTERNAL_HASH_ID, type InternalHashId } from "./internal-hash.ts";
 import type { PluginVerifyResult, ZkpPlugin } from "../../pool/plugin.ts";
 import type { PoolStatement } from "../../pool/statement.ts";
 import { soundnessWorksheet } from "./soundness.ts";
@@ -18,7 +19,8 @@ export const circleFriPlugin: ZkpPlugin = {
   vkId: VK_ID,
   sound: sheet.sound,
   async prove(statement: PoolStatement, witness: unknown) {
-    return encodeFriProof(proveFri(statement, (witness ?? {}) as FriWitness));
+    const w = (witness ?? {}) as FriWitness & { hash?: InternalHashId };
+    return encodeFriProof(proveFri(statement, w, { hash: w.hash ?? DEFAULT_INTERNAL_HASH_ID }));
   },
   verify(statement: PoolStatement, proof: Uint8Array): PluginVerifyResult {
     try {

@@ -1,28 +1,35 @@
-import { sha256, concatBytes, bytesToHex } from "../../pool/bytes.ts";
+import { concatBytes, bytesToHex } from "../../pool/bytes.ts";
 import { encodeLe, type M31El } from "./m31.ts";
+import { defaultInternalHash, type InternalHash } from "./internal-hash.ts";
 
-export function merkleParent(left: Uint8Array, right: Uint8Array): Uint8Array {
-  return sha256(concatBytes(left, right));
+export function merkleParent(
+  left: Uint8Array,
+  right: Uint8Array,
+  hash: InternalHash = defaultInternalHash(),
+): Uint8Array {
+  return hash.digest(concatBytes(left, right));
 }
 
-export function leafHash(value: M31El): Uint8Array {
-  return sha256(encodeLe(value));
+export function leafHash(value: M31El, hash: InternalHash = defaultInternalHash()): Uint8Array {
+  return hash.digest(encodeLe(value));
 }
 
 export class MerkleTree {
   readonly layers: Uint8Array[][];
+  readonly hash: InternalHash;
 
-  constructor(values: M31El[] | Uint8Array[]) {
+  constructor(values: M31El[] | Uint8Array[], hash: InternalHash = defaultInternalHash()) {
     if (values.length === 0 || (values.length & (values.length - 1)) !== 0) {
       throw new Error("merkle width must be a power of two");
     }
-    const leaves = values.map((v) => (v instanceof Uint8Array ? sha256(v) : leafHash(v)));
+    this.hash = hash;
+    const leaves = values.map((v) => (v instanceof Uint8Array ? hash.digest(v) : leafHash(v, hash)));
     this.layers = [leaves];
     let cur = leaves;
     while (cur.length > 1) {
       const next: Uint8Array[] = [];
       for (let i = 0; i < cur.length; i += 2) {
-        next.push(merkleParent(cur[i]!, cur[i + 1]!));
+        next.push(merkleParent(cur[i]!, cur[i + 1]!, hash));
       }
       this.layers.push(next);
       cur = next;
@@ -44,19 +51,37 @@ export class MerkleTree {
     return out;
   }
 
-  static verify(value: M31El, index: number, path: Uint8Array[], root: Uint8Array): boolean {
-    return MerkleTree.verifyLeaf(leafHash(value), index, path, root);
+  static verify(
+    value: M31El,
+    index: number,
+    path: Uint8Array[],
+    root: Uint8Array,
+    hash: InternalHash = defaultInternalHash(),
+  ): boolean {
+    return MerkleTree.verifyLeaf(leafHash(value, hash), index, path, root, hash);
   }
 
-  static verifyBytes(raw: Uint8Array, index: number, path: Uint8Array[], root: Uint8Array): boolean {
-    return MerkleTree.verifyLeaf(sha256(raw), index, path, root);
+  static verifyBytes(
+    raw: Uint8Array,
+    index: number,
+    path: Uint8Array[],
+    root: Uint8Array,
+    hash: InternalHash = defaultInternalHash(),
+  ): boolean {
+    return MerkleTree.verifyLeaf(hash.digest(raw), index, path, root, hash);
   }
 
-  static verifyLeaf(leaf: Uint8Array, index: number, path: Uint8Array[], root: Uint8Array): boolean {
+  static verifyLeaf(
+    leaf: Uint8Array,
+    index: number,
+    path: Uint8Array[],
+    root: Uint8Array,
+    hash: InternalHash = defaultInternalHash(),
+  ): boolean {
     let acc = leaf;
     let i = index;
     for (const sib of path) {
-      acc = i % 2 === 0 ? merkleParent(acc, sib) : merkleParent(sib, acc);
+      acc = i % 2 === 0 ? merkleParent(acc, sib, hash) : merkleParent(sib, acc, hash);
       i >>= 1;
     }
     return bytesToHex(acc) === bytesToHex(root);
@@ -70,12 +95,13 @@ export class MerkleTree {
     n: number,
     parentPath: Uint8Array[],
     root: Uint8Array,
+    hash: InternalHash = defaultInternalHash(),
   ): boolean {
     const i = valueIndex % n;
     const lo = i < n / 2;
-    const left = lo ? leafHash(value) : leafHash(partner);
-    const right = lo ? leafHash(partner) : leafHash(value);
-    const parent = merkleParent(left, right);
-    return MerkleTree.verifyLeaf(parent, lo ? i : i - n / 2, parentPath, root);
+    const left = lo ? leafHash(value, hash) : leafHash(partner, hash);
+    const right = lo ? leafHash(partner, hash) : leafHash(value, hash);
+    const parent = merkleParent(left, right, hash);
+    return MerkleTree.verifyLeaf(parent, lo ? i : i - n / 2, parentPath, root, hash);
   }
 }

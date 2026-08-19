@@ -7,6 +7,12 @@ import { hashLabPlugin } from "./backends/hash-lab.ts";
 import { requestFaucet, walletBalance } from "./chain/chipnet.ts";
 import { createLabWallet, loadLabWallet, saveLabWallet, type LabWallet } from "./chain/wallet.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "./pool/notes.ts";
+import {
+  DEFAULT_INTERNAL_HASH_ID,
+  isInternalHashId,
+  internalHash,
+  type InternalHashId,
+} from "./backends/circle/internal-hash.ts";
 import { emptyState, encodeState, STATE_BASE_SATS } from "./pool/state.ts";
 import { applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "./pool/mix-successor.ts";
@@ -27,7 +33,15 @@ import { foldKernelCount } from "./chain/fold-kernel.ts";
 import { proofShardReport } from "./chain/fri-openings.ts";
 import { broadcast, connectChipnet, listUnspent } from "./chain/electrum.ts";
 import { binToHex, hexToBin } from "@bitauth/libauth";
-import { encodeFriProof, proveFri, proofByteLength, wDeposit, wWithdraw } from "./backends/circle/fri.ts";
+import {
+  decodeFriProof,
+  encodeFriProof,
+  proveFri,
+  proofByteLength,
+  verifyFri,
+  wDeposit,
+  wWithdraw,
+} from "./backends/circle/fri.ts";
 
 const help = `any-amount — Chipnet lab (ZKP-agnostic)
 
@@ -36,8 +50,8 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   faucet                  try public Chipnet faucets
   balance                 electrum listunspent
   pool create             local genesis state (PAA1)
-  pool deposit --sats N   any-amount deposit (off-chain machine + plugin)
-  pool withdraw --sats N  partial withdraw
+  pool deposit --sats N [--hash sha256|blake2s]
+  pool withdraw --sats N  partial withdraw (same hash as the machine)
 
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
   pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded
@@ -57,6 +71,12 @@ function arg(name: string, fallback?: string): string {
   if (i >= 0 && process.argv[i + 1]) return process.argv[i + 1]!;
   if (fallback !== undefined) return fallback;
   throw new Error(`missing ${name}`);
+}
+
+function hashIdArg(fallback: InternalHashId = DEFAULT_INTERNAL_HASH_ID): InternalHashId {
+  const v = arg("--hash", fallback);
+  if (!isInternalHashId(v)) throw new Error(`internal hash must be sha256 or blake2s, got ${v}`);
+  return v;
 }
 
 async function wallet(): Promise<LabWallet> {
@@ -81,10 +101,12 @@ async function loadMachine(): Promise<{ machine: PoolMachine; notes: HeldNote[] 
     notebook: Array<{ amountSats: string; rho: string; ownerSecret: string; index?: number }>;
     nullifiers: string[];
     instance: string;
+    hash?: string;
   };
-  const notes = new IncrementalMerkle();
+  const hash = internalHash(raw.hash && isInternalHashId(raw.hash) ? raw.hash : DEFAULT_INTERNAL_HASH_ID);
+  const notes = new IncrementalMerkle(undefined, hash);
   for (const leaf of raw.leaves) notes.leaves.push(Buffer.from(leaf, "hex"));
-  const nullifiers = new NullifierSet();
+  const nullifiers = new NullifierSet(hash);
   for (const n of raw.nullifiers) nullifiers.items.push(Buffer.from(n, "hex"));
   const notebook: HeldNote[] = raw.notebook.map((n, i) => ({
     note: {
@@ -114,7 +136,9 @@ async function loadMachine(): Promise<{ machine: PoolMachine; notes: HeldNote[] 
 }
 
 async function saveMachine(machine: PoolMachine, notebook: HeldNote[]): Promise<void> {
+  await mkdir(join(process.cwd(), ".local"), { recursive: true });
   const body = {
+    hash: machine.notes.hash.id,
     instance: Buffer.from(machine.state.poolInstanceId).toString("hex"),
     state: {
       magic: machine.state.magic,
@@ -150,6 +174,7 @@ async function main(): Promise<void> {
         {
           profile: "any-amount-v0",
           pluginFamily: circleFriPlugin.family,
+          internalHash: DEFAULT_INTERNAL_HASH_ID,
           vkId: circleFriPlugin.vkId,
           sound: circleFriPlugin.sound,
           proveVerify: "circle-fri-m31 AIR+FRI + 2026 VM kernel",
@@ -190,10 +215,11 @@ async function main(): Promise<void> {
   }
   if (cmd === "pool" && process.argv[3] === "create") {
     const instance = crypto.getRandomValues(new Uint8Array(32));
+    const hash = internalHash(hashIdArg());
     const machine: PoolMachine = {
-      state: emptyState(instance),
-      notes: new IncrementalMerkle(),
-      nullifiers: new NullifierSet(),
+      state: emptyState(instance, hash),
+      notes: new IncrementalMerkle(undefined, hash),
+      nullifiers: new NullifierSet(hash),
     };
     await saveMachine(machine, []);
     const ev = announceEvent(newRoundKey().secret, {
@@ -209,34 +235,51 @@ async function main(): Promise<void> {
   }
   if (cmd === "pool" && process.argv[3] === "deposit") {
     const sats = BigInt(arg("--sats"));
-    const loaded = await loadMachine();
+    let loaded: { machine: PoolMachine; notes: HeldNote[] };
+    try {
+      loaded = await loadMachine();
+    } catch {
+      const hash = internalHash(hashIdArg());
+      const instance = crypto.getRandomValues(new Uint8Array(32));
+      loaded = {
+        machine: {
+          state: emptyState(instance, hash),
+          notes: new IncrementalMerkle(undefined, hash),
+          nullifiers: new NullifierSet(hash),
+        },
+        notes: [],
+      };
+    }
+    const hash = loaded.machine.notes.hash;
     const note: Note = {
       amountSats: sats,
       rho: crypto.getRandomValues(new Uint8Array(32)),
       ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
     };
     const d = applyDeposit(loaded.machine, note);
-    const proof = await circleFriPlugin.prove(d.statement, wDeposit(note, d.index, d.path));
-    const v = circleFriPlugin.verify(d.statement, proof);
+    const proof = encodeFriProof(proveFri(d.statement, wDeposit(note, d.index, d.path), { hash }));
+    const v = verifyFri(d.statement, decodeFriProof(proof), wDeposit(note, d.index, d.path), { hash });
     if (!v.ok) throw new Error(v.reason);
     loaded.notes.push({ note, index: d.index });
     await saveMachine(d.machine, loaded.notes);
-    console.log(`deposit ${sats} reserve=${d.machine.state.reserveSats} plugin=${circleFriPlugin.family} proofBytes=${proof.length}`);
+    console.log(`deposit ${sats} reserve=${d.machine.state.reserveSats} plugin=${circleFriPlugin.family} hash=${hash.id} proofBytes=${proof.length} verify=ok`);
     return;
   }
   if (cmd === "pool" && process.argv[3] === "withdraw") {
     const sats = BigInt(arg("--sats"));
     const loaded = await loadMachine();
+    const hash = loaded.machine.notes.hash;
     const held = loaded.notes.find((n) => n.note.amountSats >= sats);
     if (!held) throw new Error("no note covers that amount");
     const w = applyWithdraw(loaded.machine, held.note, held.index, new Uint8Array(32), sats);
-    const proof = await circleFriPlugin.prove(w.statement, wWithdraw(held.note, held.index, w.path, w.created));
-    const v = circleFriPlugin.verify(w.statement, proof);
+    const witness = wWithdraw(held.note, held.index, w.path, w.created);
+    const proof = encodeFriProof(proveFri(w.statement, witness, { hash }));
+    const v = verifyFri(w.statement, decodeFriProof(proof), witness, { hash });
     if (!v.ok) throw new Error(v.reason);
     const next = loaded.notes.filter((n) => n.index !== held.index);
     if (w.change && w.changeIndex !== undefined) next.push({ note: w.change, index: w.changeIndex });
     await saveMachine(w.machine, next);
-    console.log(`withdraw ${sats} reserve=${w.machine.state.reserveSats}`);
+    console.log(`withdraw ${sats} reserve=${w.machine.state.reserveSats} hash=${hash.id} verify=ok`);
     return;
   }
   if (cmd === "lab" && process.argv[3] === "demo") {
