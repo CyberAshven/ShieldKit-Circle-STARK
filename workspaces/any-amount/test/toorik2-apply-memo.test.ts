@@ -46,6 +46,17 @@ describe("toorik2 apply-list memo vs shipped STATUS envelopes", () => {
     }
     assert.match(md, /This memo does not implement the list/);
     assert.equal(existsSync(join(labRoot, "src", "circle-fri")), false, "must not copy src/circle-fri into the lab");
+    assert.match(md, /74e477951348b4e81e4a27cf0aac802d601e5f99/);
+    assert.equal(md.includes("74e477951348b4e81e4a27cf0ac802d601e5f99"), false, "truncated 39-hex 74e4779 URL");
+    assert.match(md, /44f1239ef942852e2cc111e7cbe105b2e4a20be2958f980e94082d309e10d02d/);
+    assert.match(md, /CRLF checkout, \*\*not\*\* sealed-lane drift/);
+    assert.equal(md.includes("f4341a31"), true, "CRLF working-tree hash is named as CRLF, not as a pin");
+    const commitShas = [...md.matchAll(/github\.com\/toorik2\/ShieldKit-Circle-STARK\/commit\/([0-9a-f]+)/g)].map(
+      (m) => m[1]!,
+    );
+    for (const sha of commitShas) {
+      assert.ok(sha.length === 7 || sha.length === 40, `commit SHA length ${sha.length}: ${sha}`);
+    }
   });
 
   it("STATUS envelopes still forbid Poseidon2-in-lock and Lean HVZK claims", () => {
