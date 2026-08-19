@@ -6,7 +6,7 @@ Rolling GitHub pre-release tag: **`v0.0.1`** (overwritten on each `@ABLalgorithm
 
 ## Latest
 
-FRI openings and packed Q are offset by a degree-0 mask; the **standard 100 KB and consensus 1 MB** slot locks subtract that felt before `C=Q·Z`. Opening-mask Chipnet spends (JSON-RPC): standard `617b1022…` (98979 B) and consensus `b3ea8a75…` (383031 B). Pre-mask 36-fold land `b1415faf…` stays recorded. Scoreboard: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md). Accumulating lands: [`MILESTONE.md`](workspaces/any-amount/MILESTONE.md). Ciphertext vs proof: [`Reference/literature/notes/ciphertext-vs-circle-stark.md`](Reference/literature/notes/ciphertext-vs-circle-stark.md).
+ZKP plugin hook is **off-chain + registry**: default `circle-fri-m31`, second family `hash-lab-v0` (**not private**, **not sound**) on the same statement. On-chain redeem is still Circle fold/C=QZ. Internal hash is a drop-in knob (default SHA-256, BLAKE2s alternate). Poseidon2 and Monolith are not shipped; a later swap is a table entry + `digest()`, not a Merkle/FS/note rewrite. On-chain `OP_SHA256` is the SHA-256 backend of the default knob, not a second tree. Latest Chipnet land: standard `f14bff7b…` (79436 B). No new land this pass. Scoreboard: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md). Accumulating lands: [`MILESTONE.md`](workspaces/any-amount/MILESTONE.md). Ciphertext vs proof: [`Reference/literature/notes/ciphertext-vs-circle-stark.md`](Reference/literature/notes/ciphertext-vs-circle-stark.md).
 
 ## Start here (CLI navigator)
 
@@ -21,7 +21,7 @@ npx tsx src/cli.ts wallet show
 npx tsx src/cli.ts faucet
 npx tsx src/cli.ts balance
 npx tsx src/cli.ts pool create
-npx tsx src/cli.ts pool deposit --sats 12000
+npx tsx src/cli.ts pool deposit --sats 12000   # optional --hash blake2s --plugin circle-fri-m31|hash-lab-v0
 npx tsx src/cli.ts pool withdraw --sats 5000
 npx tsx src/cli.ts pool measure-tx
 npx tsx src/cli.ts lab e2e
@@ -36,10 +36,11 @@ Chipnet (funded lab wallet only): `pool chipnet-covenant` then `pool chipnet-mix
 | --- | --- |
 | Off-chain Circle FRI prover + verifier | TypeScript `proveFri` / `verifyFri`. False reserve / fake note / fake nullifier fail. |
 | Optional Rust prove worker | `crates/circle-fri-worker` — old n=32 wire; TS is the shipped path. |
-| On-chain 2026 lock | P2SH32 five-point `PAA1` + 10 FRI Merkle kernels + bind-T + fold kernels + slot `C=Q·Z`. Standard: **1** fold + **6** slots (≤ 100 KB, measured 98979 B with opening mask). Consensus: **36** folds + **36** slots (≤ 1 MB, measured 383031 B). One query per fold redeem (density). |
-| Chipnet fold lands | Standard `2acb1196…` (98831 B, 1 fold). Consensus **36-fold** `b1415faf…` (382203 B, height 319402). Prior 10-fold `18c74b49…`. No-fold `356630bd…`. See [`workspaces/any-amount/MILESTONE.md`](workspaces/any-amount/MILESTONE.md). |
+| On-chain 2026 lock | P2SH32 five-point `PAA1` + 10 FRI Merkle kernels + bind-T + fold kernels + slot `C=Q·Z`. Standard: **1** fold + **6** slots (≤ 100 KB). Consensus: **36** folds + **36** slots (≤ 1 MB). One query per fold redeem (density). Plugin switch is off-chain; redeem stays Circle fold/C=QZ. `OP_SHA256` is the default hash-knob backend. |
+| Chipnet lands | Latest standard `f14bff7b…` (79436 B). History in [`workspaces/any-amount/MILESTONE.md`](workspaces/any-amount/MILESTONE.md). Do not relabel `356630bd`, `18c74b49`, `2acb1196`, `b1415faf`, `617b1022`, `b3ea8a75`, `c40f4948`, `f14bff7b`. |
 | Consensus land path | Compile locally. Tx ≤ 100000: Electrum. Tx > 100000: HTTP JSON-RPC `sendrawtransaction` (not Electrum, not P2P `inv`). Public miners will not relay 301 KB. |
-| Note amounts | Tagged SHA-256 commit bound by `checkAuthRelation`. Public net committed in `encodeStatement`. Pool UTXO stays `STATE_BASE`. |
+| Note amounts | Tagged internal-hash commit (default SHA-256, BLAKE2s alternate) bound by `checkAuthRelation`. Poseidon2 and Monolith are not shipped. Public net committed in `encodeStatement`. Pool UTXO stays `STATE_BASE`. |
+| ZKP plugins | Default `circle-fri-m31`. Second family `hash-lab-v0` (not private/sound). Switch is off-chain + registry. |
 | Published witness | `encodeFriProof` one-time-pads rho/owner/amount. FRI openings/packed Q are offset by a degree-0 mask the lock subtracts. Viewing key is not in the encoding. |
 | Not this pre-release | Lean, mainnet, OPTN builtin register, hidden pool-UTXO value, better-than-XMR. |
 

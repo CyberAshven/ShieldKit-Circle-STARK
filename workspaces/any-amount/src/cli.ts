@@ -18,7 +18,7 @@ import { applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition
 import { mixChangedRootsAndReserve, runMixSuccessor } from "./pool/mix-successor.ts";
 import { announceEvent, newRoundKey } from "./nostr/bus.ts";
 import { torStatus } from "./nostr/tor.ts";
-import { describePlugins } from "./plugins/registry.ts";
+import { DEFAULT_ZKP_FAMILY, describePlugins, zkpPluginByFamily } from "./plugins/registry.ts";
 import { sendMany } from "./chain/send.ts";
 import { mkdir } from "node:fs/promises";
 import {
@@ -50,8 +50,8 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   faucet                  try public Chipnet faucets
   balance                 electrum listunspent
   pool create             local genesis state (PAA1)
-  pool deposit --sats N [--hash sha256|blake2s]
-  pool withdraw --sats N  partial withdraw (same hash as the machine)
+  pool deposit --sats N [--hash sha256|blake2s] [--plugin circle-fri-m31|hash-lab-v0]
+  pool withdraw --sats N  partial withdraw (same hash/plugin as the machine)
 
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
   pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded
@@ -79,6 +79,11 @@ function hashIdArg(fallback: InternalHashId = DEFAULT_INTERNAL_HASH_ID): Interna
   return v;
 }
 
+function pluginFamilyArg(fallback: string = DEFAULT_ZKP_FAMILY): string {
+  const v = arg("--plugin", fallback);
+  return zkpPluginByFamily(v).family;
+}
+
 async function wallet(): Promise<LabWallet> {
   try {
     return await loadLabWallet();
@@ -93,7 +98,7 @@ function machinePath(): string {
 
 type HeldNote = { note: Note; index: number };
 
-async function loadMachine(): Promise<{ machine: PoolMachine; notes: HeldNote[] }> {
+async function loadMachine(): Promise<{ machine: PoolMachine; notes: HeldNote[]; pluginFamily: string }> {
   const { readFile } = await import("node:fs/promises");
   const raw = JSON.parse(await readFile(machinePath(), "utf8")) as {
     state: ReturnType<typeof emptyState>;
@@ -102,6 +107,7 @@ async function loadMachine(): Promise<{ machine: PoolMachine; notes: HeldNote[] 
     nullifiers: string[];
     instance: string;
     hash?: string;
+    plugin?: string;
   };
   const hash = internalHash(raw.hash && isInternalHashId(raw.hash) ? raw.hash : DEFAULT_INTERNAL_HASH_ID);
   const notes = new IncrementalMerkle(undefined, hash);
@@ -132,12 +138,14 @@ async function loadMachine(): Promise<{ machine: PoolMachine; notes: HeldNote[] 
       nullifiers,
     },
     notes: notebook,
+    pluginFamily: raw.plugin ? zkpPluginByFamily(raw.plugin).family : DEFAULT_ZKP_FAMILY,
   };
 }
 
-async function saveMachine(machine: PoolMachine, notebook: HeldNote[]): Promise<void> {
+async function saveMachine(machine: PoolMachine, notebook: HeldNote[], pluginFamily = DEFAULT_ZKP_FAMILY): Promise<void> {
   await mkdir(join(process.cwd(), ".local"), { recursive: true });
   const body = {
+    plugin: pluginFamily,
     hash: machine.notes.hash.id,
     instance: Buffer.from(machine.state.poolInstanceId).toString("hex"),
     state: {
@@ -174,6 +182,8 @@ async function main(): Promise<void> {
         {
           profile: "any-amount-v0",
           pluginFamily: circleFriPlugin.family,
+          defaultZkp: DEFAULT_ZKP_FAMILY,
+          zkpFamilies: ["circle-fri-m31", "hash-lab-v0"],
           internalHash: DEFAULT_INTERNAL_HASH_ID,
           vkId: circleFriPlugin.vkId,
           sound: circleFriPlugin.sound,
@@ -235,7 +245,7 @@ async function main(): Promise<void> {
   }
   if (cmd === "pool" && process.argv[3] === "deposit") {
     const sats = BigInt(arg("--sats"));
-    let loaded: { machine: PoolMachine; notes: HeldNote[] };
+    let loaded: { machine: PoolMachine; notes: HeldNote[]; pluginFamily: string };
     try {
       loaded = await loadMachine();
     } catch {
@@ -248,38 +258,42 @@ async function main(): Promise<void> {
           nullifiers: new NullifierSet(hash),
         },
         notes: [],
+        pluginFamily: DEFAULT_ZKP_FAMILY,
       };
     }
     const hash = loaded.machine.notes.hash;
+    const plugin = zkpPluginByFamily(pluginFamilyArg(loaded.pluginFamily));
     const note: Note = {
       amountSats: sats,
       rho: crypto.getRandomValues(new Uint8Array(32)),
       ownerSecret: crypto.getRandomValues(new Uint8Array(32)),
     };
     const d = applyDeposit(loaded.machine, note);
-    const proof = encodeFriProof(proveFri(d.statement, wDeposit(note, d.index, d.path), { hash }));
-    const v = verifyFri(d.statement, decodeFriProof(proof), wDeposit(note, d.index, d.path), { hash });
+    const witness = { ...wDeposit(note, d.index, d.path), hash: hash.id };
+    const proof = await plugin.prove(d.statement, witness);
+    const v = plugin.verify(d.statement, proof, { hash: hash.id });
     if (!v.ok) throw new Error(v.reason);
     loaded.notes.push({ note, index: d.index });
-    await saveMachine(d.machine, loaded.notes);
-    console.log(`deposit ${sats} reserve=${d.machine.state.reserveSats} plugin=${circleFriPlugin.family} hash=${hash.id} proofBytes=${proof.length} verify=ok`);
+    await saveMachine(d.machine, loaded.notes, plugin.family);
+    console.log(`deposit ${sats} reserve=${d.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} proofBytes=${proof.length} verify=ok`);
     return;
   }
   if (cmd === "pool" && process.argv[3] === "withdraw") {
     const sats = BigInt(arg("--sats"));
     const loaded = await loadMachine();
     const hash = loaded.machine.notes.hash;
+    const plugin = zkpPluginByFamily(pluginFamilyArg(loaded.pluginFamily));
     const held = loaded.notes.find((n) => n.note.amountSats >= sats);
     if (!held) throw new Error("no note covers that amount");
     const w = applyWithdraw(loaded.machine, held.note, held.index, new Uint8Array(32), sats);
-    const witness = wWithdraw(held.note, held.index, w.path, w.created);
-    const proof = encodeFriProof(proveFri(w.statement, witness, { hash }));
-    const v = verifyFri(w.statement, decodeFriProof(proof), witness, { hash });
+    const witness = { ...wWithdraw(held.note, held.index, w.path, w.created), hash: hash.id };
+    const proof = await plugin.prove(w.statement, witness);
+    const v = plugin.verify(w.statement, proof, { hash: hash.id });
     if (!v.ok) throw new Error(v.reason);
     const next = loaded.notes.filter((n) => n.index !== held.index);
     if (w.change && w.changeIndex !== undefined) next.push({ note: w.change, index: w.changeIndex });
-    await saveMachine(w.machine, next);
-    console.log(`withdraw ${sats} reserve=${w.machine.state.reserveSats} hash=${hash.id} verify=ok`);
+    await saveMachine(w.machine, next, plugin.family);
+    console.log(`withdraw ${sats} reserve=${w.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} verify=ok`);
     return;
   }
   if (cmd === "lab" && process.argv[3] === "demo") {

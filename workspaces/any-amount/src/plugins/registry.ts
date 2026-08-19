@@ -49,10 +49,24 @@ export const nostrBusPlugin: SidePlugin = {
 
 export const zkpPlugins: ZkpPlugin[] = [circleFriPlugin, hashLabPlugin];
 
+/** Production default. Circle FRI is the first backend, not the pool identity. */
+export const DEFAULT_ZKP_FAMILY = circleFriPlugin.family;
+
+export function defaultZkpPlugin(): ZkpPlugin {
+  return circleFriPlugin;
+}
+
+export function zkpPluginByFamily(family: string): ZkpPlugin {
+  const p = zkpPlugins.find((x) => x.family === family);
+  if (!p) throw new Error(`unknown zkp family ${family}`);
+  return p;
+}
+
 export function describePlugins(): unknown {
   return {
     covenant: "P2S (2026) / P2SH32 (P1 shells) — not P2PKH",
     userLock: "P2PKH today; Quantumroot later",
+    defaultZkp: DEFAULT_ZKP_FAMILY,
     zkp: zkpPlugins.map((p) => ({ family: p.family, sound: p.sound, vkId: p.vkId })),
     side: [hashAmountPlugin, pedersenAmountPlugin, mlkemDeliveryPlugin, quantumrootKeyPath, nostrBusPlugin],
   };

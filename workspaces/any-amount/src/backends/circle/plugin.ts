@@ -22,9 +22,9 @@ export const circleFriPlugin: ZkpPlugin = {
     const w = (witness ?? {}) as FriWitness & { hash?: InternalHashId };
     return encodeFriProof(proveFri(statement, w, { hash: w.hash ?? DEFAULT_INTERNAL_HASH_ID }));
   },
-  verify(statement: PoolStatement, proof: Uint8Array): PluginVerifyResult {
+  verify(statement: PoolStatement, proof: Uint8Array, opts?: { hash?: InternalHashId }): PluginVerifyResult {
     try {
-      return verifyFri(statement, decodeFriProof(proof));
+      return verifyFri(statement, decodeFriProof(proof), {}, { hash: opts?.hash });
     } catch (e) {
       return { ok: false, reason: e instanceof Error ? e.message : String(e) };
     }

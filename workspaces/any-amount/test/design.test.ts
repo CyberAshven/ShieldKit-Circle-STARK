@@ -41,5 +41,10 @@ describe("plugin split", () => {
     assert.ok(families.includes("pedersen-secp-profile"));
     assert.ok(!d.zkp.some((z) => z.family === "ml-kem-768"));
     assert.ok(!d.zkp.some((z) => z.family === "quantumroot-lmots"));
+    const zkp = d.zkp.map((z) => z.family);
+    assert.ok(zkp.includes("circle-fri-m31"));
+    assert.ok(zkp.includes("hash-lab-v0"));
+    assert.ok(zkp.length >= 2);
+    assert.ok(!zkp.some((f) => /groth16|pairing|bn254/i.test(f)));
   });
 });

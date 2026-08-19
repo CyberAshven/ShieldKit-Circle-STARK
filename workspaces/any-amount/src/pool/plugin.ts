@@ -10,12 +10,14 @@ export type PluginVerifyResult =
  * ZKP-agnostic hook. The covenant (later) calls this. Circle FRI is plugin #1.
  * A backend that is not sound must refuse, not pretend.
  */
+export type PluginVerifyOpts = { hash?: string };
+
 export interface ZkpPlugin {
   readonly family: string;
   readonly vkId: string;
   readonly sound: boolean;
   prove(statement: PoolStatement, witness: unknown): Promise<ProofBytes>;
-  verify(statement: PoolStatement, proof: ProofBytes): PluginVerifyResult;
+  verify(statement: PoolStatement, proof: ProofBytes, opts?: PluginVerifyOpts): PluginVerifyResult;
 }
 
 export function requirePlugin(plugin: ZkpPlugin, want: string): void {
