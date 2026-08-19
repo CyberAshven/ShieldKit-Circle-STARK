@@ -16,6 +16,14 @@ Consensus 1 MB: **36** folds (one 1-query kernel per FRI query). C=QZ stays 6/36
 On-chain redeem is still Circle fold/C=QZ (plugin switch is off-chain + registry;
 `hash-lab-v0` is not private/sound). Language: TypeScript / CashScript / Rust.
 
+## Three resume questions (honest)
+
+| Ask | Shipped bar |
+| --- | --- |
+| On-chain Circle STARK verifier? | **Yes**, 2026 VM: Merkle (`OP_SHA256`) + foldPair + `C=Q·Z`. Honest successor accepts; false statement / digest-only / dummy membership reject. Not a pairing SNARK. |
+| Statistical ZK openings? | **Shipped mask, not a Lean HVZK theorem.** Degree-3 SHA-256 \(R\) on prove/verify/packed Q; opened diffs are not plaintext \(Q\) diffs. The 10 KB lock does **not** evaluate \(R\) (it checks masked Q·Z=nTable). Not full ePrint 2024/1037 off-domain query-count-degree HVZK. |
+| Confidential TX + aggregated pool? | **Notes + OTP + unlinked fee + one set.** Distinctive withdraw is not an output and not `feeUtxo−change`. Pool UTXO stays `STATE_BASE` (not Maxwell / not Zcash hidden output value). Two honest amounts share one Merkle set; fresh-rho change; spent-nullifier reuse rejects. |
+
 ## Passing
 
 - Soundness worksheet: TRACE=64, blowup=16, FRI_N=1024, queries=36, grind=20, rate 2/B → **128 conjectural bits**. `sound: true`. Old n=32/q=8 fails the build.
