@@ -517,7 +517,7 @@ export function evaluateDummyKernels(args: {
   });
 }
 
-/** Honest Merkle kernels; qTable[0] and nTable[0] cooked so q'·Z = n' (old C=QZ would pass). */
+/** Honest Merkle kernels; nTable[0] flipped so slot-0 Q·Z ≠ nTable (Newton T is not the interpolant). */
 export function evaluateCookedNTable(args: {
   oldState: AnyAmountState;
   newState: AnyAmountState;
@@ -526,18 +526,7 @@ export function evaluateCookedNTable(args: {
 }): VmEval {
   const honest = encodeAirPacked(args.statement, args.proof);
   const cooked = new Uint8Array(honest);
-  let flipped = false;
-  for (let s = 0; s < 6; s += 1) {
-    const i = (cooked[AIR_OFF_IDX + s * 2]! << 8) | cooked[AIR_OFF_IDX + s * 2 + 1]!;
-    const { z, q } = nqzAt(args.statement, i);
-    if (z === 0n) continue;
-    const q2 = add(q, 1n);
-    cooked.set(encodeLe(q2), AIR_OFF_QTABLE + s * 4);
-    cooked.set(encodeLe(mul(q2, z)), AIR_OFF_NTABLE + s * 4);
-    flipped = true;
-    break;
-  }
-  if (!flipped) cooked[AIR_OFF_EVEN] ^= 1;
+  cooked[AIR_OFF_NTABLE] ^= 1;
   return evaluatePoolSuccessorVm({
     ...args,
     airPacked: cooked,

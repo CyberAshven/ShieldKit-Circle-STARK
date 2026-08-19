@@ -11,6 +11,7 @@ without fold stays recorded so it is not relabeled.
 
 | When | What | Commit / tx |
 | --- | --- | --- |
+| 2026-08-19 | Post-plugin successor: standard **79525 B** `23fd1b7d…` (1 fold, Electrum) + consensus **283992 B** `9362df54…` (36 folds, JSON-RPC). Off-chain plugin hook; on-chain redeem still Circle fold/C=QZ. | this land |
 | 2026-08-19 | Hash-knob + Q/N opening-mask pack: standard **79436 B** `f14bff7b…`, 1 fold + 6 C=QZ, Electrum. Packed N is N+cZ; Newton T is not the AIR interpolant. | `f14bff7b…` |
 | 2026-08-19 | Hash-knob intermediate standard land **99742 B** `c40f4948…` (T still interpolated cells+c). | `c40f4948…` |
 | 2026-08-17 | Opening-mask lock landed: standard **98979 B** `617b1022…` + consensus **36-fold 383031 B** `b3ea8a75…` (JSON-RPC mempool; existing miner). | this land |
@@ -24,7 +25,35 @@ without fold stays recorded so it is not relabeled.
 | 2026-08-16 | Standard 1-fold + 6 C=QZ Electrum land | `2acb1196…` |
 | 2026-08-16 | 36-slot **no-fold** size proof | `356630bd…` |
 
-## Current: hash-knob + Q/N opening-mask pack (2026-08-19)
+## Current: post-plugin Circle successor (2026-08-19)
+
+CLI deposit/withdraw go through `zkpPluginByFamily` (default `circle-fri-m31`). On-chain redeem is still Circle fold/C=QZ. Existing Chipnet miner; no new miner started. JSON-RPC `sendrawtransaction` for the consensus successor (`acceptnonstdtxn=1`).
+
+### Standard (≤ 100 KB)
+
+| | |
+| --- | --- |
+| Successor | `23fd1b7dae7c10ac692113cf3e3bc3776cd42d4e6780d916032342fc73faaf59` |
+| Size | 79525 bytes |
+| On-chain | 10 Merkle + bind-seq + **1** fold + **6** `C=Q·Z` |
+| Prep | `465d9d54783aaae93e980265455c4e469ccce293827028a1ac17801c22fda622` |
+| Genesis | `da71797fff37f2c8320210a4e7de884d77e245549c4d15b32b71ce5dd98ab272` |
+| Kernels | `9bed1af0b3c4b02c8a17a0894751e05b7af796fe4bfddd12713351beea695213` |
+
+Explorer: `https://chipnet.imaginary.cash/tx/23fd1b7dae7c10ac692113cf3e3bc3776cd42d4e6780d916032342fc73faaf59`
+
+### Consensus 36-fold (≤ 1 MB)
+
+| | |
+| --- | --- |
+| Successor | `9362df54203c560a34e105ec3a11442a2a50c750e82938191811f1bda3edc833` |
+| Size | 283992 bytes |
+| On-chain | 10 Merkle + bind-seq + **36** folds + **36** `C=Q·Z` |
+| Path | JSON-RPC `sendrawtransaction` |
+
+Explorer: `https://chipnet.imaginary.cash/tx/9362df54203c560a34e105ec3a11442a2a50c750e82938191811f1bda3edc833`
+
+## Prior: hash-knob + Q/N opening-mask pack (2026-08-19)
 
 Selectable internal hash (default SHA-256, BLAKE2s alternate). Packed Q is Q+c and packed N is N+cZ. Packed Newton T is not the AIR interpolant. Slot lock is Q·Z=nTable. Standard successor Electrum-relayed.
 

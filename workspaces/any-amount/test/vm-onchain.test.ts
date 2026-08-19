@@ -287,7 +287,7 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
       proof: raw,
       statement: w.statement,
     });
-    assert.equal(cooked.accepted, false, cooked.error ?? "cooked nTable=Q'·Z must fail N-from-T");
+    assert.equal(cooked.accepted, false, cooked.error ?? "cooked nTable must fail Q·Z");
     const cookedT = evaluateCookedT({
       oldState: w.statement.oldState,
       newState: w.statement.newState,

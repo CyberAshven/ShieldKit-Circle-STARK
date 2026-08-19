@@ -4,7 +4,7 @@ Scoreboard: [`STATUS.md`](STATUS.md). Lands: [`MILESTONE.md`](MILESTONE.md).
 
 ## Now
 
-Chipnet Circle-FRI shielded covenant. ZKP plugin hook is **off-chain + registry**: default `circle-fri-m31`, second family `hash-lab-v0` on the same statement (`hash-lab-v0` is not private or sound). On-chain redeem is still Circle fold/C=QZ. Internal hash is a drop-in knob (default SHA-256, BLAKE2s alternate). Poseidon2 and Monolith are not shipped; a later swap is a table entry + `digest()`, not a Merkle/FS/note rewrite. On-chain `OP_SHA256` is the SHA-256 backend of the default knob, not a second tree. Standard land `f14bff7b…` (**79436 B**). No new Chipnet land this pass. Pool UTXO stays `STATE_BASE`. Not better-than-XMR.
+Chipnet Circle-FRI shielded covenant. ZKP plugin hook is **off-chain + registry**: default `circle-fri-m31`, second family `hash-lab-v0` on the same statement (`hash-lab-v0` is not private or sound). On-chain redeem is still Circle fold/C=QZ. Internal hash is a drop-in knob (default SHA-256, BLAKE2s alternate). Poseidon2 and Monolith are not shipped; a later swap is a table entry + `digest()`, not a Merkle/FS/note rewrite. On-chain `OP_SHA256` is the SHA-256 backend of the default knob, not a second tree. Latest lands: standard `23fd1b7d…` (**79525 B**) and consensus `9362df54…` (**283992 B**). Pool UTXO stays `STATE_BASE`. Not better-than-XMR.
 
 ## Next, in order
 

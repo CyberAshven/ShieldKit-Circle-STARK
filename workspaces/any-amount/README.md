@@ -26,7 +26,7 @@ leaf preimage in the proof. Prove stays off-chain.
 
 ## Latest
 
-ZKP plugin hook is **off-chain + registry**. CLI deposit/withdraw call `Verify(family, vk, statement, proof)`. Default family is **circle-fri-m31**; **hash-lab-v0** is a second plugin on the same statement (cross-family proofs reject; **not private**, **not sound**). On-chain redeem is still Circle fold/C=QZ. Internal hash is a drop-in knob (default **SHA-256**, alternate **BLAKE2s**). Poseidon2 and Monolith are not shipped; a later swap is a table entry + `digest()`, not a Merkle/FS/note rewrite. On-chain `OP_SHA256` is the SHA-256 backend of the default knob, not a second tree. Standard Chipnet land `f14bff7b…` (**79436 B**). No new land this pass. Historical txids stay in [`MILESTONE.md`](MILESTONE.md).
+ZKP plugin hook is **off-chain + registry**. CLI deposit/withdraw call `zkpPluginByFamily` then `plugin.prove` / `plugin.verify`. Default family is **circle-fri-m31**; **hash-lab-v0** is a second plugin on the same statement (cross-family proofs reject; **not private**, **not sound**). On-chain redeem is still Circle fold/C=QZ. Internal hash is a drop-in knob (default **SHA-256**, alternate **BLAKE2s**). Poseidon2 and Monolith are not shipped; a later swap is a table entry + `digest()`, not a Merkle/FS/note rewrite. On-chain `OP_SHA256` is the SHA-256 backend of the default knob, not a second tree. Latest Chipnet lands: standard `23fd1b7d…` (**79525 B**) and consensus `9362df54…` (**283992 B**). Historical txids stay in [`MILESTONE.md`](MILESTONE.md).
 
 ## Commands (navigator)
 
