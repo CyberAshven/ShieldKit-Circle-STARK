@@ -21,7 +21,9 @@ import {
   maskAuth,
   unmaskAuth,
   viewingCommit,
-  openingMaskFelt,
+  openingMaskAt,
+  openingMaskCoeffs,
+  evalMaskPoly,
   VIEWING_PAD_LEN,
 } from "./witness-mask.ts";
 import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
@@ -207,8 +209,8 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
   const viewingKey = freshViewingKey();
   const vCommit = viewingCommit(viewingKey, hash);
   const { qLde } = airQuotientLde(statement, small, big, hash);
-  const openMask = openingMaskFelt(vCommit, hash);
-  const tLde = qLde.map((q) => add(q, openMask));
+  const maskCoeffs = openingMaskCoeffs(vCommit, hash);
+  const tLde = qLde.map((q, i) => add(q, evalMaskPoly(maskCoeffs, i)));
   const traceTree = new MerkleTree(tLde, hash);
 
   let domain = big;
@@ -287,8 +289,8 @@ export function proveFromTLde(
   const digest = hash.digest(encodeStatement(statement, hash));
   const viewingKey = freshViewingKey();
   const vCommit = viewingCommit(viewingKey, hash);
-  const openMask = openingMaskFelt(vCommit, hash);
-  const masked = tLde.map((q) => add(q, openMask));
+  const maskCoeffs = openingMaskCoeffs(vCommit, hash);
+  const masked = tLde.map((q, i) => add(q, evalMaskPoly(maskCoeffs, i)));
   const big = circleDomain(FRI_N);
   const traceTree = new MerkleTree(masked, hash);
   let domain = big;
@@ -432,7 +434,7 @@ export function verifyFri(
     }
     const nAt = nLde[query.index]!;
     const zAt = zLde[query.index]!;
-    const openMask = proof.viewingCommit ? openingMaskFelt(proof.viewingCommit, hash) : 0n;
+    const openMask = proof.viewingCommit ? openingMaskAt(proof.viewingCommit, query.index, hash) : 0n;
     if (mul(sub(query.traceValue, openMask), zAt) !== nAt) {
       return { ok: false, reason: "N != Q*Z" };
     }
@@ -672,7 +674,17 @@ export function proofByteLength(p: FriProof): number {
 }
 
 export { add, bytesToHex, COMMITTED_LAYERS, FRI_LOG_N, FRI_N, FRI_QUERIES, TRACE_LEN };
-export { freshViewingKey, unmaskAuth, viewingCommit, openingMaskFelt, VIEWING_PAD_LEN } from "./witness-mask.ts";
+export {
+  freshViewingKey,
+  unmaskAuth,
+  viewingCommit,
+  openingMaskFelt,
+  openingMaskAt,
+  openingMaskCoeffs,
+  evalMaskPoly,
+  OPEN_MASK_DEGREE,
+  VIEWING_PAD_LEN,
+} from "./witness-mask.ts";
 export {
   DEFAULT_INTERNAL_HASH_ID,
   INTERNAL_HASH_IDS,

@@ -43,19 +43,57 @@ export function unmaskAuth(auth: FriAuth, key: Uint8Array): FriAuth {
 }
 
 /**
- * Degree-0 mask felt for FRI openings / packed Q.
- * Derived from the packed viewing-commit (not stored as a felt). Openings are
- * Q+c. Packed Newton T interpolates on-chain cells offset by c so T-eval is
- * not unmasked Q. On-chain lock recomputes c with OP_SHA256 of the same tags.
+ * Degree-0 mask felt. Leftover for contrast tests: opened[i]−opened[j] = Q[i]−Q[j]
+ * because the constant cancels. Production openings use `openingMaskAt` (degree 3).
  */
 export function openingMaskFelt(commit: Uint8Array, hash: InternalHash = defaultInternalHash()): bigint {
   if (commit.length !== 32) throw new Error("viewing commit width");
   const h = hash.digest(concatBytes(VIEWING_TAG, commit, FRI_OPEN_MASK_TAG));
-  // 4-byte LE, high bit cleared so OP_BIN2NUM stays unsigned; then mod M31.
   const n =
     BigInt(h[0]!) |
     (BigInt(h[1]!) << 8n) |
     (BigInt(h[2]!) << 16n) |
     (BigInt(h[3]! & 0x7f) << 24n);
   return n % 2147483647n;
+}
+
+/** Four SHA-256-derived coeffs. Not a full 2024/1037 HVZK theorem (off-domain R of query-count degree). */
+export const OPEN_MASK_DEGREE = 3;
+
+function feltFromHash(h: Uint8Array): bigint {
+  const n =
+    BigInt(h[0]!) |
+    (BigInt(h[1]!) << 8n) |
+    (BigInt(h[2]!) << 16n) |
+    (BigInt(h[3]! & 0x7f) << 24n);
+  return n % 2147483647n;
+}
+
+export function openingMaskCoeffs(commit: Uint8Array, hash: InternalHash = defaultInternalHash()): bigint[] {
+  if (commit.length !== 32) throw new Error("viewing commit width");
+  const out: bigint[] = [];
+  for (let k = 0; k <= OPEN_MASK_DEGREE; k += 1) {
+    out.push(feltFromHash(hash.digest(concatBytes(VIEWING_TAG, commit, FRI_OPEN_MASK_TAG, Uint8Array.of(k)))));
+  }
+  return out;
+}
+
+/** R(index+1) = c0 + c1 x + c2 x^2 + c3 x^3 over M31. Unique per LDE index. */
+export function evalMaskPoly(coeffs: readonly bigint[], index: number): bigint {
+  const x = BigInt((index & 1023) + 1);
+  let acc = 0n;
+  let pow = 1n;
+  for (const c of coeffs) {
+    acc = (acc + ((c % 2147483647n) * pow)) % 2147483647n;
+    pow = (pow * x) % 2147483647n;
+  }
+  return acc;
+}
+
+export function openingMaskAt(
+  commit: Uint8Array,
+  index: number,
+  hash: InternalHash = defaultInternalHash(),
+): bigint {
+  return evalMaskPoly(openingMaskCoeffs(commit, hash), index);
 }

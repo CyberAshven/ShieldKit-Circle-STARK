@@ -23,7 +23,7 @@ import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
 import { add, encodeLe, M31, mul, sub, type M31El } from "../backends/circle/m31.ts";
-import { FRI_OPEN_MASK_TAG, VIEWING_TAG, openingMaskFelt } from "../backends/circle/witness-mask.ts";
+import { FRI_OPEN_MASK_TAG, VIEWING_TAG, openingMaskAt } from "../backends/circle/witness-mask.ts";
 import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 import { circleDomain } from "../backends/circle/fri.ts";
 import { COMMITTED_LAYERS, FRI_FINAL, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
@@ -41,7 +41,7 @@ export const AIR_STMT_LEN = 433;
 export const AIR_OFF_DIGEST = AIR_OFF_STMT;
 export const AIR_OFF_PUB_OLD = AIR_OFF_STMT + 32;
 export const AIR_OFF_PUB_NEW = AIR_OFF_STMT + 32 + 128;
-/** Packed viewing-commit (32). Lock derives the degree-0 mask felt; the felt is not stored. */
+/** Packed viewing-commit (32). Prover derives a degree-3 mask poly; the felt is not stored. */
 export const AIR_OFF_OPEN_MASK = 812;
 export const AIR_VIEWING_COMMIT_LEN = 32;
 export const AIR_OFF_QTABLE = 957;
@@ -278,7 +278,6 @@ export function encodeAirPacked(
 ): Uint8Array {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
   const commit = p.viewingCommit && p.viewingCommit.length === 32 ? p.viewingCommit : new Uint8Array(32);
-  const openMask = openingMaskFelt(commit, hash);
   const { qLde, nLde, zLde } = airQuotientLde(statement, smallDomain, bigDomain, hash);
   const digest = hash.digest(encodeStatement(statement, hash));
   const packed = new Uint8Array(AIR_PACKED_SIZE);
@@ -295,8 +294,9 @@ export function encodeAirPacked(
   const qIdx = fiatShamirQueryIndices(digest, p, hash);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     const i = qIdx[s]!;
-    packed.set(encodeLe(add(qLde[i]!, openMask)), AIR_OFF_QTABLE + s * 4);
-    packed.set(encodeLe(add(nLde[i]!, mul(openMask, zLde[i]!))), AIR_OFF_NTABLE + s * 4);
+    const r = openingMaskAt(commit, i, hash);
+    packed.set(encodeLe(add(qLde[i]!, r)), AIR_OFF_QTABLE + s * 4);
+    packed.set(encodeLe(add(nLde[i]!, mul(r, zLde[i]!))), AIR_OFF_NTABLE + s * 4);
     packed[AIR_OFF_IDX + s * 2] = (i >> 8) & 0xff;
     packed[AIR_OFF_IDX + s * 2 + 1] = i & 0xff;
   }

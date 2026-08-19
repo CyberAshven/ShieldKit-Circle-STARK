@@ -85,7 +85,7 @@ An honest deposit or withdraw verifies in TypeScript `verifyFri`. A false reserv
 
 ## Confidential amounts
 
-`amountCommitIn` / `amountCommitOut` are 32-byte tagged internal-hash commits (`H(PAA1-HASH-AMT-v1 || amount_i64le || rho)`). Production `H` is SHA-256; BLAKE2s is the selectable alternate. `checkAuthRelation` requires them to match the opened note. `encodeStatement` writes `commitPublicNet` instead of the raw public i64. `encodeFriProof` one-time-pads rho/owner/amount. FRI openings and packed Q are offset by a degree-0 mask felt. Packed nTable is N+cZ. Packed Newton T is not the AIR interpolant. The slot lock checks Q·Z=nTable without a packed mask felt. Pool UTXO sats stay `STATE_BASE`. The old Pedersen module remains a comparison plugin only. Poseidon2 is not an option on this knob.
+`amountCommitIn` / `amountCommitOut` are 32-byte tagged internal-hash commits (`H(PAA1-HASH-AMT-v1 || amount_i64le || rho)`). Production `H` is SHA-256; BLAKE2s is the selectable alternate. `checkAuthRelation` requires them to match the opened note. `encodeStatement` writes `commitPublicNet` instead of the raw public i64. `encodeFriProof` one-time-pads rho/owner/amount. FRI openings and packed Q/N add a degree-3 SHA-256 mask polynomial \(R\) (not a degree-0 constant; not a full 2024/1037 HVZK theorem). Packed nTable is N+R(i)Z. Packed Newton T is not the AIR interpolant. The slot lock checks Q·Z=nTable without evaluating \(R\). Pool UTXO sats stay `STATE_BASE`. CashVM Merkle/FS is `OP_SHA256`; Poseidon2 is not a lock opcode. The old Pedersen module remains a comparison plugin only. Poseidon2 is not an option on this knob.
 
 Partial withdraw mints a **new change note**: leftover amount, same `ownerSecret`, **fresh `rho`**, new Merkle index. Reusing `rho` would make `nullifierOf(change) == nullifierOf(spent)` and the next spend dies (`nullifier already used`).
 
@@ -114,7 +114,7 @@ The CLI walks K wallets through deposit, **partial withdraw** (fresh change `rho
 
 We still arithmetize with an **AIR** (trace + constraints + residual \(Q=N/Z\) + Circle FRI). The live interpolant of `onChainCells` is **circle-domain** (`interpolateCircle`, ePrint 2024/278): \(f(P)=E(x)+y\cdot O(x)\) on \(x^2+y^2=1\). That is not a switch to classical multiplicative-subgroup Lagrange on \(X^N-1\).
 
-The **packed** Newton even/odd blob in the unlocking is **not** that interpolant (zero coeffs; seq-only cells). Zeroing it is a published-blob choice so evaluating T cannot recover the degree-0 opening mask. The prover still interpolates the AIR on the circle. Newton divided differences inside `interpolateCircle` are an implementation of the even/odd univariate pieces, not “the AIR is Newton form.”
+The **packed** Newton even/odd blob in the unlocking is **not** that interpolant (zero coeffs; seq-only cells). Zeroing it is a published-blob choice so evaluating T cannot recover the opening mask. The prover still interpolates the AIR on the circle. Newton divided differences inside `interpolateCircle` are an implementation of the even/odd univariate pieces, not “the AIR is Newton form.”
 
 ### Is this sounder than Aztec / Zcash / Monero?
 
