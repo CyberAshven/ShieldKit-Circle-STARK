@@ -18,4 +18,4 @@ than XMR / Zcash / Aztec / Voidify / Tornado.
 - A theorem that those systems are less sound.
 - Hidden individual note amounts on the UTXO (pool output is a constant `STATE_BASE`; reserve is not in the NFT). The public P2PKH net is committed, not published in successor fields.
 - 128-bit collision resistance of the 4-limb algebraic mixer used inside the AIR (FRI bits are the worksheet; the note tree is still SHA-256).
-- A theorem that the whole STARK is statistically ZK, or better-than-XMR. Published note preimage is one-time-padded; unlocking cannot recover rho/owner.
+- A theorem that the whole STARK is statistically ZK, or better-than-XMR or Zcash (including because the hash is SHA-256). Published note preimage is one-time-padded; unlocking cannot recover rho/owner.

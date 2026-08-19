@@ -110,12 +110,19 @@ The CLI walks K wallets through deposit, **partial withdraw** (fresh change `rho
 
 ## FAQ
 
+### Packed Newton T vs the AIR interpolant
+
+We still arithmetize with an **AIR** (trace + constraints + residual \(Q=N/Z\) + Circle FRI). The live interpolant of `onChainCells` is **circle-domain** (`interpolateCircle`, ePrint 2024/278): \(f(P)=E(x)+y\cdot O(x)\) on \(x^2+y^2=1\). That is not a switch to classical multiplicative-subgroup Lagrange on \(X^N-1\).
+
+The **packed** Newton even/odd blob in the unlocking is **not** that interpolant (zero coeffs; seq-only cells). Zeroing it is a published-blob choice so evaluating T cannot recover the degree-0 opening mask. The prover still interpolates the AIR on the circle. Newton divided differences inside `interpolateCircle` are an implementation of the even/odd univariate pieces, not “the AIR is Newton form.”
+
 ### Is this sounder than Aztec / Zcash / Monero?
 
-No published theorem says that, and a demo accept does not prove it. What we can say honestly:
+No. SHA-256 as the internal hash does **not** make this lab better-than-XMR or Zcash. No published theorem says that, and a demo accept does not prove it. What we can say honestly:
 
 - Circle FRI is a **hash STARK**: no trusted setup, no pairing curve, PQ *family* (SHA-256 + M31). Aztec (Honk/Plonk-ish) and Zcash (Halo2 / Groth16 history) sit on pairing or discrete-log assumptions. Monero is ring signatures + Bulletproofs, not a membership STARK.
 - The **shipped** worksheet is 128 conjectural bits. That is an ethSTARK-style count, not a proof those systems are weaker.
+- Pool UTXO sats stay public `STATE_BASE`. Note amounts are hash-committed; that is not Monero Bulletproofs or Zcash Orchard hiding of output value.
 - See `COMPARISON.md` for the checkable axes. Do not quote a “better-than theorem.”
 
 ### Why Rust?
