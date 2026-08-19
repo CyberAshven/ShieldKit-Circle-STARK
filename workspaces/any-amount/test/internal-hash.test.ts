@@ -8,14 +8,17 @@ import {
   INTERNAL_HASH_IDS,
   defaultInternalHash,
   internalHash,
+  resolveInternalHash,
+  type InternalHash,
+  type InternalHashId,
 } from "../src/backends/circle/internal-hash.ts";
 import { decodeFriProof, encodeFriProof, proveFri, verifyFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
-import { IncrementalMerkle, NullifierSet, commitNote, type Note } from "../src/pool/notes.ts";
+import { IncrementalMerkle, NullifierSet, commitNote, nullifierOf, type Note } from "../src/pool/notes.ts";
 import { emptyState } from "../src/pool/state.ts";
 import { commitAmount } from "../src/amounts/hash-commit.ts";
 import { MerkleTree } from "../src/backends/circle/merkle.ts";
-import { sha256 } from "../src/pool/bytes.ts";
+import { concatBytes, sha256 } from "../src/pool/bytes.ts";
 
 function rnd32(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(32));
@@ -81,6 +84,38 @@ describe("internal hash knob", () => {
     assert.notDeepEqual(treeSha.root, treeBlake.root);
     assert.equal(MerkleTree.verify(1n, 0, treeSha.path(0), treeSha.root, sha), true);
     assert.equal(MerkleTree.verify(1n, 0, treeSha.path(0), treeSha.root, blake), false);
+  });
+
+  it("a third digest object is a table pass-through, not a site rewrite", () => {
+    const third = {
+      id: "lab-third",
+      digest(data: Uint8Array) {
+        return sha256(concatBytes(new TextEncoder().encode("PAA1-LAB-THIRD"), data));
+      },
+    } as InternalHash;
+    assert.equal(resolveInternalHash(third), third);
+    assert.throws(() => internalHash("lab-third" as InternalHashId), /unknown internal hash/);
+
+    const note: Note = { amountSats: 7_000n, rho: rnd32(), ownerSecret: rnd32() };
+    const d = applyDeposit(machine(third), note);
+    const wit = wDeposit(note, d.index, d.path);
+    const proof = proveFri(d.statement, wit, { hash: third });
+    assert.equal(verifyFri(d.statement, proof, wit, { hash: third }).ok, true);
+    const mixed = verifyFri(d.statement, proof, wit, { hash: internalHash("sha256") });
+    assert.equal(mixed.ok, false, "unregistered digest must not verify under sha256");
+
+    const sha = internalHash("sha256");
+    assert.notDeepEqual(commitNote(note, third), commitNote(note, sha));
+    assert.notDeepEqual(
+      nullifierOf(note, d.statement.oldState.poolInstanceId, third),
+      nullifierOf(note, d.statement.oldState.poolInstanceId, sha),
+    );
+    assert.notDeepEqual(commitAmount(note.amountSats, note.rho, third), commitAmount(note.amountSats, note.rho, sha));
+    const treeThird = new MerkleTree([1n, 2n, 3n, 4n], third);
+    const treeSha = new MerkleTree([1n, 2n, 3n, 4n], sha);
+    assert.notDeepEqual(treeThird.root, treeSha.root);
+    assert.equal(MerkleTree.verify(1n, 0, treeThird.path(0), treeThird.root, third), true);
+    assert.equal(MerkleTree.verify(1n, 0, treeThird.path(0), treeThird.root, sha), false);
   });
 
   it("shipped src default is SHA-256; Poseidon2 is not an implementation", () => {

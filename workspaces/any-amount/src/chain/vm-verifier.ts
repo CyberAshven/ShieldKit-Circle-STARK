@@ -52,8 +52,7 @@ import {
   fiatShamirQueryIndices,
   nqzAt,
 } from "./air-cqz.ts";
-import { sha256 } from "../pool/bytes.ts";
-import { encodeStatement } from "../pool/statement.ts";
+import { statementDigest, type PoolStatement } from "../pool/statement.ts";
 import { COMMITTED_LAYERS } from "../backends/circle/params.ts";
 import {
   compilePoolCovenant,
@@ -63,7 +62,6 @@ import {
   pushData,
 } from "./covenant-p2s.ts";
 import { encodePublicPaa1, STATE_BASE_SATS, type AnyAmountState } from "../pool/state.ts";
-import type { PoolStatement } from "../pool/statement.ts";
 
 export { compileFriQueryKernel, compileFriQueryLockP2sh32, FRI_QUERY_KERNEL };
 
@@ -645,7 +643,7 @@ export function evaluateDummyNoL0(args: {
   for (let r = 0; r < COMMITTED_LAYERS; r += 1) packed.set(dummy[0]!.root, r * 32);
   const decoded = decodeFriProof(args.proof);
   const dummyRoots = Array.from({ length: COMMITTED_LAYERS }, () => dummy[0]!.root);
-  const i0 = fiatShamirQueryIndices(sha256(encodeStatement(args.statement)), {
+  const i0 = fiatShamirQueryIndices(statementDigest(args.statement), {
     ...decoded,
     layerRoots: dummyRoots,
   })[0]!;
@@ -676,7 +674,7 @@ export function evaluateDummyUnbound(args: {
   for (let r = 0; r < COMMITTED_LAYERS; r += 1) packed.set(dummy[0]!.root, r * 32);
   const decoded = decodeFriProof(args.proof);
   const dummyRoots = Array.from({ length: COMMITTED_LAYERS }, () => dummy[0]!.root);
-  const i0 = fiatShamirQueryIndices(sha256(encodeStatement(args.statement)), {
+  const i0 = fiatShamirQueryIndices(statementDigest(args.statement), {
     ...decoded,
     layerRoots: dummyRoots,
   })[0]!;

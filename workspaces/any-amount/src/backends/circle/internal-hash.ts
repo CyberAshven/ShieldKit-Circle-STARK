@@ -3,8 +3,10 @@
  *
  * One primitive for Merkle parent/leaf, Fiat–Shamir grind/queries, note
  * commitment, nullifier, and tagged amount/net commits. Selecting an
- * implementation changes those sites together. Prove and verify accept only
- * when both sides use the same id.
+ * implementation changes those sites together. A later id is one TABLE entry
+ * plus digest(); Merkle / Fiat–Shamir / note / nullifier / tagged commits
+ * already take InternalHash. Prove and verify accept only when both sides
+ * use the same id.
  *
  * Production default is CashVM-native SHA-256 so the on-chain OP_SHA256 /
  * OP_HASH256 walk still matches. BLAKE2s is a real alternate (Starknet OS is
@@ -41,10 +43,10 @@ const TABLE: Record<InternalHashId, InternalHash> = {
 };
 
 export const DEFAULT_INTERNAL_HASH_ID: InternalHashId = "sha256";
-export const INTERNAL_HASH_IDS: readonly InternalHashId[] = ["sha256", "blake2s"];
+export const INTERNAL_HASH_IDS: readonly InternalHashId[] = Object.keys(TABLE) as InternalHashId[];
 
 export function isInternalHashId(value: string): value is InternalHashId {
-  return value === "sha256" || value === "blake2s";
+  return Object.hasOwn(TABLE, value);
 }
 
 export function internalHash(id: InternalHashId = DEFAULT_INTERNAL_HASH_ID): InternalHash {
