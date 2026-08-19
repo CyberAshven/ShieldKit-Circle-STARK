@@ -42,6 +42,7 @@ import {
   proofShardReport,
 } from "./fri-openings.ts";
 import {
+  AIR_OFF_CELLS,
   AIR_OFF_EVEN,
   AIR_OFF_IDX,
   AIR_OFF_NTABLE,
@@ -546,7 +547,7 @@ export function evaluateCookedNTable(args: {
   });
 }
 
-/** Honest kernels; Newton even[0] flipped so T is not the public interpolant. */
+/** Honest kernels; seq cell 23 flipped so PAA1 bind fails. */
 export function evaluateCookedT(args: {
   oldState: AnyAmountState;
   newState: AnyAmountState;
@@ -555,7 +556,7 @@ export function evaluateCookedT(args: {
 }): VmEval {
   const honest = encodeAirPacked(args.statement, args.proof);
   const cooked = new Uint8Array(honest);
-  cooked[AIR_OFF_EVEN] ^= 1;
+  cooked[AIR_OFF_CELLS + 23 * 4] ^= 1;
   return evaluatePoolSuccessorVm({
     ...args,
     airPacked: cooked,

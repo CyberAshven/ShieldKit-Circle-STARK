@@ -11,7 +11,8 @@ without fold stays recorded so it is not relabeled.
 
 | When | What | Commit / tx |
 | --- | --- | --- |
-| 2026-08-19 | Hash-knob + Newton-T mask-close standard land: **99742 B**, 1 fold + 6 C=QZ, Electrum. Internal hash default SHA-256. | `c40f4948…` |
+| 2026-08-19 | Hash-knob + Q/N opening-mask pack: standard **79436 B** `f14bff7b…`, 1 fold + 6 C=QZ, Electrum. Packed N is N+cZ; Newton T is not the AIR interpolant. | `f14bff7b…` |
+| 2026-08-19 | Hash-knob intermediate standard land **99742 B** `c40f4948…` (T still interpolated cells+c). | `c40f4948…` |
 | 2026-08-17 | Opening-mask lock landed: standard **98979 B** `617b1022…` + consensus **36-fold 383031 B** `b3ea8a75…` (JSON-RPC mempool; existing miner). | this land |
 | 2026-08-16 | FRI openings + packed Q offset by degree-0 mask; slot lock subtracts packed felt (standard **and** consensus compiles). Newton T still public. | `95c2311` |
 | 2026-08-16 | Consensus **36-fold** Chipnet land (382203 B) via JSON-RPC | `b1415faf…` @ height 319402 |
@@ -23,22 +24,24 @@ without fold stays recorded so it is not relabeled.
 | 2026-08-16 | Standard 1-fold + 6 C=QZ Electrum land | `2acb1196…` |
 | 2026-08-16 | 36-slot **no-fold** size proof | `356630bd…` |
 
-## Current: hash-knob + Newton-T mask-close (2026-08-19)
+## Current: hash-knob + Q/N opening-mask pack (2026-08-19)
 
-Selectable internal hash (default SHA-256, BLAKE2s alternate). Packed Newton T interpolates masked on-chain cells; offset 812 is the viewing-commit, not the degree-0 felt. Standard successor Electrum-relayed.
+Selectable internal hash (default SHA-256, BLAKE2s alternate). Packed Q is Q+c and packed N is N+cZ. Packed Newton T is not the AIR interpolant. Slot lock is Q·Z=nTable. Standard successor Electrum-relayed.
 
 ### Standard (≤ 100 KB)
 
 | | |
 | --- | --- |
-| Successor | `c40f49480997ecb00354766d4d31e4ec3d5811b61b8d66620ad3c321b12b87ad` |
-| Size | 99742 bytes |
-| On-chain | 10 Merkle + bind-T + **1** fold + **6** `C=Q·Z` + derived opening mask |
-| Prep | `e16d67878dcdbcc5577a62b8734c6658c54cd644db9d3ffd19ee236a23d02935` |
-| Genesis | `b709cec92d540c180692a02360ca2fb4665dcff6acdcc98b95ab15318afe4648` |
-| Kernels | `9723eca700d45e776658dc477d6f3396bb80e8104a11e2a1e4a9c55e71112b81` |
+| Successor | `f14bff7baae1befc2f8becba04b968788b4e8bec65bc336b514a8d5977075671` |
+| Size | 79436 bytes |
+| On-chain | 10 Merkle + bind-seq + **1** fold + **6** `C=Q·Z` |
+| Prep | `52d441fcd8083c2f90d479184c6410f88c1b6b0c9e99ea60ad44510b86276718` |
+| Genesis | `b2a909f9322c64447f2d95680d9769a7a5e287d4c8e020c6ffdb03f83552e462` |
+| Kernels | `6b23871ef1ef96f5d4bf0ed99bc3e386f2f7516d84198819027d9097f641bb0a` |
 
-Explorer: `https://chipnet.imaginary.cash/tx/c40f49480997ecb00354766d4d31e4ec3d5811b61b8d66620ad3c321b12b87ad`
+Explorer: `https://chipnet.imaginary.cash/tx/f14bff7baae1befc2f8becba04b968788b4e8bec65bc336b514a8d5977075671`
+
+Prior same-day intermediate land (T still interpolated cells+c): `c40f49480997ecb00354766d4d31e4ec3d5811b61b8d66620ad3c321b12b87ad` (99742 B).
 
 ## Prior: opening-mask lock (2026-08-17)
 

@@ -7,7 +7,7 @@
  *   260   Newton even
  *   392   Newton odd
  *   524   FS digest + two public PAA1 cells
- *   812   viewing-commit 32 (lock SHA-256s to mask felt; felt is not packed)
+ *   812   unused (mask felt is not packed; Q and N are both opening-masked)
  *   957   Q table (36×4)
  *   1101  FS indices
  *   1173  on-chain cells
@@ -279,8 +279,7 @@ export function encodeAirPacked(
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
   const commit = p.viewingCommit && p.viewingCommit.length === 32 ? p.viewingCommit : new Uint8Array(32);
   const openMask = openingMaskFelt(commit, hash);
-  const interp = statementNewton(statement, openMask, hash);
-  const { qLde, nLde } = airQuotientLde(statement, smallDomain, bigDomain, hash);
+  const { qLde, nLde, zLde } = airQuotientLde(statement, smallDomain, bigDomain, hash);
   const digest = hash.digest(encodeStatement(statement, hash));
   const packed = new Uint8Array(AIR_PACKED_SIZE);
   for (let r = 0; r < COMMITTED_LAYERS; r += 1) {
@@ -288,26 +287,24 @@ export function encodeAirPacked(
   }
   packed.set(p.traceRoot, AIR_OFF_TRACE);
   packed.set(writeU32BE(p.grindNonce), AIR_OFF_NONCE);
-  const even = interp.even.slice();
-  const odd = interp.odd.slice();
-  while (even.length < AIR_NEWTON_FELTS) even.push(0n);
-  while (odd.length < AIR_NEWTON_FELTS) odd.push(0n);
-  packed.set(encodeFeltBlob(even.slice(0, AIR_NEWTON_FELTS)), AIR_OFF_EVEN);
-  packed.set(encodeFeltBlob(odd.slice(0, AIR_NEWTON_FELTS)), AIR_OFF_ODD);
+  packed.set(encodeFeltBlob(Array.from({ length: AIR_NEWTON_FELTS }, () => 0n)), AIR_OFF_EVEN);
+  packed.set(encodeFeltBlob(Array.from({ length: AIR_NEWTON_FELTS }, () => 0n)), AIR_OFF_ODD);
   packed.set(digest, AIR_OFF_DIGEST);
   packed.set(encodePublicPaa1(statement.oldState), AIR_OFF_PUB_OLD);
   packed.set(encodePublicPaa1(statement.newState), AIR_OFF_PUB_NEW);
-  packed.set(commit, AIR_OFF_OPEN_MASK);
   const qIdx = fiatShamirQueryIndices(digest, p, hash);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
-    packed.set(encodeLe(add(qLde[qIdx[s]!]!, openMask)), AIR_OFF_QTABLE + s * 4);
-    packed.set(encodeLe(nLde[qIdx[s]!]!), AIR_OFF_NTABLE + s * 4);
-    packed[AIR_OFF_IDX + s * 2] = (qIdx[s]! >> 8) & 0xff;
-    packed[AIR_OFF_IDX + s * 2 + 1] = qIdx[s]! & 0xff;
+    const i = qIdx[s]!;
+    packed.set(encodeLe(add(qLde[i]!, openMask)), AIR_OFF_QTABLE + s * 4);
+    packed.set(encodeLe(add(nLde[i]!, mul(openMask, zLde[i]!))), AIR_OFF_NTABLE + s * 4);
+    packed[AIR_OFF_IDX + s * 2] = (i >> 8) & 0xff;
+    packed[AIR_OFF_IDX + s * 2 + 1] = i & 0xff;
   }
-  const cells = onChainCells(statement, hash);
-  while (cells.length < TRACE_LEN) cells.push(0n);
-  packed.set(encodeFeltBlob(cells.slice(0, TRACE_LEN)), AIR_OFF_CELLS);
+  const cells = Array.from({ length: TRACE_LEN }, () => 0n);
+  const full = onChainCells(statement, hash);
+  cells[23] = full[23]!;
+  cells[24] = full[24]!;
+  packed.set(encodeFeltBlob(cells), AIR_OFF_CELLS);
   for (let i = 0; i < FRI_FINAL; i += 1) {
     packed.set(encodeLe(p.final[i] ?? 0n), AIR_OFF_FINAL + i * 4);
   }
@@ -696,18 +693,14 @@ export function fsIndex0Asm(): string {
 }
 
 /**
- * One FS slot C=Q·Z. Slot is baked in (Velma redeem ≤ 10 KB).
- * i and qTable[slot]/nTable[slot] match that slot (spender idx ignored).
+ * One FS slot: packed qTable[slot] · Z([i]G) equals packed nTable[slot].
+ * Q and N are both opening-masked, so the lock does not subtract c.
+ * i is recomputed (spender idx ignored).
  */
 export function slotCqzAsm(slot = 0): string {
-  const l0 = lagrangeNewtonBlobs(0);
-  const l23 = lagrangeNewtonBlobs(23);
-  const g64 = `${pushFelt(G64.x)}\n${pushFelt(G64.y)}`;
   const qOff = AIR_OFF_QTABLE + slot * 4;
   const nOff = AIR_OFF_NTABLE + slot * 4;
   return `
-${defineNewtonFn()}
-${defineMaskCFn(1)}
 ${packedMagicAsm()}
 ${fsIndexSlotAsm(slot)}
 OP_SWAP
@@ -715,100 +708,23 @@ OP_DUP
 <${qOff}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
 OP_BIN2NUM
-${invokeMaskC(1)}
-${M31_SUB}
 OP_TOALTSTACK
 OP_DUP
 <${nOff}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
 OP_BIN2NUM
 OP_TOALTSTACK
-OP_DUP
-${extractCellAsm(3)}
-OP_TOALTSTACK
-OP_DUP
-<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
-<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
-OP_TOALTSTACK
-<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
-<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
-OP_FROMALTSTACK
-OP_SWAP
-OP_TOALTSTACK
-OP_TOALTSTACK
+OP_DROP
 ${pushFelt(G1024.x)}
 ${pushFelt(G1024.y)}
 ${SCALAR_MUL_FAST}
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_2SWAP
 OP_OVER
 ${vanishingUnrolledAsm(VANISH_XS)}
-OP_TOALTSTACK
-OP_2OVER
-OP_3 OP_PICK
-OP_3 OP_PICK
-${evalTFromBlobAsm()}
-${invokeMaskC(1)}
-${M31_SUB}
-OP_TOALTSTACK
-OP_2DUP
-${g64}
-${CIRCLE_ADD}
-OP_5 OP_PICK
-OP_5 OP_PICK
-OP_3 OP_PICK
-OP_3 OP_PICK
-${evalTFromBlobAsm()}
-${invokeMaskC(1)}
-${M31_SUB}
-OP_TOALTSTACK
-OP_2DUP
-${g64}
-${CIRCLE_ADD}
-OP_7 OP_PICK
-OP_7 OP_PICK
-OP_3 OP_PICK
-OP_3 OP_PICK
-${evalTFromBlobAsm()}
-${invokeMaskC(1)}
-${M31_SUB}
-OP_TOALTSTACK
-OP_2DROP
-OP_2DROP
-OP_2DUP
-${hexPush(l0.even)}
-${hexPush(l0.odd)}
-OP_2SWAP
-${evalTFromBlobAsm()}
-OP_TOALTSTACK
-OP_2DUP
-${hexPush(l23.even)}
-${hexPush(l23.odd)}
-OP_2SWAP
-${evalTFromBlobAsm()}
-OP_TOALTSTACK
-OP_2DROP
-OP_2DROP
-OP_FROMALTSTACK
+OP_NIP
+OP_NIP
 OP_FROMALTSTACK
 OP_SWAP
 OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_SWAP
-OP_ROT
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_SWAP
-OP_TOALTSTACK
-${airNumeratorAsm()}
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_SWAP
-OP_3 OP_PICK
-OP_NUMEQUALVERIFY
 OP_SWAP
 ${M31_MUL}
 OP_NUMEQUALVERIFY
@@ -1139,21 +1055,7 @@ OP_2DROP
 export function compileBindTLock(): Uint8Array {
   return compileOrThrow(
     `
-${defineNewtonFn()}
-${defineMaskCFn(1)}
 ${packedMagicAsm()}
-OP_DUP
-<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
-<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
-OP_TOALTSTACK
-OP_DUP
-<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
-<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
-OP_FROMALTSTACK
-OP_SWAP
-${bindTToCellsAsm()}
-OP_TOALTSTACK
-OP_TOALTSTACK
 ${bindCellsToStatementAsm()}
 OP_DROP
 OP_1
@@ -1190,27 +1092,13 @@ function pushDataPad(data: Uint8Array): Uint8Array {
   return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
 }
 
-/** Bind T + statement cells. */
+/** Bind public seq cells to PAA1. Newton T is not the AIR interpolant. */
 export const BIND_T_KERNEL = `
 <0> OP_INPUTBYTECODE
 <1> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_NIP
-${defineNewtonFn()}
-${defineMaskCFn(1)}
 ${packedMagicAsm()}
 ${bindPackedStmtToPaa1Asm()}
-OP_DUP
-<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
-<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
-OP_TOALTSTACK
-OP_DUP
-<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
-<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
-OP_FROMALTSTACK
-OP_SWAP
-${bindTToCellsAsm()}
-OP_TOALTSTACK
-OP_TOALTSTACK
 ${bindCellsToStatementAsm()}
 OP_DROP
 OP_1

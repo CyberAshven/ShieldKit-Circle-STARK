@@ -26,7 +26,7 @@ leaf preimage in the proof. Prove stays off-chain.
 
 ## Latest
 
-Internal-hash knob + Newton-T mask close: Merkle / Fiat–Shamir / note / nullifier / amount-net share one selectable hash (default **SHA-256**, alternate **BLAKE2s**). Same-hash prove/verify accepts; mixed-hash rejects. Packed Newton T interpolates opening-masked cells; the lock derives the degree-0 felt from the packed viewing-commit (offset 812 is the 32-byte commit, not the felt). Standard Chipnet land `c40f4948…` (**99742 B**, 1 fold, Electrum). Historical txids stay in [`MILESTONE.md`](MILESTONE.md).
+Internal-hash knob + opening-mask packing: Merkle / Fiat–Shamir / note / nullifier / amount-net share one selectable hash (default **SHA-256**, alternate **BLAKE2s**). Packed Q is Q+c and packed N is N+cZ; packed Newton T is not the AIR interpolant. Slot lock is Q·Z=nTable. Standard Chipnet land `f14bff7b…` (**79436 B**, 1 fold, Electrum). Historical txids stay in [`MILESTONE.md`](MILESTONE.md).
 
 ## Commands (navigator)
 

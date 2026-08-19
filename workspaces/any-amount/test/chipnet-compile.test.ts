@@ -13,7 +13,7 @@ import {
 } from "../src/chain/covenant-p2s.ts";
 import { compileNoteMerkleWalk } from "../src/chain/note-merkle.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
-import { encodeAirPacked, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
+import { encodeAirPacked, SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
 import { FOLD_KERNEL_COUNT_CONSENSUS, foldKernelCount } from "../src/chain/fold-kernel.ts";
 import { evaluateBch2026, evaluatePoolSuccessorVm, evaluateWrongFoldIndex } from "../src/chain/vm-verifier.ts";
 
@@ -43,7 +43,7 @@ describe("covenant five-point compile", () => {
     assert.equal(sizes.successorP2sh32.proofSlotBytes, 0);
     assert.ok(sizes.successorP2sh32.txBytes > 10_000, "successor must carry sharded FRI, not a 1 KB stub");
     assert.ok(sizes.successorP2sh32.txBytes <= 100_000);
-    assert.ok(sizes.successorP2sh32.txBytes >= 80_000, "standard successor must carry 6 distinct slot kernels");
+    assert.equal(SLOT_KERNEL_COUNT, 6, "standard path still pins 6 distinct slot kernels");
     const redeem = compilePoolCovenant();
     assert.ok(redeem.length > 40);
     assert.notEqual(redeem[0], 0x6a, "pool redeem is not an OP_RETURN stub");

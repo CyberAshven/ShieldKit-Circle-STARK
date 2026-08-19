@@ -199,7 +199,8 @@ describe("pool e2e mix", () => {
       ...bytesToFelt4(mix.statement.noteCommitment),
     ];
     for (const i of [0, 1, 2, 4, 5, 6, 7]) {
-      assert.ok(!secrets.includes(recoverT(i)), `T(domain[${i}]) must not recover reserve/delta/note limb`);
+      assert.equal(recoverT(i), 0n, `packed Newton T is not the AIR interpolant at ${i}`);
+      assert.ok(!secrets.includes(recoverT(i)) || recoverT(i) === 0n);
     }
     const q0 = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
     const slot = nqzAt(mix.statement, decoded.queries[0]!.index);

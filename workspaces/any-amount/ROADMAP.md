@@ -12,7 +12,7 @@ Chipnet Circle-FRI shielded covenant. Standard 1 fold + 6 C=QZ (`2acb1196…`). 
 1. **36 on-chain folds** — lock+VM+measure done (382203 B). Chipnet land `b1415faf…` height 319402. `18c74b49…` remains the 10-fold land.
 2. **Conservation on chain** — done (`4414ff3`). seq+1 and reserve-field=0 on the lock; leak test on successor hex. Hidden reserve **value** residuals stay in `verifyFri`.
 3. **Replace Pedersen** — done. Production path is tagged SHA-256 (`hash-commit.ts`), bound in `checkAuthRelation`. `encodeStatement` commits the public net. Pedersen remains a comparison plugin.
-4. **Statistical ZK** — published preimage OTP; FRI openings/packed Q offset by a degree-0 mask derived from the viewing-commit (felt not packed). Packed Newton T interpolates masked cells. Internal hash is a selectable knob (default SHA-256, BLAKE2s alternate). Not better-than-XMR.
+4. **Statistical ZK** — published preimage OTP; FRI openings/packed Q offset by a degree-0 mask; packed N is N+cZ; packed Newton T is not the AIR interpolant. Internal hash is a selectable knob (default SHA-256, BLAKE2s alternate). Not better-than-XMR.
 
 Each increment: tests + measure + honest docs + commit + push `@ABLalgorithm` (origin and upstream), then stop and start the next.
 

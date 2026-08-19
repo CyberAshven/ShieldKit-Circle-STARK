@@ -32,6 +32,7 @@ import {
   compileScalarMulFastLock,
   compileScalarMulLock,
   compileVanishingLock,
+  AIR_OFF_CELLS,
   AIR_OFF_EVEN,
   AIR_OFF_IDX,
   AIR_OFF_NTABLE,
@@ -244,8 +245,12 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const slotNqz = nqzAt(d.statement, packedI0);
     assert.equal(mul(slotNqz.q, slotNqz.z), slotNqz.n, "JS slot0 Q*Z=N");
     const qPacked = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
-    const maskedQ = add(slotNqz.q, openingMaskFelt(proof.viewingCommit!));
+    const nPacked = packed.slice(AIR_OFF_NTABLE, AIR_OFF_NTABLE + 4);
+    const c = openingMaskFelt(proof.viewingCommit!);
+    const maskedQ = add(slotNqz.q, c);
+    const maskedN = add(slotNqz.n, mul(c, slotNqz.z));
     assert.deepEqual(qPacked, encodeLe(maskedQ), "packed Q is opening-masked");
+    assert.deepEqual(nPacked, encodeLe(maskedN), "packed N is opening-masked");
     assert.notDeepEqual(qPacked, encodeLe(slotNqz.q));
   });
 
@@ -272,22 +277,20 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const i0 = (packed[AIR_OFF_IDX]! << 8) | packed[AIR_OFF_IDX + 1]!;
     const slot = nqzAt(d.statement, i0);
     if (slot.z !== 0n) {
-      const q2 = add(slot.q, 1n);
-      cooked.set(encodeLe(q2), AIR_OFF_QTABLE);
-      cooked.set(encodeLe(mul(q2, slot.z)), AIR_OFF_NTABLE);
+      cooked.set(encodeLe(add(slot.n, 1n)), AIR_OFF_NTABLE);
       const cook = evalPadded(compileSlot0CqzLock(), pushData(cooked));
-      assert.equal(cook.accepted, false, "cooked nTable = Q'·Z must fail N-from-T");
+      assert.equal(cook.accepted, false, "cooked nTable must fail Q·Z");
     }
     assert.ok(compileCqzKernel().length <= 10_000, `cqz kernel ${compileCqzKernel().length}`);
     const tOk = evalPadded(compileBindTLock(), pushData(packed));
-    assert.equal(tOk.accepted, true, tOk.error ?? "bind T");
+    assert.equal(tOk.accepted, true, tOk.error ?? "bind seq cells");
     const cookedT = new Uint8Array(packed);
-    cookedT[AIR_OFF_EVEN] ^= 1;
+    cookedT[AIR_OFF_CELLS + 23 * 4] ^= 1;
     const tBad = evalPadded(compileBindTLock(), pushData(cookedT));
-    assert.equal(tBad.accepted, false, "cooked Newton T must fail bind");
+    assert.equal(tBad.accepted, false, "cooked seq cell must fail bind");
   });
 
-  it("36× slot-0 C=QZ ops exceed the 10KB unlocking density budget", async () => {
+  it("slot-0 C=QZ and all-slots redeem stay under the 10KB budget", async () => {
     const { createTestAuthenticationProgramBch, createVirtualMachineBch2026 } = await import(
       "@bitauth/libauth"
     );
@@ -322,10 +325,8 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     );
     const budget10k = (41 + 10_000) * 800;
     assert.ok(cost > 0, "need a measured slot-0 cost");
-    assert.ok(
-      cost * 36 > budget10k,
-      `36× slot-0 cost ${cost * 36} should exceed 10KB budget ${budget10k} (one slot ${cost})`,
-    );
+    assert.ok(cost < budget10k, `one slot-0 cost ${cost} must fit 10KB budget ${budget10k}`);
+    assert.ok(compileSlot0CqzLock().length <= 10_000);
     assert.ok(compileAllSlotsCqzLock().length <= 10_000);
   });
 

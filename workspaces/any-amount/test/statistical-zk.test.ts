@@ -14,21 +14,20 @@ import {
 import { freshViewingKey, openingMaskFelt, unmaskAuth, viewingCommit } from "../src/backends/circle/witness-mask.ts";
 import {
   AIR_NEWTON_BYTES,
+  AIR_OFF_CELLS,
   AIR_OFF_EVEN,
+  AIR_OFF_NTABLE,
   AIR_OFF_ODD,
   AIR_OFF_OPEN_MASK,
   AIR_OFF_QTABLE,
-  G64,
-  bigDomain,
   encodeAirPacked,
   newtonEvalJs,
   nqzAt,
   TRACE_XS,
 } from "../src/chain/air-cqz.ts";
+import { TRACE_LEN } from "../src/backends/circle/params.ts";
 import { add, encodeLe, inv, mul, sub } from "../src/backends/circle/m31.ts";
-import { interpolateCircle } from "../src/backends/circle/interpolate.ts";
 import { decodeFeltBlob } from "../src/chain/m31-asm.ts";
-import { addPoints } from "../src/backends/circle/group.ts";
 import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
@@ -132,38 +131,28 @@ describe("statistical ZK of the published witness", () => {
       encodeLe(c),
       "mask felt is not packed as a degree-0 field",
     );
-    assert.deepEqual(packed.slice(AIR_OFF_OPEN_MASK, AIR_OFF_OPEN_MASK + 32), decoded.viewingCommit);
-    const q0 = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
-    const i0 = decoded.queries[0]!.index;
     const even = decodeFeltBlob(packed.slice(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES));
     const odd = decodeFeltBlob(packed.slice(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES));
-    const z = bigDomain[i0]!;
-    const zg = addPoints(z, G64);
-    const zg2 = addPoints(zg, G64);
-    const tAt = (p: { x: bigint; y: bigint }) =>
-      add(newtonEvalJs(even, p.x, TRACE_XS), mul(p.y, newtonEvalJs(odd, p.x, TRACE_XS)));
-    const tp = tAt(z);
-    const tgp = tAt(zg);
-    const tg2 = tAt(zg2);
-    const deposit = w.statement.action === "DEPOSIT";
-    const cons = deposit ? sub(sub(tgp, tp), tg2) : sub(sub(tp, tgp), tg2);
-    const seq = sub(sub(tgp, tp), 1n);
-    const l0 = interpolateCircle(
-      circleDomain(64),
-      Array.from({ length: 64 }, (_, i) => (i === 0 ? 1n : 0n)),
-    );
-    const l23 = interpolateCircle(
-      circleDomain(64),
-      Array.from({ length: 64 }, (_, i) => (i === 23 ? 1n : 0n)),
-    );
-    const lag = (interp: ReturnType<typeof interpolateCircle>, p: { x: bigint; y: bigint }) =>
-      add(newtonEvalJs(interp.even, p.x, interp.xs), mul(p.y, newtonEvalJs(interp.odd, p.x, interp.xs)));
-    const nFromT = add(mul(lag(l0, z), cons), mul(lag(l23, z), seq));
-    const zVal = nqzAt(w.statement, i0).z;
-    const qFromT = zVal === 0n ? 0n : mul(nFromT, inv(zVal));
-    const qPacked = decodeFeltBlob(q0)[0]!;
-    const cGuess = sub(qPacked, qFromT);
-    assert.notEqual(cGuess, c, "Newton T must not recover the opening mask");
+    const cells = decodeFeltBlob(packed.slice(AIR_OFF_CELLS, AIR_OFF_CELLS + TRACE_LEN * 4));
+    const domain = circleDomain(TRACE_LEN);
+    const tAt = (i: number) => {
+      const p = domain[i]!;
+      return add(newtonEvalJs(even, p.x, TRACE_XS), mul(p.y, newtonEvalJs(odd, p.x, TRACE_XS)));
+    };
+    for (let i = 0; i < TRACE_LEN; i += 1) {
+      const fromCells = sub(tAt(i), cells[i]!);
+      assert.notEqual(fromCells, c, `T(domain[${i}])-cell must not be the opening mask`);
+      assert.notEqual(sub(tAt(i), 1n), c, `T(domain[${i}])-1 must not be the opening mask`);
+      assert.notEqual(sub(tAt(i), 2n), c, `T(domain[${i}])-2 must not be the opening mask`);
+    }
+    for (let s = 0; s < decoded.queries.length; s += 1) {
+      const qP = decodeFeltBlob(packed.slice(AIR_OFF_QTABLE + s * 4, AIR_OFF_QTABLE + s * 4 + 4))[0]!;
+      const nP = decodeFeltBlob(packed.slice(AIR_OFF_NTABLE + s * 4, AIR_OFF_NTABLE + s * 4 + 4))[0]!;
+      const zVal = nqzAt(w.statement, decoded.queries[s]!.index).z;
+      if (zVal === 0n) continue;
+      const fromQn = sub(qP, mul(nP, inv(zVal)));
+      assert.notEqual(fromQn, c, `qTable[${s}]-nTable/Z must not be the opening mask`);
+    }
     assert.equal(vm.accepted, true, vm.error ?? "honest VM still accepts");
   });
 
