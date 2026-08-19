@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DEFAULT_INTERNAL_HASH_ID,
   INTERNAL_HASH_IDS,
@@ -78,6 +81,29 @@ describe("internal hash knob", () => {
     assert.notDeepEqual(treeSha.root, treeBlake.root);
     assert.equal(MerkleTree.verify(1n, 0, treeSha.path(0), treeSha.root, sha), true);
     assert.equal(MerkleTree.verify(1n, 0, treeSha.path(0), treeSha.root, blake), false);
+  });
+
+  it("shipped src default is SHA-256; Poseidon2 is not an implementation", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = join(here, "..", "src");
+    const files = [
+      readFileSync(join(src, "backends", "circle", "internal-hash.ts"), "utf8"),
+      readFileSync(join(src, "backends", "circle", "merkle.ts"), "utf8"),
+      readFileSync(join(src, "backends", "circle", "fri.ts"), "utf8"),
+      readFileSync(join(src, "pool", "notes.ts"), "utf8"),
+      readFileSync(join(src, "amounts", "hash-commit.ts"), "utf8"),
+    ];
+    const body = files.join("\n");
+    assert.match(files[0]!, /DEFAULT_INTERNAL_HASH_ID: InternalHashId = "sha256"/);
+    assert.match(files[0]!, /id: "blake2s"/);
+    assert.match(files[0]!, /createHash\("blake2s256"\)/);
+    assert.equal(/export type InternalHashId = "[^"]*poseidon/i.test(files[0]!), false);
+    assert.equal(/\bposeidon2\s*\(/i.test(body), false);
+    assert.equal(/groth16|pairing.?snark|bn254/i.test(body), false);
+    assert.match(files[1]!, /InternalHash/);
+    assert.match(files[2]!, /resolveInternalHash/);
+    assert.match(files[3]!, /InternalHash/);
+    assert.match(files[4]!, /InternalHash/);
   });
 
   it("default prove/verify path stays SHA-256", () => {
