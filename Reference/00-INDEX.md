@@ -1,6 +1,6 @@
 # Master reference index
 
-Last updated 2026-08-16. Every entry below exists on disk or is a public URL that was actually opened.
+Last updated 2026-08-19. Every entry below exists on disk or is a public URL that was actually opened.
 
 ## Artifacts in this public notebook
 
@@ -13,6 +13,7 @@ Last updated 2026-08-16. Every entry below exists on disk or is a public URL tha
 | Any-amount Chipnet lab | `workspaces/any-amount/` | Product profile on this branch |
 | Chipnet 36-slot milestone | `workspaces/any-amount/MILESTONE.md` | Lands accumulate; current 36-fold `b1415faf…` |
 | Ciphertext vs Circle STARK | `Reference/literature/notes/ciphertext-vs-circle-stark.md` | Proof ≠ ciphertext; 2024/1037 mask vs lab OTP + degree-0 offset |
+| `@toorik2` apply-list | `Reference/literature/notes/toorik2-apply-list.md` | Inventory / papers / ranked apply-now·later·do-not-copy vs any-amount envelopes |
 | Nostr pool announce | `Reference/prior-art/nostr-pool-announce.md` | Kind 30017 discovery bus (not consensus) |
 
 ## Public remotes
