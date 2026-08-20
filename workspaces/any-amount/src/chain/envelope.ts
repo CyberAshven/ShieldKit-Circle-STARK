@@ -10,7 +10,15 @@ import { concatBytes } from "../pool/bytes.ts";
 
 export const RELAY_STANDARD_TX_BYTES = 100_000;
 export const CONSENSUS_TX_BYTES = 1_000_000;
+/** Sum of chained hops (historical 32 MB block floor). Each hop is still ≤ 100 KB. */
 export const CHAINED_TX_BYTES = 32_000_000;
+/** Default: two tape hops + last-hop pay. */
+export const CHAINED_HOPS_DEFAULT = 3;
+export const CHAINED_HOPS_MIN = 2;
+/** 32e6 / 1e5 standard hops. */
+export const CHAINED_HOPS_MAX = 320;
+/** Relative blocks before a stuck tape tip can be reclaimed. */
+export const TAPE_TIMEOUT_CSV = 2;
 export const UNLOCKING_MAX_BYTES = 10_000;
 export const DUST_SATS = 546n;
 /** Public Chipnet relay is 1 sat/byte. 100k covers the ~80–95 KB standard spend. */
@@ -33,8 +41,25 @@ export function successorFeeCoinSats(envelope: TxEnvelope = "standard"): bigint 
  */
 export const KERNEL_UNLOCK_PAD_HIGH = 6_000;
 
-export type TxEnvelope = "standard" | "consensus";
+export type TxEnvelope = "standard" | "consensus" | "chained";
 
+/** a = standard 100 KB, b = consensus 1 MB, c = chained tape + last-hop pay. */
+export function parseTxEnvelope(raw: string): TxEnvelope {
+  const v = raw.trim().toLowerCase();
+  if (v === "a" || v === "standard") return "standard";
+  if (v === "b" || v === "consensus") return "consensus";
+  if (v === "c" || v === "chained") return "chained";
+  throw new Error("envelope must be a|b|c (standard|consensus|chained)");
+}
+
+export function parseChainedHops(n: number): number {
+  if (!Number.isInteger(n) || n < CHAINED_HOPS_MIN || n > CHAINED_HOPS_MAX) {
+    throw new Error(`chained hops must be ${CHAINED_HOPS_MIN}..${CHAINED_HOPS_MAX}`);
+  }
+  return n;
+}
+
+/** Per-tx relay/consensus cap. Chained hops use the standard 100 KB cap each. */
 export function txLimitBytes(envelope: TxEnvelope): number {
   return envelope === "consensus" ? CONSENSUS_TX_BYTES : RELAY_STANDARD_TX_BYTES;
 }

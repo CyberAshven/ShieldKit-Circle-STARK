@@ -15,6 +15,16 @@ import {
   type InternalHashId,
 } from "./backends/circle/internal-hash.ts";
 import {
+  CHAINED_HOPS_DEFAULT,
+  CHAINED_TX_BYTES,
+  CONSENSUS_TX_BYTES,
+  parseChainedHops,
+  parseTxEnvelope,
+  RELAY_STANDARD_TX_BYTES,
+  type TxEnvelope,
+} from "./chain/envelope.ts";
+import { chainedShape, compileChainedWithdraw } from "./chain/chained.ts";
+import {
   BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT,
   BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT,
   BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
@@ -75,18 +85,25 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   balance                 electrum listunspent
   pool create             local genesis state (PAA1)
   pool deposit --sats N [--hash sha256|blake2s|poseidon2-m31] [--plugin circle-fri-m31|hash-lab-v0]
-  pool withdraw --sats N [--to ADDR] [--batch-exit] [--batch-min 30] [--batch-max 180] [--batch-window N]
+  pool withdraw --sats N [--to ADDR] [--envelope a|b|c] [--hops N]
+                          [--batch-exit] [--batch-min 30] [--batch-max 180] [--batch-window N]
                           Fast withdraw is the default (no wait). Public payouts
                           snap to buckets (1e8..1e3 sats); leftover stays a
                           change note in the same set. Each slice is a new HD
                           P2PKH child (XO-style, no address reuse). --to sets a
                           single-slice dest (rejected if already used).
+                          --envelope picks the tx shape: a=standard 100KB,
+                          b=consensus 1MB, c=chained tape+last-hop pay
+                          (default 3 hops; --hops 2..320). Not Core 1p1c.
                           --batch-exit is opt-in: shared round, CSPRNG wait in
                           [min, max] (default 30..180). Not FUSE.
 
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
   pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded
-  pool measure-tx         compile genesis+successor, print byte counts
+  pool measure-tx [--envelope a|b|c] [--hops N]
+                          compile genesis+successor (and chained tape), print bytes
+  pool land [--envelope a|b|c|all] [--hops N]
+                          broadcast A/B/C on Chipnet (batched one-after-another)
   serve                   localhost:17432 for the OPTN addon
   lab demo --wallets K    sequential rehearsal + Circle FRI prove/verify
   lab e2e                 deposit-aggregate-withdraw twice (anon set growth)
@@ -112,6 +129,21 @@ function hashIdArg(fallback: InternalHashId = DEFAULT_INTERNAL_HASH_ID): Interna
 
 function flag(name: string): boolean {
   return process.argv.includes(name);
+}
+
+function envelopeArg(fallback = "standard"): TxEnvelope {
+  return parseTxEnvelope(flag("--envelope") ? arg("--envelope") : fallback);
+}
+
+function hopsArg(): number {
+  return flag("--hops") ? parseChainedHops(Number(arg("--hops"))) : CHAINED_HOPS_DEFAULT;
+}
+
+function parseLandWhich(): "standard" | "consensus" | "chained" | "all" {
+  if (!flag("--envelope")) return "all";
+  const v = arg("--envelope").trim().toLowerCase();
+  if (v === "all") return "all";
+  return parseTxEnvelope(v);
 }
 
 function batchWindowOpts(): {
@@ -285,6 +317,17 @@ async function main(): Promise<void> {
           design: describePlugins(),
           tor: torStatus("optional"),
           chipnet: "wss://chipnet.imaginary.cash:50004",
+          envelopes: {
+            a: { name: "standard", txBytes: RELAY_STANDARD_TX_BYTES },
+            b: { name: "consensus", txBytes: CONSENSUS_TX_BYTES },
+            c: {
+              name: "chained",
+              txBytes: CHAINED_TX_BYTES,
+              hopsDefault: CHAINED_HOPS_DEFAULT,
+              perHop: RELAY_STANDARD_TX_BYTES,
+              packageRelay: false,
+            },
+          },
         },
         null,
         2,
@@ -481,9 +524,50 @@ async function main(): Promise<void> {
     if (w.change && w.changeIndex !== undefined) next.push({ note: w.change, index: w.changeIndex });
     await saveMachine(w.machine, next, plugin.family);
     const extra = batchNote ? ` ${batchNote}` : "";
+    const env = envelopeArg();
+    const dummyPool = {
+      tx_hash: "11".repeat(32),
+      tx_pos: 0,
+      value: utxoValueFor(w.statement.oldState),
+      category: new Uint8Array(32).fill(0x11),
+      commitment: encodePublicPaa1(w.statement.oldState),
+    };
+    const shape =
+      env === "chained"
+        ? chainedShape(
+            compileChainedWithdraw({
+              wallet: createLabWallet(),
+              tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 50_000 },
+              hops: hopsArg(),
+              digest: proof.slice(0, 32),
+              proof,
+              pool: dummyPool,
+              newState: w.statement.newState,
+              statement: w.statement,
+              extraPayouts: payouts,
+            }),
+          )
+        : (() => {
+            const measured = compileCovenantSuccessor({
+              pool: dummyPool,
+              newState: w.statement.newState,
+              proof,
+              statement: w.statement,
+              lockKind: "p2sh32",
+              envelope: env,
+              extraPayouts: payouts,
+            });
+            return {
+              envelope: env,
+              txBytes: measured.txBytes,
+              unlockingBytes: measured.unlockingBytes,
+              payoutCount: payouts.length,
+            };
+          })();
     console.log(
-      `withdraw requested=${sats} public=${w.publicSats} slices=${w.slices.join("+")} addrs=${addrs.join(",")} reserve=${w.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} verify=ok${extra}`,
+      `withdraw requested=${sats} public=${w.publicSats} slices=${w.slices.join("+")} addrs=${addrs.join(",")} reserve=${w.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} verify=ok envelope=${env}${extra}`,
     );
+    console.log(JSON.stringify(shape));
     return;
   }
   if (cmd === "lab" && process.argv[3] === "demo") {
@@ -627,20 +711,32 @@ async function main(): Promise<void> {
     const { compileCovenantSuccessor } = await import("./chain/covenant-spend.ts");
     const { encodePublicPaa1, utxoValueFor } = await import("./pool/state.ts");
     const { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } = await import("./chain/air-cqz.ts");
+    const pool = {
+      tx_hash: "11".repeat(32),
+      tx_pos: 0,
+      value: utxoValueFor(d.machine.state),
+      category: new Uint8Array(32).fill(0x11),
+      commitment: encodePublicPaa1(d.machine.state),
+    };
     const cons = compileCovenantSuccessor({
-      pool: {
-        tx_hash: "11".repeat(32),
-        tx_pos: 0,
-        value: utxoValueFor(d.machine.state),
-        category: new Uint8Array(32).fill(0x11),
-        commitment: encodePublicPaa1(d.machine.state),
-      },
+      pool,
       newState: w.machine.state,
       proof,
       statement: w.statement,
       lockKind: "p2sh32",
       envelope: "consensus",
     });
+    const chained = compileChainedWithdraw({
+      wallet: createLabWallet(),
+      tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 50_000 },
+      hops: hopsArg(),
+      digest: proof.slice(0, 32),
+      proof,
+      pool,
+      newState: w.machine.state,
+      statement: w.statement,
+    });
+    const which = flag("--envelope") ? envelopeArg() : undefined;
     const report = {
       plugin: circleFriPlugin.family,
       sound: circleFriPlugin.sound,
@@ -667,7 +763,19 @@ async function main(): Promise<void> {
         txBytes: sizes.successorP2sh32.txBytes,
         unlockingBytes: sizes.successorP2sh32.unlockingBytes,
       },
+      chained: chainedShape(chained),
+      selected: which ?? "all",
     };
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  if (cmd === "pool" && process.argv[3] === "land") {
+    const { landChipnetEnvelopes } = await import("./chain/land-envelopes.ts");
+    const report = await landChipnetEnvelopes({
+      which: parseLandWhich(),
+      hops: hopsArg(),
+      scratch: join(process.cwd(), ".local", "land"),
+    });
     console.log(JSON.stringify(report, null, 2));
     return;
   }

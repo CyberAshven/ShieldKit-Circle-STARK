@@ -11,6 +11,7 @@ without fold stays recorded so it is not relabeled.
 
 | When | What | Commit / tx |
 | --- | --- | --- |
+| 2026-08-20 | Envelopes A/B/C on Chipnet. **A** standard **82365 B** `05f17bf1…` (Electrum). **B** consensus **479356 B** `b6818bd2…` (JSON-RPC mempool, 84 vin). **C** chained tape+pay: tape `6d242fee…` + `ec4cd5b3…` (267 B, 0 payouts) then pay **82506 B** `6f9fd1d0…`. CLI `--envelope a\|b\|c`. Not Core 1p1c. | this land |
 | 2026-08-19 | Post-plugin successor: standard **79525 B** `23fd1b7d…` (1 fold, Electrum) + consensus **283992 B** `9362df54…` (36 folds, JSON-RPC). Off-chain plugin hook; on-chain redeem still Circle fold/C=QZ. | this land |
 | 2026-08-19 | Hash-knob + Q/N opening-mask pack: standard **79436 B** `f14bff7b…`, 1 fold + 6 C=QZ, Electrum. Packed N is N+cZ; Newton T is not the AIR interpolant. | `f14bff7b…` |
 | 2026-08-19 | Hash-knob intermediate standard land **99742 B** `c40f4948…` (T still interpolated cells+c). | `c40f4948…` |

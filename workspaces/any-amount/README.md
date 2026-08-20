@@ -36,6 +36,9 @@ npm ci
 npm test
 npx tsx src/cli.ts --help
 npx tsx src/cli.ts status
+npx tsx src/cli.ts pool measure-tx --envelope c
+npx tsx src/cli.ts pool withdraw --sats 1000 --envelope a   # a|b|c
+npx tsx src/cli.ts pool land --envelope all                 # Chipnet A then B then C
 npx tsx src/cli.ts wallet new          # .local/lab-wallet.json
 npx tsx src/cli.ts wallet show
 npx tsx src/cli.ts faucet

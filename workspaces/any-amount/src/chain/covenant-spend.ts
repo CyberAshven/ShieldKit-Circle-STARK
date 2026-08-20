@@ -219,6 +219,8 @@ export function compileCovenantSuccessor(args: {
   extraPayouts?: Array<{ lockingBytecode: Uint8Array; sats: bigint }>;
   /** Last output (fee change). Default is a fresh P2PKH, not the funder. */
   changeLockingBytecode?: Uint8Array;
+  /** Envelope C: spend the tape tip so a missing/wrong hop rejects the pay tx. */
+  tapeUtxo?: { tx_hash: string; tx_pos: number; value: number };
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -230,12 +232,15 @@ export function compileCovenantSuccessor(args: {
   const net = value - poolIn;
   const depositNeed = net > 0n ? net : 0n;
   const userFee = Boolean(args.feeUtxo);
+  const tape = Boolean(args.tapeUtxo);
   if (depositNeed > 0n && !args.feeUtxo) {
     throw new Error("deposit successor needs a funder utxo for the net");
   }
   if (userFee && !args.wallet) throw new Error("fee utxo needs a wallet to sign");
-  const c = userFee ? compiler() : undefined;
-  const data = userFee ? { keys: { privateKeys: { key: privateKeyOf(args.wallet!) } } } : undefined;
+  if (tape && !args.wallet) throw new Error("tape utxo needs a wallet to sign");
+  const signP2pkh = userFee || tape;
+  const c = signP2pkh ? compiler() : undefined;
+  const data = signP2pkh ? { keys: { privateKeys: { key: privateKeyOf(args.wallet!) } } } : undefined;
   const change =
     userFee && args.feeUtxo
       ? BigInt(args.feeUtxo.value) - fee - depositNeed
@@ -332,6 +337,21 @@ export function compileCovenantSuccessor(args: {
                 script: "unlock",
                 data,
                 valueSatoshis: BigInt(args.feeUtxo.value),
+              },
+            },
+          ]
+        : []),
+      ...(tape && args.tapeUtxo && c && data
+        ? [
+            {
+              outpointIndex: args.tapeUtxo.tx_pos,
+              outpointTransactionHash: hexToBin(args.tapeUtxo.tx_hash),
+              sequenceNumber: 0xffffffff,
+              unlockingBytecode: {
+                compiler: c,
+                script: "unlock",
+                data,
+                valueSatoshis: BigInt(args.tapeUtxo.value),
               },
             },
           ]
