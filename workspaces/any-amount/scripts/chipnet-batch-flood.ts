@@ -156,8 +156,6 @@ async function main(): Promise<void> {
     let succTxid = "";
     lastErr = undefined;
     const successor = compileCovenantSuccessor({
-      wallet: lab,
-      feeUtxo: { tx_hash: funded.txid, tx_pos: funded.changePos, value: funded.changeValue },
       pool: {
         tx_hash: genesisTxid,
         tx_pos: 0,

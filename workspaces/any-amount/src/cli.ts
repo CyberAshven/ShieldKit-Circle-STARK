@@ -625,12 +625,9 @@ async function main(): Promise<void> {
     const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
     const sizes = measureGenesisAndSuccessor(d.machine.state, w.machine.state, proof);
     const { compileCovenantSuccessor } = await import("./chain/covenant-spend.ts");
-    const { createLabWallet } = await import("./chain/wallet.ts");
     const { encodePublicPaa1, utxoValueFor } = await import("./pool/state.ts");
     const { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } = await import("./chain/air-cqz.ts");
     const cons = compileCovenantSuccessor({
-      wallet: createLabWallet(),
-      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 1_000_000 },
       pool: {
         tx_hash: "11".repeat(32),
         tx_pos: 0,

@@ -191,12 +191,13 @@ export function compileCovenantSpend(args: {
 }
 
 /**
- * Five-point successor: pool input 0 + FRI-kernel input 1 + P2PKH fee.
- * Output 0 keeps lock, category, token amount 0, and a new 128-byte PAA1.
+ * Five-point successor: pool input 0 + FRI/fold/slot kernels.
+ * Withdraws do **not** take a user P2PKH fee input (no relayer). Miner fee
+ * comes from kernel-carrier sats. Deposits still need a funder for the net.
  */
 export function compileCovenantSuccessor(args: {
-  wallet: LabWallet;
-  feeUtxo: { tx_hash: string; tx_pos: number; value: number };
+  wallet?: LabWallet;
+  feeUtxo?: { tx_hash: string; tx_pos: number; value: number };
   pool: {
     tx_hash: string;
     tx_pos: number;
@@ -223,15 +224,23 @@ export function compileCovenantSuccessor(args: {
   const slotKernels =
     args.slotKernels ??
     (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
-  const c = compiler();
-  const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const fee = args.feeSats ?? successorFeeSats(args.envelope ?? "standard");
   const value = utxoValueFor(args.newState);
   const poolIn = BigInt(args.pool.value);
   const net = value - poolIn;
   const depositNeed = net > 0n ? net : 0n;
-  const change = BigInt(args.feeUtxo.value) - fee - depositNeed;
-  if (change < 546n) throw new Error("fee utxo too small for successor");
+  const userFee = Boolean(args.feeUtxo);
+  if (depositNeed > 0n && !args.feeUtxo) {
+    throw new Error("deposit successor needs a funder utxo for the net");
+  }
+  if (userFee && !args.wallet) throw new Error("fee utxo needs a wallet to sign");
+  const c = userFee ? compiler() : undefined;
+  const data = userFee ? { keys: { privateKeys: { key: privateKeyOf(args.wallet!) } } } : undefined;
+  const change =
+    userFee && args.feeUtxo
+      ? BigInt(args.feeUtxo.value) - fee - depositNeed
+      : 0n;
+  if (userFee && change < DUST_SATS) throw new Error("fee utxo too small for successor");
   const withdrawSats = net < 0n ? -net : 0n;
   const payoutLock = args.payoutLockingBytecode ?? LAB_PAYOUT_LOCKING;
   const extraPayouts = args.extraPayouts ?? [];
@@ -312,17 +321,21 @@ export function compileCovenantSuccessor(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
       })),
-      {
-        outpointIndex: args.feeUtxo.tx_pos,
-        outpointTransactionHash: hexToBin(args.feeUtxo.tx_hash),
-        sequenceNumber: 0xffffffff,
-        unlockingBytecode: {
-          compiler: c,
-          script: "unlock",
-          data,
-          valueSatoshis: BigInt(args.feeUtxo.value),
-        },
-      },
+      ...(userFee && args.feeUtxo && c && data
+        ? [
+            {
+              outpointIndex: args.feeUtxo.tx_pos,
+              outpointTransactionHash: hexToBin(args.feeUtxo.tx_hash),
+              sequenceNumber: 0xffffffff,
+              unlockingBytecode: {
+                compiler: c,
+                script: "unlock",
+                data,
+                valueSatoshis: BigInt(args.feeUtxo.value),
+              },
+            },
+          ]
+        : []),
     ],
     outputs: [
       {
@@ -335,10 +348,14 @@ export function compileCovenantSuccessor(args: {
         },
       },
       ...payoutOutputs,
-      {
-        lockingBytecode: args.changeLockingBytecode ?? p2pkhLockingOf(createLabWallet()),
-        valueSatoshis: change,
-      },
+      ...(userFee
+        ? [
+            {
+              lockingBytecode: args.changeLockingBytecode ?? p2pkhLockingOf(createLabWallet()),
+              valueSatoshis: change,
+            },
+          ]
+        : []),
     ],
   });
   if (!generated.success) {
@@ -461,20 +478,13 @@ export function compileFundVerifierKernels(
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
   const fee = 2_000n + BigInt(count) * 80n;
-  const leftover = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - fee;
+  const minerPad = feeCoinSats;
+  const leftover = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - minerPad - fee;
   if (leftover < DUST_SATS) throw new Error("utxo too small to fund verifier kernels");
-  const split =
-    leftover >= feeCoinSats + DUST_SATS && feeCoinSats >= DUST_SATS;
-  const feeCoin = split ? feeCoinSats : leftover;
-  const treasuryAmt = split ? leftover - feeCoinSats : 0n;
-  const treasuryWallet = split ? createLabWallet() : undefined;
-  const friOut = { lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: BigInt(kernelSats) };
-  const tail = split
-    ? [
-        { lockingBytecode: p2pkhLockingOf(treasuryWallet!), valueSatoshis: treasuryAmt },
-        { lockingBytecode: { compiler: c, script: "lock", data }, valueSatoshis: feeCoin },
-      ]
-    : [{ lockingBytecode: { compiler: c, script: "lock", data }, valueSatoshis: leftover }];
+  const treasuryWallet = createLabWallet();
+  const fatFri = BigInt(kernelSats) + minerPad;
+  const friLock = compileFriQueryLockP2sh32();
+  const tail = [{ lockingBytecode: p2pkhLockingOf(treasuryWallet), valueSatoshis: leftover }];
   const generated = generateTransaction({
     version: 2,
     locktime: 0,
@@ -492,7 +502,11 @@ export function compileFundVerifierKernels(
       },
     ],
     outputs: [
-      ...Array.from({ length: FRI_KERNEL_INPUTS }, () => friOut),
+      { lockingBytecode: friLock, valueSatoshis: fatFri },
+      ...Array.from({ length: FRI_KERNEL_INPUTS - 1 }, () => ({
+        lockingBytecode: friLock,
+        valueSatoshis: BigInt(kernelSats),
+      })),
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       ...Array.from({ length: foldN }, (_, f) => ({
         lockingBytecode: compileFoldLockP2sh32(1, f),
@@ -513,17 +527,24 @@ export function compileFundVerifierKernels(
   return {
     raw,
     txid,
-    fri: Array.from({ length: FRI_KERNEL_INPUTS }, (_, i) => ({ tx_hash: txid, tx_pos: i, value: kernelSats })),
+    fri: [
+      { tx_hash: txid, tx_pos: 0, value: Number(fatFri) },
+      ...Array.from({ length: FRI_KERNEL_INPUTS - 1 }, (_, i) => ({
+        tx_hash: txid,
+        tx_pos: i + 1,
+        value: kernelSats,
+      })),
+    ],
     extra: Array.from({ length: extraCount }, (_, i) => ({
       tx_hash: txid,
       tx_pos: FRI_KERNEL_INPUTS + i,
       value: kernelSats,
     })),
-    changeValue: Number(feeCoin),
-    changePos: split ? count + 1 : count,
-    treasuryValue: split ? Number(treasuryAmt) : undefined,
-    treasuryPos: split ? count : undefined,
-    treasuryAddress: treasuryWallet?.address,
+    changeValue: Number(leftover),
+    changePos: count,
+    treasuryValue: Number(leftover),
+    treasuryPos: count,
+    treasuryAddress: treasuryWallet.address,
   };
 }
 

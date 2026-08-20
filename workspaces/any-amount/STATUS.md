@@ -34,7 +34,7 @@ inside 10 KB / 100 KB / 1 MB is already (or now) done:
 | --- | --- |
 | Pool output = `STATE_BASE` + reserve (public TVL) | **Cannot hide.** Output value is a consensus field. `STATE_BASE` is dust for the NFT carrier, not a substitute for the pot. Needs a value-hiding CHIP (Maxwell / Orchard / Pedersen+BP). CHIP 2025-05 EC arithmetic ([BCR 1570](https://bitcoincashresearch.org/t/chip-2025-05-native-elliptic-curve-arithmetic-operations/1570)) is later **if it lands**. |
 | That a successor happened (roots + seq change) | **Cannot hide.** Spending a UTXO is public. Observer sees a pool move, not whose note or how many sats moved *inside* the set. |
-| Miner / covenant fee as a BCH amount | **Cannot hide** `sum(in)−sum(out)`. **Already unlinked** from withdraw: separate funder input; payout is its own output; fee budget 100_000 (standard) / 400_000 (consensus). |
+| Miner / covenant fee as a BCH amount | **Cannot hide** `sum(in)−sum(out)`. **Withdraw has no user P2PKH fee input** (no relayer). Miner fee is surplus on the FRI kernel carriers. Deposits still need a funder for the net. |
 | Public net as Bulletproofs / Orchard ciphertext | **Cannot** (no BP/Halo2 in CashVM; pairing SNARK is the wrong default). **Can** (shipped): hiding tagged hash `H(net \|\| payout \|\| blind32)` plus hiding reserve commits; raw i64 is not a successor field. Not a range-proof ciphertext. |
 | Opened FRI view | **Can raise, not a theorem.** Shipped \(R_{\mathrm{on}}(i)+Z(i)R_{\mathrm{off}}(i)\) (SHA-256 coeffs, deg 7 / 35, ePrint 2024/1037-style off-domain). Opened diffs are not plaintext \(Q\) diffs. 10 KB lock still checks masked `Q·Z`=nTable and does **not** evaluate \(R\). Not a Lean HVZK theorem. |
 
