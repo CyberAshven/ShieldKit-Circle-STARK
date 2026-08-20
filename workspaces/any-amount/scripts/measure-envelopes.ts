@@ -49,6 +49,8 @@ function measure(slotKernels: number) {
     statement: w.statement,
     lockKind: "p2sh32",
     slotKernels,
+    note,
+    change: w.created?.note,
   });
 }
 

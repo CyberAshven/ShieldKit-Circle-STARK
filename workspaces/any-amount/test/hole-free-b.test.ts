@@ -35,6 +35,7 @@ import { emptyState } from "../src/pool/state.ts";
 import { LAB_PAYOUT_DIGEST } from "../src/chain/payout.ts";
 import { compileGrindKernel, grindKernelUnlocking } from "../src/chain/grind-kernel.ts";
 import { compileAlgebraicCKernel, algebraicCKernelUnlocking } from "../src/chain/algebraic-c-kernel.ts";
+import { compileNoteAuthKernel } from "../src/chain/note-auth-kernel.ts";
 import { compilePoolCovenant } from "../src/chain/covenant-p2s.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
@@ -57,7 +58,7 @@ function mix() {
   );
   const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 7_777n);
   const proof = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
-  return { w, proof, note, d };
+  return { w, proof, note, d, change: w.created?.note };
 }
 
 describe("hole-free statistical-soundness kernels (B)", () => {
@@ -77,6 +78,8 @@ describe("hole-free statistical-soundness kernels (B)", () => {
     assert.ok(a.length <= UNLOCKING_MAX_BYTES, `algebraicC redeem ${a.length}`);
     assert.ok(grindKernelUnlocking().length <= UNLOCKING_MAX_BYTES);
     assert.ok(algebraicCKernelUnlocking().length <= UNLOCKING_MAX_BYTES);
+    const noteAuth = compileNoteAuthKernel();
+    assert.ok(noteAuth.length <= UNLOCKING_MAX_BYTES, `note-auth redeem ${noteAuth.length}`);
     const r6 = compilePoolCovenant({ slotKernels: SLOT_KERNEL_COUNT });
     const r36 = compilePoolCovenant({ slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
     assert.ok(r6.length <= UNLOCKING_MAX_BYTES, `standard-slot redeem ${r6.length}`);
@@ -87,7 +90,7 @@ describe("hole-free statistical-soundness kernels (B)", () => {
   });
 
   it("honest 36-query B successor VM-accepts with grind + algebraicC", () => {
-    const { w, proof } = mix();
+    const { w, proof, note, change } = mix();
     const ev = evaluatePoolSuccessorVm({
       oldState: w.statement.oldState,
       newState: w.statement.newState,
@@ -95,12 +98,14 @@ describe("hole-free statistical-soundness kernels (B)", () => {
       statement: w.statement,
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
       standard: false,
+      note,
+      change,
     });
     assert.equal(ev.accepted, true, ev.error ?? "honest B");
   });
 
   it("36-query B rejects cooked viewing-commit, recooked Q/N, and cooked pair blob", () => {
-    const { w, proof } = mix();
+    const { w, proof, note, change } = mix();
     const base = {
       oldState: w.statement.oldState,
       newState: w.statement.newState,
@@ -108,6 +113,8 @@ describe("hole-free statistical-soundness kernels (B)", () => {
       statement: w.statement,
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
       standard: false as const,
+      note,
+      change,
     };
     const packed = encodeAirPacked(w.statement, proof);
     const cookCommit = new Uint8Array(packed);
@@ -148,7 +155,7 @@ describe("hole-free statistical-soundness kernels (B)", () => {
   });
 
   it("A still fits 100 KB after grind + algebraicC; B fits 1 MB; leftover is unused not cargo", () => {
-    const { w, proof } = mix();
+    const { w, proof, note, change } = mix();
     const pool = {
       tx_hash: "11".repeat(32),
       tx_pos: 0,
@@ -176,6 +183,8 @@ describe("hole-free statistical-soundness kernels (B)", () => {
       envelope: "consensus",
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
       packTo: 0,
+      note,
+      change,
     });
     assert.ok(A.txBytes <= RELAY_STANDARD_TX_BYTES, `A ${A.txBytes}`);
     assert.ok(A.unlockingBytes <= UNLOCKING_MAX_BYTES);
@@ -228,7 +237,26 @@ describe("hole-free statistical-soundness kernels (B)", () => {
       statement: w.statement,
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
       standard: false,
+      note,
+      change: w.created?.note,
     });
     assert.equal(ev.accepted, false, "36-query lock must reject a false statement, not only a tampered honest proof");
+  });
+
+  it("36-query B rejects a fake note preimage on the note-auth kernel", () => {
+    const { w, proof, note, change, d } = mix();
+    const fake: Note = { ...note, rho: crypto.getRandomValues(new Uint8Array(32)) };
+    const ev = evaluatePoolSuccessorVm({
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof,
+      statement: w.statement,
+      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+      standard: false,
+      note: fake,
+      change,
+    });
+    assert.equal(ev.accepted, false, "fake rho must fail on-chain note Merkle");
+    void d;
   });
 });

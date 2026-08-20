@@ -151,7 +151,7 @@ async function landAB(
       1_000,
       slots,
       successorFeeCoinSats(envelope),
-      envelope === "consensus" ? 0 : 12,
+      0,
     );
     const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);
@@ -174,6 +174,8 @@ async function landAB(
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
       cargoUtxos: funded.cargo,
+      note: mix.spent.note,
+      change: mix.witness.created?.note,
     });
     mkdirSync(scratch, { recursive: true });
     writeFileSync(join(scratch, `successor-${envelope}.hex`), binToHex(successor.raw));
@@ -291,6 +293,8 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
       cargoUtxos: split.cargo,
+      note: mix.spent.note,
+      change: mix.witness.created?.note,
     });
     mkdirSync(scratch, { recursive: true });
     for (const hop of chain.hops) {

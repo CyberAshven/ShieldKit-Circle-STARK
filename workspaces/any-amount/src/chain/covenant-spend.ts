@@ -83,10 +83,14 @@ import {
 import { compileFoldLockP2sh32, foldKernelCount, foldKernelUnlocking } from "./fold-kernel.ts";
 import { compileGrindLockP2sh32, grindKernelUnlocking } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32, algebraicCKernelUnlocking } from "./algebraic-c-kernel.ts";
+import {
+  compileNoteAuthLockP2sh32,
+  includeNoteAuth,
+  noteAuthUnlockingFromProof,
+  prefixExtraKernelCount,
+} from "./note-auth-kernel.ts";
 import type { PoolStatement } from "../pool/statement.ts";
-
-/** bind-T + grind + algebraicC, then fold kernels, then slot kernels. */
-const PREFIX_EXTRA_KERNELS = 3;
+import type { Note } from "../pool/notes.ts";
 
 export type LockKind = "p2s" | "p2sh32";
 
@@ -234,7 +238,7 @@ export function compileCovenantSuccessor(args: {
   changeLockingBytecode?: Uint8Array;
   /** Envelope C: spend the tape tip so a missing/wrong hop rejects the pay tx. */
   tapeUtxo?: { tx_hash: string; tx_pos: number; value: number };
-  /** Pack leftover standard-envelope bytes with proof cargo (default 99 KB). 0 = skip. */
+  /** Pack leftover-fill cargo. Default 0 — dummy OP_DROP cargo is not the verifier. */
   packTo?: number;
   packHopIndex?: number;
   cargoUtxos?: CargoUtxo[];
@@ -244,6 +248,10 @@ export function compileCovenantSuccessor(args: {
   queryStart?: number;
   /** How many foldPair kernels to run (default from slotKernels). */
   foldQueries?: number;
+  /** Opened note for the B note-auth kernel (required when slotKernels > 4). */
+  note?: Note;
+  /** Change note when the withdraw appends. */
+  change?: Note;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -310,13 +318,14 @@ export function compileCovenantSuccessor(args: {
   if (kernels.length !== FRI_KERNEL_INPUTS) {
     throw new Error(`need ${FRI_KERNEL_INPUTS} FRI kernel UTXOs, got ${kernels.length}`);
   }
-  const prefixN = includePool ? PREFIX_EXTRA_KERNELS : 1;
+  const prefixN = prefixExtraKernelCount(slotKernels, includePool);
   const extras = args.extraKernels ?? [
     { tx_hash: dummy, tx_pos: 10, value: 1000 },
     ...(includePool
       ? [
           { tx_hash: dummy, tx_pos: 11, value: 1000 },
           { tx_hash: dummy, tx_pos: 12, value: 1000 },
+          ...(includeNoteAuth(slotKernels) ? [{ tx_hash: dummy, tx_pos: 13, value: 1000 }] : []),
         ]
       : []),
     ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + f, value: 1000 })),
@@ -324,6 +333,10 @@ export function compileCovenantSuccessor(args: {
   ];
   if (extras.length !== prefixN + foldN + slotN) {
     throw new Error(`need ${prefixN + foldN + slotN} extra kernel UTXOs, got ${extras.length}`);
+  }
+  if (includePool && includeNoteAuth(slotKernels)) {
+    if (!args.note) throw new Error("B note-auth kernel needs the opened note (not the OTP-masked proof field)");
+    if (!args.statement) throw new Error("B note-auth kernel needs the statement");
   }
 
   const packTo = args.packTo ?? 0;
@@ -375,6 +388,21 @@ export function compileCovenantSuccessor(args: {
               sequenceNumber: 0xffffffff,
               unlockingBytecode: algebraicCKernelUnlocking(),
             },
+            ...(includeNoteAuth(slotKernels)
+              ? [
+                  {
+                    outpointIndex: extras[3]!.tx_pos,
+                    outpointTransactionHash: hexToBin(extras[3]!.tx_hash),
+                    sequenceNumber: 0xffffffff,
+                    unlockingBytecode: noteAuthUnlockingFromProof({
+                      note: args.note!,
+                      change: args.change,
+                      proof: args.proof,
+                      statement: args.statement!,
+                    }),
+                  },
+                ]
+              : []),
           ]
         : []),
       ...Array.from({ length: foldN }, (_, f) => ({
@@ -588,7 +616,7 @@ export function compileFundVerifierKernels(
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
   const foldN = foldKernelCount(slotKernels);
-  const extraCount = PREFIX_EXTRA_KERNELS + foldN + slotKernels;
+  const extraCount = prefixExtraKernelCount(slotKernels) + foldN + slotKernels;
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
   const fee = 2_000n + BigInt(count) * 80n;
@@ -636,6 +664,9 @@ export function compileFundVerifierKernels(
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
+      ...(includeNoteAuth(slotKernels)
+        ? [{ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: BigInt(kernelSats) }]
+        : []),
       ...Array.from({ length: foldN }, (_, f) => ({
         lockingBytecode: compileFoldLockP2sh32(1, f),
         valueSatoshis: BigInt(kernelSats),

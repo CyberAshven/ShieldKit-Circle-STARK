@@ -564,6 +564,8 @@ async function main(): Promise<void> {
               newState: w.statement.newState,
               statement: w.statement,
               extraPayouts: payouts,
+              note: held.note,
+              change: w.change,
             }),
           )
         : (() => {
@@ -575,6 +577,8 @@ async function main(): Promise<void> {
               lockKind: "p2sh32",
               envelope: env,
               extraPayouts: payouts,
+              note: held.note,
+              change: w.change,
             });
             return {
               envelope: env,
@@ -744,6 +748,8 @@ async function main(): Promise<void> {
       statement: w.statement,
       lockKind: "p2sh32",
       envelope: "consensus",
+      note,
+      change: w.created?.note,
     });
     const chained = compileChainedWithdraw({
       wallet: createLabWallet(),
@@ -754,6 +760,8 @@ async function main(): Promise<void> {
       pool,
       newState: w.machine.state,
       statement: w.statement,
+      note,
+      change: w.created?.note,
     });
     const which = flag("--envelope") ? envelopeArg() : undefined;
     const report = {

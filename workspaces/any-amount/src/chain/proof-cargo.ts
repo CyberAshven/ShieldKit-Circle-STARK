@@ -1,6 +1,7 @@
 /**
- * Fill a standard (100 KB) hop with proof-byte cargo. Velma caps each
- * unlocking at 10 KB, so a 99 KB tx is several P2SH32 cargo inputs, not one blob.
+ * Opt-in leftover-fill. Dummy OP_DROP cargo is envelope size / DA, not foldPair,
+ * not C=QZ, not 36 unique-orbit queries. Callers pass packTo > 0 to use it.
+ * Density pad on high-index kernels is a different thing (VM op-cost meter).
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256, hexToBin } from "@bitauth/libauth";
 import { concatBytes } from "../pool/bytes.ts";

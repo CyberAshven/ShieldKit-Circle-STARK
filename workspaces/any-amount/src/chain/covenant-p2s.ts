@@ -5,6 +5,7 @@ import { AIR_PACKED_SIZE, compileCqzLockP2sh32, compileSlotsLockP2sh32, SLOT_KER
 import { compileFoldLockP2sh32, foldKernelCount } from "./fold-kernel.ts";
 import { compileGrindLockP2sh32 } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "./algebraic-c-kernel.ts";
+import { compileNoteAuthLockP2sh32, includeNoteAuth, prefixExtraKernelCount } from "./note-auth-kernel.ts";
 import {
   EXTRACT_INSTANCE,
   EXTRACT_RESERVE_NUM,
@@ -25,10 +26,11 @@ import { AIR_OFF_PAYOUT, extractCellAsm } from "./air-cqz.ts";
  *
  * Output-0's 128-byte PAA1 is bound: instance id, noteRoot (equal or
  * incremental append), nullifierRoot (equal or SHA-256(old||nf)).
- * Unlocking: <packed AIR 1608> [<redeem>]. Membership, nullifier, and note
- * preimage stay inside verifyFri — they are not published on the successor.
- * CashVM does not run full verifyFri. Withdraw binds every payout lock+value
- * (not only output 1) and withdrawalCount delta = payout count.
+ * Unlocking: <packed AIR 1608> [<redeem>]. Envelope B (and C pay hop) adds a
+ * note-auth kernel that walks leaf+path to noteRoot, chains the nullifier
+ * into nfRoot, and SHA-256-binds amount/rho/owner. A has no room for that
+ * kernel. Batch-exit extra notes stay in verifyFri. Withdraw binds every
+ * payout lock+value (not only output 1) and withdrawalCount delta = payout count.
  */
 export const FIVE_POINT_PAA1 = `
 OP_0 OP_OUTPUTBYTECODE
@@ -55,9 +57,10 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
   const algHex = binToHex(compileAlgebraicCLockP2sh32());
   const foldN = foldKernelCount(slotKernels);
   const prefix = 1 + FRI_KERNEL_INPUTS;
+  const extraN = prefixExtraKernelCount(slotKernels);
   const lines = [
     "OP_TXINPUTCOUNT",
-    `<${prefix + 3 + foldN + slotKernels}>`,
+    `<${prefix + extraN + foldN + slotKernels}>`,
     "OP_GREATERTHANOREQUAL",
     "OP_VERIFY",
   ];
@@ -67,10 +70,14 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
   lines.push(`<${prefix}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
   lines.push(`<${prefix + 1}>`, "OP_UTXOBYTECODE", `<0x${grindHex}>`, "OP_EQUALVERIFY");
   lines.push(`<${prefix + 2}>`, "OP_UTXOBYTECODE", `<0x${algHex}>`, "OP_EQUALVERIFY");
+  if (includeNoteAuth(slotKernels)) {
+    const noteHex = binToHex(compileNoteAuthLockP2sh32());
+    lines.push(`<${prefix + 3}>`, "OP_UTXOBYTECODE", `<0x${noteHex}>`, "OP_EQUALVERIFY");
+  }
   for (let f = 0; f < foldN; f += 1) {
     const foldHex = binToHex(compileFoldLockP2sh32(1, f));
     lines.push(
-      `<${prefix + 3 + f}>`,
+      `<${prefix + extraN + f}>`,
       "OP_UTXOBYTECODE",
       `<0x${foldHex}>`,
       "OP_EQUALVERIFY",
@@ -79,7 +86,7 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
   for (let i = 0; i < slotKernels; i += 1) {
     const slotsHex = binToHex(compileSlotsLockP2sh32(i));
     lines.push(
-      `<${prefix + 3 + foldN + i}>`,
+      `<${prefix + extraN + foldN + i}>`,
       "OP_UTXOBYTECODE",
       `<0x${slotsHex}>`,
       "OP_EQUALVERIFY",
@@ -91,7 +98,7 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
 /** Inputs 1..FRI_KERNEL_INPUTS must be the batch FRI kernel. Extra fee inputs may follow. */
 export const REQUIRE_FRI_INPUTS = requireFriInputsAsm();
 
-/** Bind new PAA1 cell. Membership/nullifier are verifyFri, not unlocking preimages. */
+/** Bind new PAA1 cell. B note-auth kernel walks membership/nullifier; A does not. */
 export const BIND_PAA1 = `
 OP_INPUTINDEX OP_UTXOTOKENCOMMITMENT
 OP_SIZE <128> OP_EQUALVERIFY

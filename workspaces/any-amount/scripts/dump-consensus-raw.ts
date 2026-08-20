@@ -90,6 +90,8 @@ try {
     slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
     kernelUtxos: funded.fri,
     extraKernels: funded.extra,
+    note: mix.spent.note,
+    change: mix.witness.created?.note,
   });
   writeFileSync(out, binToHex(successor.raw));
   files.successor = out;

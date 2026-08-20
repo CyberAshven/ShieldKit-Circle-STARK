@@ -26,7 +26,6 @@ import {
   DUST_SATS,
   parseChainedHops,
   RELAY_STANDARD_TX_BYTES,
-  STANDARD_HOP_TARGET_BYTES,
   STANDARD_SUCCESSOR_FEE_SATS,
   TAPE_TIMEOUT_CSV,
 } from "./envelope.ts";
@@ -84,7 +83,7 @@ export function compileTapeHop(args: {
   cargoUtxos?: CargoUtxo[];
   feeSats?: bigint;
 }): { raw: Uint8Array; txid: string; nextUtxo: ChainUtxo; commit: Uint8Array; cargoCount: number } {
-  const packTo = args.packTo ?? STANDARD_HOP_TARGET_BYTES;
+  const packTo = args.packTo ?? 0;
   const fee = args.feeSats ?? STANDARD_SUCCESSOR_FEE_SATS;
   const nextValue = BigInt(args.utxo.value) - fee;
   if (nextValue < DUST_SATS) throw new Error("tape utxo too small");
@@ -263,6 +262,8 @@ export function compileChainedWithdraw(args: {
   extraPayouts?: Array<{ lockingBytecode: Uint8Array; sats: bigint }>;
   payoutLockingBytecode?: Uint8Array;
   cargoUtxos?: CargoUtxo[];
+  note?: import("../pool/notes.ts").Note;
+  change?: import("../pool/notes.ts").Note;
 }): ChainedWithdraw {
   const digest = args.digest.length === 32 ? args.digest : hash256(args.digest);
   const hops: ChainedHop[] = [];
@@ -325,6 +326,8 @@ export function compileChainedWithdraw(args: {
     extraKernels: args.extraKernels,
     extraPayouts: args.extraPayouts,
     payoutLockingBytecode: args.payoutLockingBytecode,
+    note: args.note,
+    change: args.change,
   });
   const payoutCount =
     args.extraPayouts && args.extraPayouts.length > 0

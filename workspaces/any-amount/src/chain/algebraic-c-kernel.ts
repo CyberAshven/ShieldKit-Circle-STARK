@@ -1,7 +1,7 @@
 /**
  * On-chain algebraicC point checks from packed cells + pool UTXO values.
  * Reserve felts come from (UTXO value − STATE_BASE) mod M31 (TVL is public).
- * Does not evaluate R. Notes/nullifiers stay in verifyFri.
+ * Does not evaluate R. Note Merkle / nullifier are a separate B kernel.
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { AIR_OFF_DIGEST, extractCellAsm, packedMagicAsm } from "./air-cqz.ts";

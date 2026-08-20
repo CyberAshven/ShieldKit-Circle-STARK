@@ -9,7 +9,7 @@
 import { concatBytes } from "../pool/bytes.ts";
 
 export const RELAY_STANDARD_TX_BYTES = 100_000;
-/** Fill each standard hop up to this; leave ~1 KB so Electrum/policy does not clip. */
+/** Opt-in leftover-fill target. Not the verifier. `packTo` defaults to 0. */
 export const STANDARD_HOP_TARGET_BYTES = 99_000;
 export const CONSENSUS_TX_BYTES = 1_000_000;
 /** Sum of chained hops (historical 32 MB block floor). Each hop is still ≤ 100 KB. */

@@ -118,6 +118,8 @@ describe("covenant five-point compile", () => {
       statement: w.statement,
       lockKind: "p2sh32",
       envelope: "consensus",
+      note,
+      change: w.created?.note,
     });
     assert.ok(measured.txBytes <= 1_000_000, `consensus tx ${measured.txBytes}`);
     assert.ok(measured.unlockingBytes <= 10_000);
@@ -162,6 +164,8 @@ describe("covenant five-point compile", () => {
       statement: w.statement,
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
       standard: false,
+      note,
+      change: w.created?.note,
     });
     assert.equal(vm.accepted, true, vm.error ?? "honest 36-slot successor must VM-accept");
     assert.ok(vm.unlockingBytes <= 10_000);
@@ -189,6 +193,8 @@ describe("covenant five-point compile", () => {
       queryIndex: 10,
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
       standard: false,
+      note,
+      change: w.created?.note,
     });
     assert.equal(bad.accepted, false, "query-10 wrong index must fail on 36-fold lock");
   });

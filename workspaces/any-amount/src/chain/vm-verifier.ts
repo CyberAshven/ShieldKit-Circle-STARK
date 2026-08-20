@@ -31,6 +31,13 @@ import {
 } from "./fold-kernel.ts";
 import { compileGrindLockP2sh32, grindKernelUnlocking } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32, algebraicCKernelUnlocking } from "./algebraic-c-kernel.ts";
+import {
+  compileNoteAuthLockP2sh32,
+  includeNoteAuth,
+  noteAuthKernelUnlocking,
+  noteAuthUnlockingFromProof,
+} from "./note-auth-kernel.ts";
+import type { Note } from "../pool/notes.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import {
   collectFriOpenings,
@@ -240,6 +247,9 @@ export function evaluatePoolSuccessorVm(args: {
   slotKernels?: number;
   /** false = consensus/nonstandard (tx may exceed 100 KB). Default: standard iff slotKernels is the 100 KB count. */
   standard?: boolean;
+  /** Opened note for the B note-auth kernel. */
+  note?: Note;
+  change?: Note;
 }): VmEval {
   const slotKernels = args.slotKernels ?? SLOT_KERNEL_COUNT;
   const standard = args.standard ?? slotKernels <= SLOT_KERNEL_COUNT;
@@ -281,6 +291,7 @@ export function evaluatePoolSuccessorVm(args: {
     { lockingBytecode: cqzLock, valueSatoshis: 1000n },
     { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: 1000n },
     { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: 1000n },
+    ...(includeNoteAuth(slotKernels) ? [{ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: 1000n }] : []),
     ...foldLocks.map((lockingBytecode) => ({ lockingBytecode, valueSatoshis: 1000n })),
     ...slotUnlocks.map((_, i) => ({ lockingBytecode: compileSlotsLockP2sh32(i), valueSatoshis: 1000n })),
     ...(funderNeed > 0n ? [{ lockingBytecode: funderLock, valueSatoshis: funderNeed }] : []),
@@ -323,6 +334,25 @@ export function evaluatePoolSuccessorVm(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: algebraicCKernelUnlocking(),
       },
+      ...(includeNoteAuth(slotKernels)
+        ? [
+            {
+              outpointTransactionHash: new Uint8Array(32).fill(0xa3),
+              outpointIndex: 0,
+              sequenceNumber: 0xffffffff,
+              unlockingBytecode: (() => {
+                if (!args.note) throw new Error("B note-auth kernel needs the opened note");
+                if (!args.statement) throw new Error("B note-auth kernel needs the statement");
+                return noteAuthUnlockingFromProof({
+                  note: args.note,
+                  change: args.change,
+                  proof: args.proof,
+                  statement: args.statement,
+                });
+              })(),
+            },
+          ]
+        : []),
       ...foldUnlocks.map((unlocking, i) => ({
         outpointTransactionHash: dummyPrevout(0xb0, i),
         outpointIndex: 0,
@@ -375,6 +405,75 @@ export function evaluatePoolSuccessorVm(args: {
     error: result === true ? null : String(result),
     unlockingBytes: transaction.inputs[0]!.unlockingBytecode.length,
     lockingBytes: poolLock.length,
+  };
+}
+
+/** Isolated note-auth kernel against a pool NFT pair. No FRI kernels. */
+export function evaluateNoteAuthKernel(args: {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  action: 1n | 2n;
+  note: Note;
+  spentIndex: number;
+  spentPath: Uint8Array[];
+  createdIndex: number;
+  createdPath: Uint8Array[];
+  change?: Note;
+}): VmEval {
+  const vm = createVirtualMachineBch2026(true);
+  const carrierLock = Uint8Array.of(0x75, 0x51);
+  const category = new Uint8Array(32).fill(0x11);
+  const packed = new Uint8Array(AIR_PACKED_SIZE);
+  packed.set(encodeLe(args.action), AIR_OFF_CELLS + 3 * 4);
+  const unlocking = noteAuthKernelUnlocking(args);
+  const value = 100_000n;
+  const sourceOutputs = [
+    {
+      lockingBytecode: carrierLock,
+      valueSatoshis: value,
+      token: {
+        amount: 0n,
+        category,
+        nft: { capability: "mutable" as const, commitment: encodePublicPaa1(args.oldState) },
+      },
+    },
+    { lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: 1000n },
+  ];
+  const transaction = {
+    version: 2,
+    locktime: 0,
+    inputs: [
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0x11),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: pushData(packed),
+      },
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0xa3),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: unlocking,
+      },
+    ],
+    outputs: [
+      {
+        lockingBytecode: carrierLock,
+        valueSatoshis: value,
+        token: {
+          amount: 0n,
+          category,
+          nft: { capability: "mutable" as const, commitment: encodePublicPaa1(args.newState) },
+        },
+      },
+    ],
+  };
+  const result = vm.verify({ sourceOutputs, transaction });
+  return {
+    accepted: result === true,
+    error: result === true ? null : String(result),
+    unlockingBytes: unlocking.length,
+    lockingBytes: compileNoteAuthLockP2sh32().length,
   };
 }
 
@@ -463,8 +562,8 @@ export function evaluateMissingProofPool(oldState: AnyAmountState): VmEval {
 }
 
 /**
- * Lab bar = 2026 lock AND JS verifyFri. The lock still does not walk notes or
- * N nullifiers (10 KB). Membership/amount stay in verifyFri.
+ * Lab bar = 2026 lock AND JS verifyFri. A does not walk notes/nullifiers.
+ * B adds a note-auth kernel; batch-exit extra notes still stay in verifyFri.
  */
 export function evaluateOnChainVerify(
   statement: PoolStatement,
@@ -848,6 +947,8 @@ export function evaluateWrongFoldIndex(args: {
   queryIndex?: number;
   slotKernels?: number;
   standard?: boolean;
+  note?: Note;
+  change?: Note;
 }): VmEval {
   const packed = encodeAirPacked(args.statement, args.proof);
   const q = args.queryIndex ?? 0;

@@ -42,7 +42,7 @@ function mixProof() {
   );
   const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 7_777n);
   const proof = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
-  return { w, proof };
+  return { w, proof, note, change: w.created?.note };
 }
 
 describe("envelope A/B/C parse", () => {
@@ -62,7 +62,7 @@ describe("envelope A/B/C parse", () => {
 
 describe("envelope C chained tape + last-hop pay", () => {
   it("pre-signs tape hops with zero payouts and pays only on the last hop", () => {
-    const { w, proof } = mixProof();
+    const { w, proof, note, change } = mixProof();
     const wallet = createLabWallet();
     const chain = compileChainedWithdraw({
       wallet,
@@ -78,6 +78,8 @@ describe("envelope C chained tape + last-hop pay", () => {
       },
       newState: w.statement.newState,
       statement: w.statement,
+      note,
+      change,
     });
     assert.equal(chain.envelope, "chained");
     assert.equal(chain.hops.length, CHAINED_HOPS_DEFAULT);
@@ -131,7 +133,7 @@ describe("envelope C chained tape + last-hop pay", () => {
   });
 
   it("does not broadcast the pay hop if an earlier tape hop is rejected", async () => {
-    const { w, proof } = mixProof();
+    const { w, proof, note, change } = mixProof();
     const chain = compileChainedWithdraw({
       wallet: createLabWallet(),
       tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 400_000 },
@@ -146,6 +148,8 @@ describe("envelope C chained tape + last-hop pay", () => {
       },
       newState: w.statement.newState,
       statement: w.statement,
+      note,
+      change,
     });
     const sent: number[] = [];
     await assert.rejects(
