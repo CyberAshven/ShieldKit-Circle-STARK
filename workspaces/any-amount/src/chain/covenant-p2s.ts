@@ -3,6 +3,8 @@ import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { encodeLayerRootsPrefix } from "./fri-openings.ts";
 import { AIR_PACKED_SIZE, compileCqzLockP2sh32, compileSlotsLockP2sh32, SLOT_KERNEL_COUNT } from "./air-cqz.ts";
 import { compileFoldLockP2sh32, foldKernelCount } from "./fold-kernel.ts";
+import { compileGrindLockP2sh32 } from "./grind-kernel.ts";
+import { compileAlgebraicCLockP2sh32 } from "./algebraic-c-kernel.ts";
 import {
   EXTRACT_INSTANCE,
   EXTRACT_RESERVE_NUM,
@@ -49,21 +51,26 @@ OP_0 OP_OUTPUTTOKENCOMMITMENT
 function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
   const lockHex = binToHex(compileFriQueryLockP2sh32());
   const cqzHex = binToHex(compileCqzLockP2sh32());
+  const grindHex = binToHex(compileGrindLockP2sh32());
+  const algHex = binToHex(compileAlgebraicCLockP2sh32());
   const foldN = foldKernelCount(slotKernels);
+  const prefix = 1 + FRI_KERNEL_INPUTS;
   const lines = [
     "OP_TXINPUTCOUNT",
-    `<${2 + FRI_KERNEL_INPUTS + foldN + slotKernels}>`,
+    `<${prefix + 3 + foldN + slotKernels}>`,
     "OP_GREATERTHANOREQUAL",
     "OP_VERIFY",
   ];
   for (let i = 1; i <= FRI_KERNEL_INPUTS; i += 1) {
     lines.push(`<${i}>`, "OP_UTXOBYTECODE", `<0x${lockHex}>`, "OP_EQUALVERIFY");
   }
-  lines.push(`<${1 + FRI_KERNEL_INPUTS}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
+  lines.push(`<${prefix}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
+  lines.push(`<${prefix + 1}>`, "OP_UTXOBYTECODE", `<0x${grindHex}>`, "OP_EQUALVERIFY");
+  lines.push(`<${prefix + 2}>`, "OP_UTXOBYTECODE", `<0x${algHex}>`, "OP_EQUALVERIFY");
   for (let f = 0; f < foldN; f += 1) {
     const foldHex = binToHex(compileFoldLockP2sh32(1, f));
     lines.push(
-      `<${2 + FRI_KERNEL_INPUTS + f}>`,
+      `<${prefix + 3 + f}>`,
       "OP_UTXOBYTECODE",
       `<0x${foldHex}>`,
       "OP_EQUALVERIFY",
@@ -72,7 +79,7 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
   for (let i = 0; i < slotKernels; i += 1) {
     const slotsHex = binToHex(compileSlotsLockP2sh32(i));
     lines.push(
-      `<${2 + FRI_KERNEL_INPUTS + foldN + i}>`,
+      `<${prefix + 3 + foldN + i}>`,
       "OP_UTXOBYTECODE",
       `<0x${slotsHex}>`,
       "OP_EQUALVERIFY",

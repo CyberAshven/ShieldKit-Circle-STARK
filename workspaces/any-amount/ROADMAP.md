@@ -15,4 +15,4 @@ Chipnet Circle-FRI shielded covenant. ZKP plugin hook is **off-chain + registry*
 
 Each increment: tests + measure + honest docs + commit + push `@ABLalgorithm` (origin and upstream), then stop and start the next.
 
-Envelopes: **A** 100 KB relay, **B** 1 MB one nonstandard tx, **C** chained tape + last-hop pay (sum ≤ 32 MB, each hop ≤ 100 KB). CLI `--envelope a|b|c`. Chipnet only. JSON-RPC for >100 KB, not Electrum/P2P. C is sequential parent-then-child, not Core 1p1c.
+Envelopes: **A** 100 KB (1 fold + 6 C=QZ), **B** 1 MB 36-query + grind + algebraicC, **C** extra fold slices + pay hop = B. Dummy cargo is not the verifier. Chunk across 10 KB inputs. CLI `--envelope a|b|c`. Chipnet only. JSON-RPC for B. C is sequential parent-then-child, not Core 1p1c.

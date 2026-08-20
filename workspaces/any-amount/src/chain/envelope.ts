@@ -14,8 +14,8 @@ export const STANDARD_HOP_TARGET_BYTES = 99_000;
 export const CONSENSUS_TX_BYTES = 1_000_000;
 /** Sum of chained hops (historical 32 MB block floor). Each hop is still ≤ 100 KB. */
 export const CHAINED_TX_BYTES = 32_000_000;
-/** Default: two tape hops + last-hop pay. */
-export const CHAINED_HOPS_DEFAULT = 3;
+/** Default: 12 tape hops × 3 extra queries + last-hop pay (= B). */
+export const CHAINED_HOPS_DEFAULT = 13;
 export const CHAINED_HOPS_MIN = 2;
 /** 32e6 / 1e5 standard hops. */
 export const CHAINED_HOPS_MAX = 320;

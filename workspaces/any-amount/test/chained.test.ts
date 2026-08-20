@@ -15,7 +15,6 @@ import {
   CHAINED_HOPS_MAX,
   CHAINED_TX_BYTES,
   RELAY_STANDARD_TX_BYTES,
-  STANDARD_HOP_TARGET_BYTES,
   TAPE_TIMEOUT_CSV,
   parseChainedHops,
   parseTxEnvelope,
@@ -54,7 +53,7 @@ describe("envelope A/B/C parse", () => {
     assert.equal(parseTxEnvelope("c"), "chained");
     assert.equal(parseTxEnvelope("chained"), "chained");
     assert.throws(() => parseTxEnvelope("d"), /envelope/);
-    assert.equal(parseChainedHops(3), CHAINED_HOPS_DEFAULT);
+    assert.equal(parseChainedHops(CHAINED_HOPS_DEFAULT), CHAINED_HOPS_DEFAULT);
     assert.throws(() => parseChainedHops(1), /hops/);
     assert.throws(() => parseChainedHops(CHAINED_HOPS_MAX + 1), /hops/);
   });
@@ -133,7 +132,6 @@ describe("envelope C chained tape + last-hop pay", () => {
     const chain = compileChainedWithdraw({
       wallet: createLabWallet(),
       tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 400_000 },
-      hops: 2,
       digest: proof.slice(0, 32),
       proof,
       pool: {

@@ -29,6 +29,8 @@ import {
   foldKernelUnlocking,
   foldQueryShardInput,
 } from "./fold-kernel.ts";
+import { compileGrindLockP2sh32, grindKernelUnlocking } from "./grind-kernel.ts";
+import { compileAlgebraicCLockP2sh32, algebraicCKernelUnlocking } from "./algebraic-c-kernel.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import {
   collectFriOpenings,
@@ -273,6 +275,8 @@ export function evaluatePoolSuccessorVm(args: {
     },
     ...shards.map(() => ({ lockingBytecode: friLock, valueSatoshis: 1000n })),
     { lockingBytecode: cqzLock, valueSatoshis: 1000n },
+    { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: 1000n },
+    { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: 1000n },
     ...foldLocks.map((lockingBytecode) => ({ lockingBytecode, valueSatoshis: 1000n })),
     ...slotUnlocks.map((_, i) => ({ lockingBytecode: compileSlotsLockP2sh32(i), valueSatoshis: 1000n })),
     ...(funderNeed > 0n ? [{ lockingBytecode: funderLock, valueSatoshis: funderNeed }] : []),
@@ -302,6 +306,18 @@ export function evaluatePoolSuccessorVm(args: {
         outpointIndex: 0,
         sequenceNumber: 0xffffffff,
         unlockingBytecode: cqzUnlock,
+      },
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0xa1),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: grindKernelUnlocking(),
+      },
+      {
+        outpointTransactionHash: new Uint8Array(32).fill(0xa2),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: algebraicCKernelUnlocking(),
       },
       ...foldUnlocks.map((unlocking, i) => ({
         outpointTransactionHash: dummyPrevout(0xb0, i),

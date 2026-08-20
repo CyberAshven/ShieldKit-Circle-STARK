@@ -264,21 +264,25 @@ export function compileChainedWithdraw(args: {
   payoutLockingBytecode?: Uint8Array;
   cargoUtxos?: CargoUtxo[];
 }): ChainedWithdraw {
-  const hopCount = parseChainedHops(args.hops ?? CHAINED_HOPS_DEFAULT);
   const digest = args.digest.length === 32 ? args.digest : hash256(args.digest);
   const hops: ChainedHop[] = [];
   let utxo = args.tapeUtxo;
-  const tapeN = hopCount - 1;
-  const slice = Math.max(1, Math.floor(FRI_QUERIES / Math.max(1, hopCount)));
+  const qn = 3;
+  const tapeN = Math.ceil(FRI_QUERIES / qn);
+  const hopCount = parseChainedHops(args.hops ?? tapeN + 1);
+  if (hopCount < tapeN + 1) {
+    throw new Error(`chained needs ${tapeN + 1} hops for ${FRI_QUERIES} extra unique-orbit slices (got ${hopCount})`);
+  }
   for (let i = 0; i < tapeN; i += 1) {
-    const q0 = i * slice;
-    let qn = Math.min(4, slice, FRI_QUERIES - q0);
-    let sliceTx = compileCovenantSuccessor({
+    const q0 = i * qn;
+    const thisN = Math.min(qn, FRI_QUERIES - q0);
+    const sliceTx = compileCovenantSuccessor({
       wallet: args.wallet,
       includePool: false,
+      tapeUtxo: utxo,
       queryStart: q0,
-      foldQueries: qn,
-      slotKernels: qn,
+      foldQueries: thisN,
+      slotKernels: thisN,
       packTo: 0,
       packHopIndex: i,
       pool: args.pool,
@@ -288,44 +292,8 @@ export function compileChainedWithdraw(args: {
       lockKind: "p2sh32",
       envelope: "standard",
     });
-    while (sliceTx.txBytes > RELAY_STANDARD_TX_BYTES && qn > 1) {
-      qn -= 1;
-      sliceTx = compileCovenantSuccessor({
-        wallet: args.wallet,
-        includePool: false,
-        queryStart: q0,
-        foldQueries: qn,
-        slotKernels: qn,
-        packTo: 0,
-        packHopIndex: i,
-        pool: args.pool,
-        newState: args.newState,
-        proof: args.proof,
-        statement: args.statement,
-        lockKind: "p2sh32",
-        envelope: "standard",
-      });
-    }
     if (sliceTx.txBytes > RELAY_STANDARD_TX_BYTES) {
-      throw new Error(`tape verifier hop ${i} ${sliceTx.txBytes} > ${RELAY_STANDARD_TX_BYTES}`);
-    }
-    if (sliceTx.txBytes < STANDARD_HOP_TARGET_BYTES - 2_000) {
-      sliceTx = compileCovenantSuccessor({
-        wallet: args.wallet,
-        includePool: false,
-        queryStart: q0,
-        foldQueries: qn,
-        slotKernels: qn,
-        packTo: STANDARD_HOP_TARGET_BYTES,
-        packHopIndex: i,
-        cargoUtxos: args.cargoUtxos,
-        pool: args.pool,
-        newState: args.newState,
-        proof: args.proof,
-        statement: args.statement,
-        lockKind: "p2sh32",
-        envelope: "standard",
-      });
+      throw new Error(`tape verifier hop ${i} ${sliceTx.txBytes} > ${RELAY_STANDARD_TX_BYTES} (chunk queries across hops, do not pad)`);
     }
     hops.push({
       role: "tape",

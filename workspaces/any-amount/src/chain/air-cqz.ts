@@ -660,8 +660,8 @@ OP_EQUALVERIFY
 `;
 }
 
-/** Stack: packed → packed, seed. seed = SHA256(grind || nonce || "queries"). */
-export function fsQuerySeedAsm(): string {
+/** Stack: packed → packed, grindSeed. SHA256(digest || trace || layerRoots || even || odd). */
+export function grindSeedFromPackedAsm(): string {
   return `
 OP_DUP
 <${AIR_OFF_DIGEST}> OP_SPLIT OP_NIP
@@ -683,6 +683,13 @@ OP_OVER
 <${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
 OP_CAT
 OP_SHA256
+`;
+}
+
+/** Stack: packed → packed, seed. seed = SHA256(grindSeed || nonce || "queries"). */
+export function fsQuerySeedAsm(): string {
+  return `
+${grindSeedFromPackedAsm()}
 OP_OVER
 <${AIR_OFF_NONCE}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP

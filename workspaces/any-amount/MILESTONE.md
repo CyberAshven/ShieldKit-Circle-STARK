@@ -10,25 +10,17 @@ Any-amount pool. Circle FRI is **plugin #1**, not the pool identity.
 
 | Knob | Live | Notes |
 | --- | --- | --- |
-| `--envelope a` / `b` / `c` | A standard ≤ 100 KB; B consensus ≤ 1 MB; C chained tape + last-hop pay | C is sequential parent→child. Not Core 1p1c. Tape hops never pay. |
+| `--envelope a` / `b` / `c` | A 100 KB (1 fold + 6 C=QZ); B 1 MB 36-query; C extra fold slices + pay hop = B | Dummy cargo is not the verifier. Unlocking 10 KB **per input** — chunk kernels. |
 | `--hash sha256` / `blake2s` / `poseidon2-m31` | default **sha256** (CashVM `OP_SHA256`) | Poseidon2-M31 is toorik Grain (ePrint 2023/323), not a lock opcode. |
 | `--plugin` | **circle-fri-m31** first; `hash-lab-v0` lab stub | Reserved sandwiches: `goldilocks-fri` (AIR+FRI), `air-whir` (AIR+WHIR), `spartan-whir` (Spartan+WHIR), `groth16` (pairing). `whir` is a PCS; `spartan` is an IOP. |
 
-Standard hops **pack toward 99 KB**. Envelope **B** is one tx with **36** unique-orbit fold + C=QZ kernels. Envelope **C** tape hops run real fold/C=QZ **slices** (not `OP_DROP` cargo); the **pay hop is the same 36-query consensus verifier as B** (JSON-RPC, may exceed 100 KB). CashVM still does not run full `verifyFri` (`algebraicC` / grind stay off-chain).
+Envelope **B** is the hole-free statistical-soundness envelope: 36 unique-orbit foldPair + C=QZ, plus grind and algebraicC kernels (chunked across 10 KB inputs). Leftover bytes of the 1 MB cap are unused headroom, not OP_DROP cargo. Envelope **C** pay hop is B. Tape hops are extra real fold/C=QZ slices in 100 KB (more hops if needed); they do not accumulate 36 queries across txs. Skip-tape still hits the B pay hop. Envelope **A** stays inside 100 KB (1 fold + 6 C=QZ, plus grind/algebraicC if they fit). CashVM still does not evaluate R (statistical-ZK is later). Merkle auth of openings and remaining fold layers already run in the FRI/fold kernels.
 
-`pool measure-tx` (compile, not a new land):
-
-| Shape | Bytes | Payouts |
-| --- | --- | --- |
-| A successor | **99203** | 1 |
-| B successor | **479356** | 1 (84 vin) |
-| C tape ×2 | **99219** each | 0 |
-| C pay | **99203** | 1 |
-| C sum | **297641** | last hop only |
+`pool measure-tx` after this compiler. Do not treat 99 KB dummy-pack tables as current.
 
 ### On Chipnet this session
 
-These txs landed **before** the 99 KB pack. Next land will use the packed compile. Do not treat the 267 B tapes as the current compiler.
+These txs landed **before** grind/algebraicC kernels. `b6818bd2…` is the 479 KB 36-fold land, not the hole-free kernel. Do not relabel it. Next B/C land is a new txid.
 
 **A — standard, Electrum, 82365 B**
 
@@ -72,7 +64,8 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
 ## What they do not prove
 
-- Packed 99 KB hops on Chipnet (compile only, after the 2026-08-20 land).
+- Grind + algebraicC on Chipnet (compile + VM tests; not a new land).
+- R on-chain (statistical-ZK is later). Dummy 99 KB cargo as a verifier.
 - A Lean theorem that FRI openings hide the statement.
 - Hidden pool-UTXO value (`STATE_BASE` + reserve is public TVL).
 - Zcash / Monero / Voidify parity.

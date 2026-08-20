@@ -12,7 +12,7 @@ import { FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { foldDefinesAsm, foldQueriesAsm } from "./fold-asm.ts";
 
 export const FOLD_KERNEL_INPUTS = 1;
-export const FOLD_KERNEL_INDEX = 12;
+export const FOLD_KERNEL_INDEX = 14;
 /** Measured: 2+ query folds exceed 2026 VM density in the successor kernel. */
 export const FOLD_QUERY_COUNT_STANDARD = 1;
 /** Standard 100 KB path: one fold input (density + remaining bytes). */

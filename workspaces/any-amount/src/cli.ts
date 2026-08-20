@@ -106,9 +106,10 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
                           change note in the same set. Each slice is a new HD
                           P2PKH child (XO-style, no address reuse). --to sets a
                           single-slice dest (rejected if already used).
-                          --envelope picks the tx shape: a=standard 100KB,
-                          b=consensus 1MB, c=chained tape+last-hop pay
-                          (default 3 hops; --hops 2..320). Not Core 1p1c.
+                          --envelope picks the tx shape: a=standard 100KB
+                          (1 fold + 6 C=QZ), b=consensus 1MB 36-query,
+                          c=chained extra fold slices + last hop = B.
+                          Dummy cargo is not the verifier. Not Core 1p1c.
                           --batch-exit is opt-in: shared round, CSPRNG wait in
                           [min, max] (default 30..180). Not FUSE.
 
