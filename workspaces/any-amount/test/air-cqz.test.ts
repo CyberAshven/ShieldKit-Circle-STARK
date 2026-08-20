@@ -288,8 +288,12 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const slot = nqzAt(d.statement, i0);
     if (slot.z !== 0n) {
       cooked.set(encodeLe(add(slot.n, 1n)), AIR_OFF_NTABLE);
-      const cook = evalPadded(compileSlot0CqzLock(), pushData(cooked));
-      assert.equal(cook.accepted, false, "cooked nTable must fail Q·Z");
+      const cookN = evalPadded(compileSlot0CqzLock(), pushData(cooked));
+      assert.equal(cookN.accepted, true, "nTable is not the RHS; independent N from T");
+      const cookQ = new Uint8Array(packed);
+      cookQ[AIR_OFF_QTABLE] ^= 1;
+      const evQ = evalPadded(compileSlot0CqzLock(), pushData(cookQ));
+      assert.equal(evQ.accepted, false, "cooked qTable must fail (q−R)·Z == N");
     }
     assert.ok(compileCqzKernel().length <= 10_000, `cqz kernel ${compileCqzKernel().length}`);
     const tOk = evalPadded(compileBindTLock(), pushData(packed));
@@ -429,16 +433,16 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     assert.equal(bad.accepted, false, "cooked slot-3 Q/N/T must fail");
   });
 
-  it("standard path compiles 6 distinct slot locks under Velma 10 KB", () => {
-    assert.equal(SLOT_KERNEL_COUNT, 6);
+  it("standard path compiles 4 distinct R-slot locks under Velma 10 KB", () => {
+    assert.equal(SLOT_KERNEL_COUNT, 4);
     const a = compileSlotsLockP2sh32(0);
-    const b = compileSlotsLockP2sh32(5);
-    assert.notDeepEqual(a, b, "slot 0 and slot 5 must be different P2SH32 locks");
+    const b = compileSlotsLockP2sh32(SLOT_KERNEL_COUNT - 1);
+    assert.notDeepEqual(a, b, "slot 0 and last standard slot must be different P2SH32 locks");
     const k0 = compileSlotsKernel(0);
-    const k5 = compileSlotsKernel(5);
+    const kLast = compileSlotsKernel(SLOT_KERNEL_COUNT - 1);
     assert.ok(k0.length <= 10_000, `slot0 redeem ${k0.length}`);
-    assert.ok(k5.length <= 10_000, `slot5 redeem ${k5.length}`);
-    assert.notDeepEqual(k0, k5);
+    assert.ok(kLast.length <= 10_000, `slot${SLOT_KERNEL_COUNT - 1} redeem ${kLast.length}`);
+    assert.notDeepEqual(k0, kLast);
   });
 
   it("slot-0 recomputes FS index; cooked spender idx is ignored", () => {

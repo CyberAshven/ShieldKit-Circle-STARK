@@ -267,7 +267,7 @@ export function compileChainedWithdraw(args: {
   const digest = args.digest.length === 32 ? args.digest : hash256(args.digest);
   const hops: ChainedHop[] = [];
   let utxo = args.tapeUtxo;
-  const qn = 3;
+  const qn = 2;
   const tapeN = Math.ceil(FRI_QUERIES / qn);
   const hopCount = parseChainedHops(args.hops ?? tapeN + 1);
   if (hopCount < tapeN + 1) {

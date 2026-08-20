@@ -1,0 +1,336 @@
+/**
+ * On-chain R_on(i) + Z(i)·R_off(i). Slot kernels check (qTable−R)·Z against
+ * the AIR numerator recomputed from T — not nTable−R·Z (that cancels R).
+ */
+import { cashAssemblyToBin } from "@bitauth/libauth";
+import {
+  FRI_OPEN_MASK_TAG,
+  OPEN_MASK_DEGREE,
+  OPEN_MASK_OFF_DEGREE,
+  VIEWING_TAG,
+} from "../backends/circle/witness-mask.ts";
+import { interpolateCircle } from "../backends/circle/interpolate.ts";
+import { TRACE_LEN } from "../backends/circle/params.ts";
+import { M31_ADD, M31_MUL, M31_SUB, encodeFeltBlob } from "./m31-asm.ts";
+import {
+  AIR_NEWTON_BYTES,
+  AIR_NEWTON_FELTS,
+  AIR_OFF_EVEN,
+  AIR_OFF_ODD,
+  AIR_OFF_OPEN_MASK,
+  AIR_OFF_QTABLE,
+  CIRCLE_ADD,
+  G1024,
+  G64,
+  SCALAR_MUL_FAST,
+  VANISH_XS,
+  airNumeratorAsm,
+  evalTFromBlobAsm,
+  extractCellAsm,
+  fsIndexSlotAsm,
+  newtonFromBlobAsm,
+  packedMagicAsm,
+  smallDomain,
+  vanishingUnrolledAsm,
+} from "./air-cqz.ts";
+
+function hexPush(data: Uint8Array): string {
+  return `<0x${Buffer.from(data).toString("hex")}>`;
+}
+
+function pushFelt(n: bigint): string {
+  return `<${n.toString()}>`;
+}
+
+function defineFn(asm: string, index: number, name: string): string {
+  const body = cashAssemblyToBin(asm);
+  if (typeof body === "string") throw new Error(`${name}: ${body}`);
+  return `${hexPush(body)}\n<${index}>\nOP_DEFINE`;
+}
+
+function padNewton(vals: bigint[]): bigint[] {
+  const out = vals.slice(0, AIR_NEWTON_FELTS);
+  while (out.length < AIR_NEWTON_FELTS) out.push(0n);
+  return out;
+}
+
+function oneHot(k: number): bigint[] {
+  return Array.from({ length: TRACE_LEN }, (_, i) => (i === k ? 1n : 0n));
+}
+
+function lagrangeBlobs(k: number): { even: Uint8Array; odd: Uint8Array } {
+  const interp = interpolateCircle(smallDomain, oneHot(k));
+  return {
+    even: encodeFeltBlob(padNewton(interp.even)),
+    odd: encodeFeltBlob(padNewton(interp.odd)),
+  };
+}
+
+/** SHA256 blob → M31 felt (first 4 bytes, high bit cleared). */
+export const FELT_FROM_SHA256 = `
+OP_SHA256
+<4> OP_SPLIT OP_DROP
+<3> OP_SPLIT
+<0x7f> OP_AND
+OP_CAT
+OP_BIN2NUM
+<2147483647> OP_MOD
+`;
+
+/**
+ * Horner eval of the PRF mask poly. Stack: prefix x → R.
+ * prefix = VIEWING_TAG || commit || FRI_OPEN_MASK_TAG.
+ */
+export function evalMaskPolyAsm(stream: 0 | 1, degree: number): string {
+  const lines: string[] = [`<0>`, `<1>`];
+  for (let k = 0; k <= degree; k += 1) {
+    lines.push(
+      `OP_3 OP_PICK`,
+      hexPush(Uint8Array.of(stream, k)),
+      `OP_CAT`,
+      FELT_FROM_SHA256,
+      `OP_OVER`,
+      M31_MUL,
+      `OP_ROT`,
+      M31_ADD,
+      `OP_SWAP`,
+    );
+    if (k < degree) lines.push(`OP_2 OP_PICK`, M31_MUL);
+  }
+  lines.push(`OP_DROP`, `OP_NIP`, `OP_NIP`);
+  return lines.join("\n");
+}
+
+/**
+ * Stack: packed i Z → packed R.
+ * R = R_on(i) + Z · R_off(i), x = i+1.
+ */
+export function openingMaskAtPackedAsm(): string {
+  return `
+OP_TOALTSTACK
+OP_SWAP
+OP_DUP
+<${AIR_OFF_OPEN_MASK}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+${hexPush(VIEWING_TAG)} OP_SWAP OP_CAT
+${hexPush(FRI_OPEN_MASK_TAG)} OP_CAT
+OP_ROT
+<1> OP_ADD
+OP_2DUP
+${evalMaskPolyAsm(0, OPEN_MASK_DEGREE)}
+OP_TOALTSTACK
+${evalMaskPolyAsm(1, OPEN_MASK_OFF_DEGREE)}
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_ROT
+${M31_MUL}
+${M31_ADD}
+`;
+}
+
+/** Top: packed copy → degree-0 openingMaskFelt. */
+function maskCFromPackedCopyAsm(): string {
+  return `
+<${AIR_OFF_OPEN_MASK}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+${hexPush(VIEWING_TAG)} OP_SWAP OP_CAT
+${hexPush(FRI_OPEN_MASK_TAG)} OP_CAT
+${FELT_FROM_SHA256}
+`;
+}
+
+/**
+ * Requires OP_DEFINE 0=newton, 1=evalT, 2=fast, 3=vanish.
+ * Stack: packed i → packed i N Z
+ * Newton T interpolates cells+c, so N_T = N_air − c·L0; add c·L0 back.
+ */
+export function nAndZFromPackedIAsm(): string {
+  const l0 = lagrangeBlobs(0);
+  const l23 = lagrangeBlobs(23);
+  const g = `${pushFelt(G64.x)}\n${pushFelt(G64.y)}`;
+  return `
+OP_DUP
+${pushFelt(G1024.x)}
+${pushFelt(G1024.y)}
+<2> OP_INVOKE
+OP_OVER
+<3> OP_INVOKE
+OP_TOALTSTACK
+OP_3 OP_PICK
+<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_4 OP_PICK
+<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_2SWAP
+OP_3 OP_PICK
+OP_3 OP_PICK
+OP_3 OP_PICK
+OP_3 OP_PICK
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DUP
+${g}
+${CIRCLE_ADD}
+OP_5 OP_PICK
+OP_5 OP_PICK
+OP_3 OP_PICK
+OP_3 OP_PICK
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DUP
+${g}
+${CIRCLE_ADD}
+OP_7 OP_PICK
+OP_7 OP_PICK
+OP_3 OP_PICK
+OP_3 OP_PICK
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DROP
+OP_2DROP
+${hexPush(l0.even)}
+${hexPush(l0.odd)}
+OP_3 OP_PICK
+OP_3 OP_PICK
+<1> OP_INVOKE
+OP_TOALTSTACK
+${hexPush(l23.even)}
+${hexPush(l23.odd)}
+OP_3 OP_PICK
+OP_3 OP_PICK
+<1> OP_INVOKE
+OP_TOALTSTACK
+OP_2DROP
+OP_2DROP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_ROT
+OP_4 OP_PICK
+OP_TOALTSTACK
+OP_6 OP_PICK
+${extractCellAsm(3)}
+${airNumeratorAsm()}
+OP_FROMALTSTACK
+OP_3 OP_PICK
+${maskCFromPackedCopyAsm()}
+OP_OVER
+${M31_MUL}
+OP_NIP
+${M31_ADD}
+OP_FROMALTSTACK
+`;
+}
+
+function slotDefines(): string {
+  return `
+${defineFn(newtonFromBlobAsm(), 0, "newton")}
+${defineFn(evalTFromBlobAsm(), 1, "evalT")}
+${defineFn(SCALAR_MUL_FAST, 2, "fast")}
+${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
+`;
+}
+
+/**
+ * One FS slot: (qTable[slot] − R(i)) · Z([i]G) equals N from T.
+ * i is recomputed. Independent N — masked nTable is not the right-hand side.
+ */
+export function slotRCqzAsm(slot = 0): string {
+  const qOff = AIR_OFF_QTABLE + slot * 4;
+  return `
+${slotDefines()}
+${packedMagicAsm()}
+${fsIndexSlotAsm(slot)}
+${nAndZFromPackedIAsm()}
+OP_DUP
+OP_TOALTSTACK
+OP_SWAP
+OP_TOALTSTACK
+${openingMaskAtPackedAsm()}
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_3 OP_PICK
+<${qOff}> OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
+OP_BIN2NUM
+OP_3 OP_PICK
+${M31_SUB}
+OP_1 OP_PICK
+OP_0
+OP_NUMEQUAL
+OP_IF
+  OP_0
+  OP_NUMEQUALVERIFY
+  OP_1 OP_PICK
+  OP_0
+  OP_NUMEQUALVERIFY
+  OP_2DROP
+  OP_2DROP
+OP_ELSE
+  OP_1 OP_PICK
+  ${M31_MUL}
+  OP_2 OP_PICK
+  OP_NUMEQUALVERIFY
+  OP_2DROP
+  OP_2DROP
+OP_ENDIF
+`;
+}
+
+function compileOrThrow(asm: string, name: string): Uint8Array {
+  const bin = cashAssemblyToBin(asm);
+  if (typeof bin === "string") throw new Error(`${name}: ${bin}`);
+  return bin;
+}
+
+/** Isolated R at FS slot 0. Unlocking: packed. Leaves true iff R matches `expected`. */
+export function compileRAtSlot0Lock(expected: bigint): Uint8Array {
+  return compileOrThrow(
+    `
+${slotDefines()}
+${packedMagicAsm()}
+${fsIndexSlotAsm(0)}
+OP_DUP
+${pushFelt(G1024.x)}
+${pushFelt(G1024.y)}
+<2> OP_INVOKE
+OP_OVER
+<3> OP_INVOKE
+OP_TOALTSTACK
+OP_2DROP
+OP_FROMALTSTACK
+${openingMaskAtPackedAsm()}
+OP_NIP
+${pushFelt(expected)}
+OP_NUMEQUAL
+`,
+    "r-slot0",
+  );
+}
+
+/** Isolated N from T at FS slot 0. Unlocking: packed. */
+export function compileNFromTSlot0Lock(expected: bigint): Uint8Array {
+  return compileOrThrow(
+    `
+${slotDefines()}
+${packedMagicAsm()}
+${fsIndexSlotAsm(0)}
+${nAndZFromPackedIAsm()}
+OP_DROP
+OP_NIP
+OP_NIP
+${pushFelt(expected)}
+OP_NUMEQUAL
+`,
+    "n-slot0",
+  );
+}
+
+export function compileSlotRCqzLock(slot = 0): Uint8Array {
+  return compileOrThrow(`${slotRCqzAsm(slot)}\nOP_1`, `slot-${slot}-r-cqz`);
+}

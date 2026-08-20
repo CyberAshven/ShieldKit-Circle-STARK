@@ -34,11 +34,10 @@ Output 0 must keep:
 Layla (2026-05-15) made NFT commitments **128 bytes**. That is why `PAA1` is 128 bytes, not a 40-byte hash of the state.
 
 The continuing lock is five-point **plus** required kernel inputs. Standard
-6-slot path: inputs 1..10 SHA-256 paired-Merkle FRI at FRI_N path depth,
-input 11 bind-T, input 12 Circle fold (1 query), inputs 13..18 slot `C=Q·Z`
-(plus a fee input). Consensus 36-slot path: same 10 Merkle + bind-T, then
-**36** fold kernels (one per FS query) and **36** slot kernels (measured
-382203 B compile). Prior Chipnet 10-fold land was 59 inputs / 301279 B. Unlocking of the pool input is the packed AIR
+4-slot path (100 KB, R on-chain): inputs 1..10 SHA-256 paired-Merkle FRI at FRI_N path depth,
+input 11 bind-T, grind, algebraicC, input fold (1 query), then 4 slot kernels
+`(q−R)·Z = N` from T. Consensus 36-slot path: same prefix, then
+**36** fold kernels (one per FS query) and **36** R-slot kernels. Prior Chipnet 10-fold land was 59 inputs / 301279 B. Unlocking of the pool input is the packed AIR
 (FS digest + public PAA1) plus redeem — not spent-leaf/rho/owner/`publicAmountSats`.
 A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Recursion
 is not used. The pool UTXO value is `STATE_BASE` + reserve (public TVL, not Maxwell/Orchard). CHIP 2025-05 EC ([BCR 1570](https://bitcoincashresearch.org/t/chip-2025-05-native-elliptic-curve-arithmetic-operations/1570)) is a later Pedersen/BP profile if it lands.

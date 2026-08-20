@@ -37,6 +37,7 @@ import { COMMITTED_LAYERS, FRI_FINAL, FRI_N, FRI_QUERIES, TRACE_LEN } from "../b
 import { uniqueQueryIndices } from "../backends/circle/query-sample.ts";
 import { densityPadUnlocking, KERNEL_UNLOCK_PAD_HIGH } from "./envelope.ts";
 import { decodeFeltBlob, encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
+import { slotRCqzAsm } from "./r-kernel.ts";
 
 export const AIR_PACKED_SIZE = 1608;
 export const AIR_OFF_ROOTS = 0;
@@ -889,49 +890,18 @@ export function fsIndex0Asm(): string {
 }
 
 /**
- * One FS slot: packed qTable[slot] · Z([i]G) equals packed nTable[slot].
- * Q and N are both opening-masked, so the lock does not subtract c.
- * i is recomputed (spender idx ignored).
+ * One FS slot: (qTable[slot] − R(i)) · Z([i]G) equals N from T.
+ * Independent AIR numerator — masked nTable would cancel R.
  */
 export function slotCqzAsm(slot = 0): string {
-  const qOff = AIR_OFF_QTABLE + slot * 4;
-  const nOff = AIR_OFF_NTABLE + slot * 4;
-  return `
-${packedMagicAsm()}
-${fsIndexSlotAsm(slot)}
-OP_SWAP
-OP_DUP
-<${qOff}> OP_SPLIT OP_NIP
-<4> OP_SPLIT OP_DROP
-OP_BIN2NUM
-OP_TOALTSTACK
-OP_DUP
-<${nOff}> OP_SPLIT OP_NIP
-<4> OP_SPLIT OP_DROP
-OP_BIN2NUM
-OP_TOALTSTACK
-OP_DROP
-${pushFelt(G1024.x)}
-${pushFelt(G1024.y)}
-${SCALAR_MUL_FAST}
-OP_OVER
-${vanishingUnrolledAsm(VANISH_XS)}
-OP_NIP
-OP_NIP
-OP_FROMALTSTACK
-OP_SWAP
-OP_FROMALTSTACK
-OP_SWAP
-${M31_MUL}
-OP_NUMEQUALVERIFY
-`;
+  return slotRCqzAsm(slot);
 }
 
 export function slot0CqzAsm(): string {
   return slotCqzAsm(0);
 }
 
-/** Isolated slot-0 C=QZ. Unlocking: packed blob. */
+/** Isolated slot-0 (q−R)·Z == N. Unlocking: packed blob. */
 export function compileSlot0CqzLock(): Uint8Array {
   return compileOrThrow(`${slotCqzAsm(0)}\nOP_1`, "slot0-cqz");
 }
@@ -1318,8 +1288,8 @@ OP_1
 `;
 
 export const SLOTS_PER_KERNEL = 1;
-/** Distinct FS slots that still fit one standard 100 KB tx (measured 6 → 94975 B). */
-export const SLOT_KERNEL_COUNT = 6;
+/** Distinct FS slots that still fit one standard 100 KB tx with R on-chain (4 R-slots). */
+export const SLOT_KERNEL_COUNT = 4;
 /** One consensus-size tx (1 MB) can carry every FS query. */
 export const SLOT_KERNEL_COUNT_CONSENSUS = FRI_QUERIES;
 

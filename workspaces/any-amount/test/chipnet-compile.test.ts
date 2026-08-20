@@ -44,7 +44,7 @@ describe("covenant five-point compile", () => {
     assert.equal(sizes.successorP2sh32.proofSlotBytes, 0);
     assert.ok(sizes.successorP2sh32.txBytes > 10_000, "successor must carry sharded FRI, not a 1 KB stub");
     assert.ok(sizes.successorP2sh32.txBytes <= 100_000);
-    assert.equal(SLOT_KERNEL_COUNT, 6, "standard path still pins 6 distinct slot kernels");
+    assert.equal(SLOT_KERNEL_COUNT, 4, "standard path pins 4 R-slot kernels to stay ≤ 100 KB");
     const redeem = compilePoolCovenant();
     assert.ok(redeem.length > 40);
     assert.notEqual(redeem[0], 0x6a, "pool redeem is not an OP_RETURN stub");
@@ -123,23 +123,23 @@ describe("covenant five-point compile", () => {
     assert.ok(measured.unlockingBytes <= 10_000);
     assert.ok(measured.txBytes > 10_000);
 
-    const redeem6 = compilePoolCovenant({ slotKernels: 6 });
+    const redeemStd = compilePoolCovenant({ slotKernels: SLOT_KERNEL_COUNT });
     const redeem36 = compilePoolCovenant({ slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
-    assert.notDeepEqual(redeem6, redeem36, "36-slot redeem must differ from the default 6-slot redeem");
+    assert.notDeepEqual(redeemStd, redeem36, "36-slot redeem must differ from the standard-path redeem");
     const lock36 = poolLockP2sh32({ slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
     assert.deepEqual(lock36.subarray(2, 34), hash256(redeem36), "P2SH32 lock must commit the 36-slot redeem");
     const packed = encodeAirPacked(w.statement, decodeFriProof(raw));
-    const unlock6 = p2sh32Unlocking(undefined, packed, { slotKernels: 6 });
+    const unlockStd = p2sh32Unlocking(undefined, packed, { slotKernels: SLOT_KERNEL_COUNT });
     const unlock36 = p2sh32Unlocking(undefined, packed, { slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
-    assert.notDeepEqual(unlock6, unlock36);
-    const hashFail = evaluateBch2026(lock36, unlock6);
-    assert.equal(hashFail.accepted, false, "6-slot redeem must fail HASH256 against the 36-slot lock");
+    assert.notDeepEqual(unlockStd, unlock36);
+    const hashFail = evaluateBch2026(lock36, unlockStd);
+    assert.equal(hashFail.accepted, false, "standard-path redeem must fail HASH256 against the 36-slot lock");
     const rawHex = Buffer.from(measured.raw).toString("hex");
     assert.ok(rawHex.includes(Buffer.from(redeem36).toString("hex")), "consensus successor must push the 36-slot redeem");
     assert.equal(
-      rawHex.includes(Buffer.from(redeem6).toString("hex")),
+      rawHex.includes(Buffer.from(redeemStd).toString("hex")),
       false,
-      "consensus successor must not push the default 6-slot redeem",
+      "consensus successor must not push the standard-path redeem",
     );
   });
 

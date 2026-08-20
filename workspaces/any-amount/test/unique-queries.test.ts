@@ -225,7 +225,7 @@ OP_NUMEQUAL
     assert.deepEqual(a, b);
   });
 
-  it("consensus high-index kernels density-pad unlocking; standard 0–5 stay short", () => {
+  it("consensus high-index fold kernels density-pad; R-slot unlocking stays ≤ 10 KB", () => {
     const fold0 = foldKernelUnlocking(1, 0);
     const fold18 = foldKernelUnlocking(1, 18);
     const fold35 = foldKernelUnlocking(1, 35);
@@ -234,13 +234,12 @@ OP_NUMEQUAL
     assert.ok(fold35.length >= KERNEL_UNLOCK_PAD_HIGH);
     assert.ok(fold35.length <= UNLOCKING_MAX_BYTES);
     const slot0 = slotsKernelUnlocking(0);
-    const slot5 = slotsKernelUnlocking(SLOT_KERNEL_COUNT - 1);
-    const slot6 = slotsKernelUnlocking(SLOT_KERNEL_COUNT);
+    const slotStd = slotsKernelUnlocking(SLOT_KERNEL_COUNT - 1);
+    const slotCons = slotsKernelUnlocking(SLOT_KERNEL_COUNT);
     const slot35 = slotsKernelUnlocking(35);
-    assert.ok(slot0.length < KERNEL_UNLOCK_PAD_HIGH, `slot0 ${slot0.length}`);
-    assert.ok(slot5.length < KERNEL_UNLOCK_PAD_HIGH, `slot5 ${slot5.length}`);
-    assert.ok(slot6.length >= KERNEL_UNLOCK_PAD_HIGH, `slot6 ${slot6.length}`);
-    assert.ok(slot35.length >= KERNEL_UNLOCK_PAD_HIGH);
-    assert.ok(slot35.length <= UNLOCKING_MAX_BYTES);
+    assert.ok(slot0.length <= UNLOCKING_MAX_BYTES, `slot0 ${slot0.length}`);
+    assert.ok(slotStd.length <= UNLOCKING_MAX_BYTES, `slot${SLOT_KERNEL_COUNT - 1} ${slotStd.length}`);
+    assert.ok(slotCons.length <= UNLOCKING_MAX_BYTES, `slot${SLOT_KERNEL_COUNT} ${slotCons.length}`);
+    assert.ok(slot35.length <= UNLOCKING_MAX_BYTES, `slot35 ${slot35.length}`);
   });
 });
