@@ -246,7 +246,9 @@ function lagrangeAt(k: number, small: CirclePoint[], p: CirclePoint): M31El {
  */
 export function onChainCells(statement: PoolStatement, hash: InternalHash = defaultInternalHash()): M31El[] {
   const cells: M31El[] = Array.from({ length: TRACE_LEN }, () => 0n);
+  const absNet = statement.publicAmountSats < 0n ? -statement.publicAmountSats : statement.publicAmountSats;
   cells[3] = statement.action === "DEPOSIT" ? 1n : 2n;
+  cells[5] = reserveFelt(absNet);
   cells[18] = m31FromBytes(hash.digest(encodeStatement(statement, hash)));
   cells[19] = m31FromBytes(statement.oldState.noteRoot);
   cells[20] = m31FromBytes(statement.newState.noteRoot);
@@ -254,6 +256,8 @@ export function onChainCells(statement: PoolStatement, hash: InternalHash = defa
   cells[22] = m31FromBytes(statement.newState.nullifierRoot);
   cells[23] = reserveFelt(statement.oldState.sequence);
   cells[24] = reserveFelt(statement.newState.sequence);
+  const payout = statement.payoutLockingDigest.length === 32 ? statement.payoutLockingDigest : new Uint8Array(32);
+  cells[6] = m31FromBytes(payout);
   return cells;
 }
 

@@ -7,9 +7,9 @@
  *   260   Newton even
  *   392   Newton odd
  *   524   FS digest + two public PAA1 cells
- *   812   unused (mask felt is not packed; Q and N are both opening-masked)
- *   844   payout HASH256 (32)
- *   876   public net vm-number (1-byte length + ≤8 bytes)
+ *   812   viewing-commit (32); mask felt derived on-chain
+ *   844   payout HASH256 (32), bound to cell 25
+ *   876   unused (net is packed cell 2, bound to Newton T)
  *   957   Q table (36×4)
  *   1101  FS indices
  *   1173  on-chain cells
@@ -19,13 +19,13 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { encodeStatement, type PoolStatement } from "../pool/statement.ts";
 import { encodePublicPaa1 } from "../pool/state.ts";
-import { concatBytes, encodeVmNumber, writeU32BE } from "../pool/bytes.ts";
+import { concatBytes, writeU32BE } from "../pool/bytes.ts";
 import { airQuotientLde, onChainCells } from "../backends/circle/air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
 import { add, encodeLe, M31, mul, sub, type M31El } from "../backends/circle/m31.ts";
-import { FRI_OPEN_MASK_TAG, VIEWING_TAG, openingMaskAt } from "../backends/circle/witness-mask.ts";
+import { FRI_OPEN_MASK_TAG, VIEWING_TAG, openingMaskAt, openingMaskFelt } from "../backends/circle/witness-mask.ts";
 import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 import { circleDomain } from "../backends/circle/fri.ts";
 import { COMMITTED_LAYERS, FRI_FINAL, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
@@ -288,8 +288,16 @@ export function encodeAirPacked(
   }
   packed.set(p.traceRoot, AIR_OFF_TRACE);
   packed.set(writeU32BE(p.grindNonce), AIR_OFF_NONCE);
-  packed.set(encodeFeltBlob(Array.from({ length: AIR_NEWTON_FELTS }, () => 0n)), AIR_OFF_EVEN);
-  packed.set(encodeFeltBlob(Array.from({ length: AIR_NEWTON_FELTS }, () => 0n)), AIR_OFF_ODD);
+  packed.set(commit, AIR_OFF_OPEN_MASK);
+  const maskC = openingMaskFelt(commit, hash);
+  const newton = statementNewton(statement, maskC, hash);
+  const padNewton = (vals: M31El[]): M31El[] => {
+    const out = vals.slice(0, AIR_NEWTON_FELTS);
+    while (out.length < AIR_NEWTON_FELTS) out.push(0n);
+    return out;
+  };
+  packed.set(encodeFeltBlob(padNewton(newton.even)), AIR_OFF_EVEN);
+  packed.set(encodeFeltBlob(padNewton(newton.odd)), AIR_OFF_ODD);
   packed.set(digest, AIR_OFF_DIGEST);
   packed.set(encodePublicPaa1(statement.oldState), AIR_OFF_PUB_OLD);
   packed.set(encodePublicPaa1(statement.newState), AIR_OFF_PUB_NEW);
@@ -297,9 +305,6 @@ export function encodeAirPacked(
     statement.payoutLockingDigest.length === 32 ? statement.payoutLockingDigest : new Uint8Array(32),
     AIR_OFF_PAYOUT,
   );
-  const netVm = encodeVmNumber(statement.publicAmountSats);
-  packed[AIR_OFF_NET] = netVm.length;
-  packed.set(netVm, AIR_OFF_NET + 1);
   const qIdx = fiatShamirQueryIndices(digest, p, hash);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     const i = qIdx[s]!;
@@ -311,8 +316,7 @@ export function encodeAirPacked(
   }
   const cells = Array.from({ length: TRACE_LEN }, () => 0n);
   const full = onChainCells(statement, hash);
-  cells[23] = full[23]!;
-  cells[24] = full[24]!;
+  for (const i of [3, 5, 6, 18, 23, 24]) cells[i] = full[i]!;
   packed.set(encodeFeltBlob(cells), AIR_OFF_CELLS);
   for (let i = 0; i < FRI_FINAL; i += 1) {
     packed.set(encodeLe(p.final[i] ?? 0n), AIR_OFF_FINAL + i * 4);
@@ -909,7 +913,7 @@ function conjugatePairs(): { i: number; j: number; x: M31El; y: M31El }[] {
   return pairs;
 }
 
-function extractCellAsm(index: number): string {
+export function extractCellAsm(index: number): string {
   return `
 <${AIR_OFF_CELLS + index * 4}> OP_SPLIT OP_NIP
 <4> OP_SPLIT OP_DROP
@@ -918,8 +922,8 @@ OP_BIN2NUM
 }
 
 /** Stack: packed even odd → same. even/odd interpolate AIR-relevant packed cells + mask. */
-export function bindTToCellsAsm(maskFn = 1): string {
-  const needed = new Set([3, 18, 23, 24]);
+export function bindTToCellsAsm(maskFn = 1, neededCells: readonly number[] = [3, 18, 23, 24]): string {
+  const needed = new Set(neededCells);
   const lines: string[] = [];
   for (const { i, j, x, y } of conjugatePairs().filter((p) => needed.has(p.i) || needed.has(p.j))) {
     lines.push(`
@@ -1236,14 +1240,31 @@ function pushDataPad(data: Uint8Array): Uint8Array {
   return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
 }
 
-/** Bind public seq cells to PAA1. Newton T is not the AIR interpolant. */
+/** Bind packed net/payout cells to Newton T (interpolant of onChainCells + mask). */
 export const BIND_T_KERNEL = `
+${defineNewtonFn()}
+${defineMaskCFn(4)}
 <0> OP_INPUTBYTECODE
 <1> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_NIP
 ${packedMagicAsm()}
+OP_DUP
+<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_TOALTSTACK
+OP_DUP
+<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_FROMALTSTACK
+OP_SWAP
+${bindTToCellsAsm(4, [3, 5, 6])}
+OP_TOALTSTACK
+OP_TOALTSTACK
 ${bindPackedStmtToPaa1Asm()}
 ${bindCellsToStatementAsm()}
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_2DROP
 OP_DROP
 OP_1
 `;

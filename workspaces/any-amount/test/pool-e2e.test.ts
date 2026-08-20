@@ -15,6 +15,7 @@ import {
   AIR_NEWTON_BYTES,
   AIR_OFF_EVEN,
   AIR_OFF_ODD,
+  AIR_OFF_OPEN_MASK,
   AIR_OFF_QTABLE,
   AIR_PACKED_SIZE,
   nqzAt,
@@ -24,7 +25,7 @@ import { bytesToFelt4 } from "../src/backends/circle/felt-hash.ts";
 import { decodeFeltBlob } from "../src/chain/m31-asm.ts";
 import { evalNewton } from "../src/backends/circle/interpolate.ts";
 import { add, encodeLe, mul } from "../src/backends/circle/m31.ts";
-import { openingMaskAt } from "../src/backends/circle/witness-mask.ts";
+import { openingMaskAt, openingMaskFelt } from "../src/backends/circle/witness-mask.ts";
 import { circleDomain } from "../src/backends/circle/fri.ts";
 import { TRACE_LEN } from "../src/backends/circle/params.ts";
 
@@ -192,16 +193,17 @@ describe("pool e2e mix", () => {
     };
     const absDelta =
       mix.statement.publicAmountSats < 0n ? -mix.statement.publicAmountSats : mix.statement.publicAmountSats;
+    const maskC = openingMaskFelt(packed.slice(AIR_OFF_OPEN_MASK, AIR_OFF_OPEN_MASK + 32));
     const secrets = [
       mix.statement.oldState.reserveSats % 2147483647n,
       mix.statement.newState.reserveSats % 2147483647n,
-      absDelta % 2147483647n,
       ...bytesToFelt4(mix.statement.noteCommitment),
     ];
-    for (const i of [0, 1, 2, 4, 5, 6, 7]) {
-      assert.equal(recoverT(i), 0n, `packed Newton T is not the AIR interpolant at ${i}`);
-      assert.ok(!secrets.includes(recoverT(i)) || recoverT(i) === 0n);
+    for (const i of [0, 1, 4, 7]) {
+      assert.equal(recoverT(i), maskC, `T(domain[${i}]) is cell+mask, cell empty`);
+      assert.equal(secrets.includes(recoverT(i)), false, `reserve/note limbs must not appear at T(${i})`);
     }
+    assert.equal(recoverT(5), add(absDelta % 2147483647n, maskC), "T(5) binds abs public net");
     const q0 = packed.slice(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 4);
     const slot = nqzAt(mix.statement, decoded.queries[0]!.index);
     const maskedQ = add(
