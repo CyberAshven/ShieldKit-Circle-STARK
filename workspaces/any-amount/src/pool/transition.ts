@@ -3,7 +3,8 @@ import { type AnyAmountState } from "./state.ts";
 import type { ActionKind, PoolStatement } from "./statement.ts";
 import { commitAmount, freshNetBlind } from "../amounts/hash-commit.ts";
 import { isZero32, ZERO32 } from "./bytes.ts";
-import { hashPayoutSet } from "../chain/payout.ts";
+import { hashPayoutSet, type PayoutPair } from "../chain/payout.ts";
+import { splitIntoBuckets } from "./payout-buckets.ts";
 
 export type PoolMachine = {
   state: AnyAmountState;
@@ -113,6 +114,40 @@ export function applyWithdraw(
   };
   checkPublicTransition(statement);
   return { machine: { ...machine, state: newState }, statement, change, changeIndex, path, created };
+}
+
+/**
+ * Fast withdraw: snap `requested` down to payout buckets. Unbucketed dust and
+ * unspent note remainder stay as one change note in the same tree.
+ */
+export function applyWithdrawBucketed(
+  machine: PoolMachine,
+  note: Note,
+  index: number,
+  payouts: PayoutPair[],
+  requested: bigint,
+): ReturnType<typeof applyWithdraw> & { slices: bigint[]; publicSats: bigint } {
+  const split = splitIntoBuckets(requested > note.amountSats ? note.amountSats : requested);
+  if (split.publicSats <= 0n) {
+    throw new Error(`withdraw ${requested} is below the smallest payout bucket`);
+  }
+  const paySum = payouts.reduce((n, p) => n + p.sats, 0n);
+  if (paySum !== split.publicSats) {
+    throw new Error(`bucket payouts ${paySum} != snapped public ${split.publicSats}`);
+  }
+  if (payouts.length !== split.slices.length) {
+    throw new Error("one HD/P2PKH lock per bucket slice (no address reuse)");
+  }
+  const seenLock = new Set<string>();
+  for (let i = 0; i < payouts.length; i += 1) {
+    if (payouts[i]!.sats !== split.slices[i]!) throw new Error("bucket slice order");
+    const key = Buffer.from(payouts[i]!.lockingBytecode).toString("hex");
+    if (seenLock.has(key)) throw new Error("payout address reuse forbidden (HD/P2PKH)");
+    seenLock.add(key);
+  }
+  const digest = hashPayoutSet(payouts);
+  const inner = applyWithdraw(machine, note, index, digest, split.publicSats);
+  return { ...inner, slices: split.slices, publicSats: split.publicSats };
 }
 
 export function checkPublicTransition(s: PoolStatement): void {

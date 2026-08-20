@@ -226,7 +226,7 @@ describe("opt-in batch exit", () => {
     assert.match(cli, /--batch-max 180/);
     assert.match(cli, /--batch-window N/);
     assert.match(cli, /planBatchExit/);
-    assert.match(cli, /one clock per batch/);
+    assert.match(cli, /Fast withdraw is the default/);
     assert.match(cli, /sampleBatchWindowSeconds|windowMinSeconds|sampled/);
     const lock = readFileSync(join(here, "..", "src", "chain", "covenant-p2s.ts"), "utf8");
     assert.match(lock, /OP_1 OP_OUTPUTBYTECODE/);

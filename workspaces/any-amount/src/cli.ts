@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { circleFriPlugin } from "./backends/circle/plugin.ts";
 import { hashLabPlugin } from "./backends/hash-lab.ts";
 import { requestFaucet, walletBalance } from "./chain/chipnet.ts";
-import { createLabWallet, loadLabWallet, p2pkhLockingOf, saveLabWallet, type LabWallet } from "./chain/wallet.ts";
+import { createLabWallet, loadLabWallet, saveLabWallet, type LabWallet } from "./chain/wallet.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "./pool/notes.ts";
 import {
   DEFAULT_INTERNAL_HASH_ID,
@@ -28,9 +28,16 @@ import {
   fusionBatchSketch,
   type BatchRound,
 } from "./pool/batch-exit.ts";
-import { hashPayoutLocking } from "./chain/payout.ts";
 import { emptyState, encodeState, STATE_BASE_SATS, utxoValueFor } from "./pool/state.ts";
-import { applyBatchExit, applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition.ts";
+import { applyBatchExit, applyDeposit, applyWithdraw, applyWithdrawBucketed, type PoolMachine } from "./pool/transition.ts";
+import { splitIntoBuckets } from "./pool/payout-buckets.ts";
+import {
+  loadOrCreateLabHd,
+  markUsedAddress,
+  nextReceive,
+  p2pkhLockingFromAddress,
+  saveLabHd,
+} from "./chain/hd-receive.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "./pool/mix-successor.ts";
 import { announceEvent, newRoundKey } from "./nostr/bus.ts";
 import { torStatus } from "./nostr/tor.ts";
@@ -68,15 +75,14 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   balance                 electrum listunspent
   pool create             local genesis state (PAA1)
   pool deposit --sats N [--hash sha256|blake2s|poseidon2-m31] [--plugin circle-fri-m31|hash-lab-v0]
-  pool withdraw --sats N [--batch-exit] [--batch-min 30] [--batch-max 180] [--batch-window N]
-                          partial withdraw (same hash/plugin as the machine)
-                          --batch-exit is opt-in: join a shared round. First
-                          waiter samples CSPRNG uniform seconds in [min, max]
-                          (default 30..180). Later opt-ins wait the remaining
-                          time — one clock per batch, not per person.
-                          --batch-window pins a fixed length (no sample).
-                          At close, one successor pays each waiter to that
-                          waiter's P2PKH. Not FUSE.
+  pool withdraw --sats N [--to ADDR] [--batch-exit] [--batch-min 30] [--batch-max 180] [--batch-window N]
+                          Fast withdraw is the default (no wait). Public payouts
+                          snap to buckets (1e8..1e3 sats); leftover stays a
+                          change note in the same set. Each slice is a new HD
+                          P2PKH child (XO-style, no address reuse). --to sets a
+                          single-slice dest (rejected if already used).
+                          --batch-exit is opt-in: shared round, CSPRNG wait in
+                          [min, max] (default 30..180). Not FUSE.
 
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
   pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded
@@ -261,12 +267,15 @@ async function main(): Promise<void> {
           internalHashIds: INTERNAL_HASH_IDS,
           batchExit: {
             optIn: true,
+            defaultPath: "fast-withdraw",
             windowMinSeconds: BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT,
             windowMaxSeconds: BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT,
             windowSecondsPinnedDefault: BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
             sample: "csprng-uniform-shared-round",
             shape: "cashfusion-like-multi-p2pkh",
             model: "shared-round",
+            payoutBucketsSats: ["100000000", "10000000", "1000000", "100000", "10000", "1000"],
+            hdReceive: "m/44'/145'/0'/0/i",
           },
           vkId: circleFriPlugin.vkId,
           sound: circleFriPlugin.sound,
@@ -369,28 +378,33 @@ async function main(): Promise<void> {
     const held = loaded.notes.find((n) => n.note.amountSats >= sats);
     if (!held) throw new Error("no note covers that amount");
     let batchNote: string | undefined;
-    let payoutDigest = new Uint8Array(32);
     if (flag("--batch-exit")) {
       const opts = batchWindowOpts();
-      const dest = createLabWallet();
+      let hd = await loadOrCreateLabHd();
+      const rec = nextReceive(hd);
+      hd = rec.hd;
+      await saveLabHd(hd);
       const payoutDir = join(process.cwd(), ".local", "batch-exit");
       await mkdir(payoutDir, { recursive: true });
       const plan = planBatchExit({
         sats,
-        lockingBytecode: p2pkhLockingOf(dest),
+        lockingBytecode: rec.locking,
         round: await loadBatchRound(),
         windowSeconds: opts.pinned,
         windowMinSeconds: opts.minSeconds,
         windowMaxSeconds: opts.maxSeconds,
         noteIndex: held.index,
-        address: dest.address,
+        address: rec.wallet.address,
       });
-      await saveLabWallet(dest, join(payoutDir, `payout-${plan.claim.id}.json`));
+      await writeFile(
+        join(payoutDir, `payout-${plan.claim.id}.json`),
+        JSON.stringify({ address: rec.wallet.address, path: `m/44'/145'/0'/0/${hd.receiveIndex - 1}` }, null, 2),
+      );
       await saveBatchRound(plan.round);
       const who = plan.openedNew ? "opened a new round" : "joined the open round";
       const sampled = opts.pinned === undefined && plan.openedNew ? " sampled" : "";
       console.error(
-        `batch-exit opt-in: ${who}; ${plan.round.claims.length} waiter(s); closes in ${plan.remainingSeconds}s (${sampled ? "sampled " : ""}window ${plan.windowSeconds}s in [${opts.minSeconds}, ${opts.maxSeconds}]); pay ${dest.address}`,
+        `batch-exit opt-in: ${who}; ${plan.round.claims.length} waiter(s); closes in ${plan.remainingSeconds}s (${sampled ? "sampled " : ""}window ${plan.windowSeconds}s in [${opts.minSeconds}, ${opts.maxSeconds}]); pay ${rec.wallet.address}`,
       );
       await runBatchExitCountdown(plan.remainingSeconds);
       const latest = (await loadBatchRound()) ?? plan.round;
@@ -432,9 +446,33 @@ async function main(): Promise<void> {
         batchNote = `batch-exit still-open remaining=${left}s waiters=${latest.claims.length}`;
         console.log(JSON.stringify({ remainingSeconds: left, waiters: latest.claims.length }));
       }
-      payoutDigest = hashPayoutLocking(p2pkhLockingOf(dest));
     }
-    const w = applyWithdraw(loaded.machine, held.note, held.index, payoutDigest, sats);
+    const cap = sats > held.note.amountSats ? held.note.amountSats : sats;
+    const split = splitIntoBuckets(cap);
+    if (split.publicSats <= 0n) {
+      throw new Error(`withdraw ${sats} is below the smallest payout bucket ${split.unbucketed} leftover stays a note`);
+    }
+    let hd = await loadOrCreateLabHd();
+    const payouts: Array<{ lockingBytecode: Uint8Array; sats: bigint }> = [];
+    const addrs: string[] = [];
+    if (flag("--to")) {
+      if (split.slices.length !== 1) {
+        throw new Error("--to is only valid for a single-bucket payout; omit it to auto-derive HD children");
+      }
+      const to = arg("--to");
+      hd = markUsedAddress(hd, to);
+      payouts.push({ lockingBytecode: p2pkhLockingFromAddress(to), sats: split.slices[0]! });
+      addrs.push(to);
+    } else {
+      for (const slice of split.slices) {
+        const rec = nextReceive(hd);
+        hd = rec.hd;
+        payouts.push({ lockingBytecode: rec.locking, sats: slice });
+        addrs.push(rec.wallet.address);
+      }
+    }
+    await saveLabHd(hd);
+    const w = applyWithdrawBucketed(loaded.machine, held.note, held.index, payouts, cap);
     const witness = { ...wWithdraw(held.note, held.index, w.path, w.created), hash: hash.id };
     const proof = await plugin.prove(w.statement, witness);
     const v = plugin.verify(w.statement, proof, { hash: hash.id });
@@ -443,7 +481,9 @@ async function main(): Promise<void> {
     if (w.change && w.changeIndex !== undefined) next.push({ note: w.change, index: w.changeIndex });
     await saveMachine(w.machine, next, plugin.family);
     const extra = batchNote ? ` ${batchNote}` : "";
-    console.log(`withdraw ${sats} reserve=${w.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} verify=ok${extra}`);
+    console.log(
+      `withdraw requested=${sats} public=${w.publicSats} slices=${w.slices.join("+")} addrs=${addrs.join(",")} reserve=${w.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} verify=ok${extra}`,
+    );
     return;
   }
   if (cmd === "lab" && process.argv[3] === "demo") {

@@ -42,7 +42,7 @@ npx tsx src/cli.ts faucet
 npx tsx src/cli.ts balance
 npx tsx src/cli.ts pool create
 npx tsx src/cli.ts pool deposit --sats 12000   # optional --hash blake2s|poseidon2-m31 --plugin circle-fri-m31|hash-lab-v0
-npx tsx src/cli.ts pool withdraw --sats 5000   # optional --batch-exit [--batch-min 30] [--batch-max 180]
+npx tsx src/cli.ts pool withdraw --sats 5000   # fast default; optional --to ADDR --batch-exit [--batch-min 30] [--batch-max 180]
 npx tsx src/cli.ts pool measure-tx     # must stay ≤100000 / ≤1000000
 npx tsx src/cli.ts lab e2e
 npx tsx src/cli.ts lab demo --wallets 2
