@@ -1,7 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+  decodeCashAddress,
   decodePrivateKeyWif,
+  encodeLockingBytecodeP2pkh,
   encodePrivateKeyWif,
   generatePrivateKey,
   hexToBin,
@@ -62,4 +64,10 @@ export async function loadLabWallet(path = defaultPath()): Promise<LabWallet> {
 
 export function privateKeyOf(wallet: LabWallet): Uint8Array {
   return hexToBin(wallet.privateKeyHex);
+}
+
+export function p2pkhLockingOf(wallet: LabWallet): Uint8Array {
+  const decoded = decodeCashAddress(wallet.address);
+  if (typeof decoded === "string") throw new Error(decoded);
+  return encodeLockingBytecodeP2pkh(decoded.payload);
 }

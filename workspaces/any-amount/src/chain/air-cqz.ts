@@ -53,7 +53,7 @@ export const AIR_OFF_PUB_NEW = AIR_OFF_STMT + 32 + 128;
 /** Packed viewing-commit (32). Prover derives R_on + Z·R_off; the felt is not stored. */
 export const AIR_OFF_OPEN_MASK = 812;
 export const AIR_VIEWING_COMMIT_LEN = 32;
-/** HASH256 of the withdraw payout locking bytecode (zeros on deposit). */
+/** HASH256 of the withdraw payout lock (N=1) or of the lock+value set (N>1). */
 export const AIR_OFF_PAYOUT = 844;
 /** 1-byte length then minimally encoded publicAmount script number. */
 export const AIR_OFF_NET = 876;

@@ -12,6 +12,20 @@ export const RELAY_STANDARD_TX_BYTES = 100_000;
 export const CONSENSUS_TX_BYTES = 1_000_000;
 export const CHAINED_TX_BYTES = 32_000_000;
 export const UNLOCKING_MAX_BYTES = 10_000;
+export const DUST_SATS = 546n;
+/** Public Chipnet relay is 1 sat/byte. 100k covers the ~80–95 KB standard spend. */
+export const STANDARD_SUCCESSOR_FEE_SATS = 100_000n;
+/** Consensus (~270–480 KB) needs a matching fee or electrum/BCHN returns code 66. */
+export const CONSENSUS_SUCCESSOR_FEE_SATS = 400_000n;
+
+export function successorFeeSats(envelope: TxEnvelope = "standard"): bigint {
+  return envelope === "consensus" ? CONSENSUS_SUCCESSOR_FEE_SATS : STANDARD_SUCCESSOR_FEE_SATS;
+}
+
+/** Fee coin = miner/covenant fee + dust change. Leftover treasury is a separate output. */
+export function successorFeeCoinSats(envelope: TxEnvelope = "standard"): bigint {
+  return successorFeeSats(envelope) + DUST_SATS;
+}
 /**
  * High-index unique-orbit FS (consensus slots/folds ≥ 6) needs a dummy prefix
  * so 2026 densityControlLength = 41+unlocking stays above ~800×ops.

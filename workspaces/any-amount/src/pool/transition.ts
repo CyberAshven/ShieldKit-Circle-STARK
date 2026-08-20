@@ -3,7 +3,7 @@ import { type AnyAmountState } from "./state.ts";
 import type { ActionKind, PoolStatement } from "./statement.ts";
 import { commitAmount, freshNetBlind } from "../amounts/hash-commit.ts";
 import { isZero32, ZERO32 } from "./bytes.ts";
-import { hashPayoutLocking } from "../chain/payout.ts";
+import { hashPayoutSet } from "../chain/payout.ts";
 
 export type PoolMachine = {
   state: AnyAmountState;
@@ -214,7 +214,7 @@ export function applyBatchExit(
     newState,
     noteCommitment: new Uint8Array(32),
     nullifier: first.nullifier,
-    payoutLockingDigest: hashPayoutLocking(payouts[0]!.lockingBytecode),
+    payoutLockingDigest: hashPayoutSet(payouts),
     amountCommitIn: commitAmount(first.note.amountSats, first.note.rho, hash),
     amountCommitOut: new Uint8Array(ZERO32),
   };

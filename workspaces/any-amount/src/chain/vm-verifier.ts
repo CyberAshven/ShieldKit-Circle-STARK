@@ -442,7 +442,10 @@ export function evaluateMissingProofPool(oldState: AnyAmountState): VmEval {
   };
 }
 
-/** Executed 2026 lock only. JS verifyFri is logged separately, not AND-ed. */
+/**
+ * Lab bar = 2026 lock AND JS verifyFri. The lock still does not walk notes or
+ * N nullifiers (10 KB). Membership/amount stay in verifyFri.
+ */
 export function evaluateOnChainVerify(
   statement: PoolStatement,
   proof: Uint8Array,
@@ -454,7 +457,7 @@ export function evaluateOnChainVerify(
     statement,
   });
   const stark = verifyFri(statement, decodeFriProof(proof));
-  return { accepted: pool.accepted, pool, stark };
+  return { accepted: pool.accepted && stark.ok, pool, stark };
 }
 
 export function evaluateProofOnVm(proof: FriProof | Uint8Array): {

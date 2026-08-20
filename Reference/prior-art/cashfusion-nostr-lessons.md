@@ -56,7 +56,7 @@ CashFusion remains **not** a ZKP plugin. Batch-exit is an opt-in *timing + outpu
 - Live countdown of **remaining** time (not a per-user random min/max)
 - Ready waiters sketch one shuffled multi-P2PKH list (`cashfusion-like-multi-p2pkh`)
 - We do **not** speak CashFusion: no `OP_RETURN FUSE`, no Pedersen, no blind Schnorr
-- The shipped pool redeem still HASH256-binds **one** payout at output 1. Grouping N exits into that one successor is a later lock (`sum(payouts) = abs-net`)
+- One successor pays N P2PKH outputs. The lock HASH256-binds every payout lock+value (`sum(payouts) = abs-net`). Fee change is dust to a fresh address. CashVM does not walk notes or N nullifiers.
 - Dapp notes: `cli-ux.md` (Withdraw + Settings knobs + countdown)
 
 Fast single withdraw stays the default. Fv1 still has no user batching.

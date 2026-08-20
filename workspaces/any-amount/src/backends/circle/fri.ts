@@ -50,6 +50,7 @@ import {
   assertSatisfied,
   buildTrace,
   checkAuthRelation,
+  checkBatchSpends,
   checkPublicAuthRelation,
   checkPublicConservation,
   onChainCells,
@@ -441,6 +442,10 @@ export function verifyFri(
   if (!cons.ok) return cons;
   const auth = resolveAuthForVerify(statement, proof, witness, opts, hash);
   if (!auth.ok) return auth;
+  if (witness.batch && witness.batch.length > 0) {
+    const batch = checkBatchSpends(statement, witness.batch, hash);
+    if (!batch.ok) return batch;
+  }
 
   const cVec = algebraicC(publicCells(statement, hash), statement, hash);
   if (cVec.some((r) => r !== 0n)) return { ok: false, reason: "algebraicC" };
@@ -731,5 +736,5 @@ export {
   type InternalHashId,
 } from "./internal-hash.ts";
 export type { FriWitness, FriAuth };
-export { airQuotientLde, algebraicC, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wDeposit, wWithdraw } from "./air.ts";
+export { airQuotientLde, algebraicC, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wBatchExit, wDeposit, wWithdraw } from "./air.ts";
 export { interpolateCircle, evalCirclePoly } from "./interpolate.ts";

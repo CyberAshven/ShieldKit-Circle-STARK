@@ -19,7 +19,7 @@ import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "../src/pool/mix-successor.ts";
 import { encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
 import { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
-import type { TxEnvelope } from "../src/chain/envelope.ts";
+import { successorFeeCoinSats, type TxEnvelope } from "../src/chain/envelope.ts";
 
 const scratch = process.argv[2];
 const only = (process.argv[3] ?? "both") as "both" | "standard" | "consensus";
@@ -144,6 +144,7 @@ async function landEnvelope(
       { tx_hash: genesisTxid, tx_pos: 1, value: genesis.changeValue },
       1_000,
       slots,
+      successorFeeCoinSats(envelope),
     );
     const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);

@@ -9,9 +9,13 @@ import { evalCirclePoly, interpolateCircle } from "./interpolate.ts";
 import { addPoints, type CirclePoint } from "./group.ts";
 import { TRACE_LEN } from "./params.ts";
 
+export type FriMembership = { note: Note; index: number; path: Uint8Array[] };
+
 export type FriWitness = {
-  spent?: { note: Note; index: number; path: Uint8Array[] };
-  created?: { note: Note; index: number; path: Uint8Array[] };
+  spent?: FriMembership;
+  created?: FriMembership;
+  /** All spent notes in a batch-exit. Sum must equal −publicAmount. */
+  batch?: FriMembership[];
 };
 
 export function wDeposit(note: Note, index: number, path: Uint8Array[]): FriWitness {
@@ -25,6 +29,12 @@ export function wWithdraw(
   change?: { note: Note; index: number; path: Uint8Array[] },
 ): FriWitness {
   return { spent: { note, index, path }, created: change };
+}
+
+/** One-auth FRI still uses the first spent note; JS verifyFri checks every membership + sum. */
+export function wBatchExit(spent: FriMembership[]): FriWitness {
+  if (spent.length < 1) throw new Error("batch-exit witness");
+  return { spent: spent[0], batch: spent };
 }
 
 export type FriAuth = {
@@ -89,7 +99,7 @@ export function membershipRoot(statement: PoolStatement): Uint8Array {
 export function checkAuthRelation(
   statement: PoolStatement,
   auth: FriAuth,
-  _witness: FriWitness = {},
+  witness: FriWitness = {},
   hash: InternalHash = defaultInternalHash(),
 ): { ok: true } | { ok: false; reason: string } {
   if (auth.rho.length !== 32 || auth.owner.length !== 32) {
@@ -127,6 +137,36 @@ export function checkAuthRelation(
     const append = checkAppend(statement, auth, hash);
     if (!append.ok) return append;
   }
+  const absNet = statement.publicAmountSats < 0n ? -statement.publicAmountSats : 0n;
+  if (witness.batch && witness.batch.length > 0) {
+    return checkBatchSpends(statement, witness.batch, hash);
+  }
+  if (auth.amountSats < absNet) return { ok: false, reason: "withdraw exceeds note" };
+  return { ok: true };
+}
+
+export function checkBatchSpends(
+  statement: PoolStatement,
+  batch: FriMembership[],
+  hash: InternalHash,
+): { ok: true } | { ok: false; reason: string } {
+  const root = membershipRoot(statement);
+  const absNet = statement.publicAmountSats < 0n ? -statement.publicAmountSats : 0n;
+  const seen = new Set<number>();
+  let sum = 0n;
+  for (const s of batch) {
+    if (seen.has(s.index)) return { ok: false, reason: "batch duplicate index" };
+    seen.add(s.index);
+    if (s.note.amountSats <= 0n) return { ok: false, reason: "batch amount" };
+    const leaf = commitNote(s.note, hash);
+    if (!nativeWalk(leaf, s.index, s.path, root, hash)) {
+      return { ok: false, reason: "batch membership" };
+    }
+    const nf = nullifierOf(s.note, statement.oldState.poolInstanceId, hash);
+    if (isZero32(nf)) return { ok: false, reason: "batch nullifier" };
+    sum += s.note.amountSats;
+  }
+  if (sum !== absNet) return { ok: false, reason: "batch sum != public net" };
   return { ok: true };
 }
 

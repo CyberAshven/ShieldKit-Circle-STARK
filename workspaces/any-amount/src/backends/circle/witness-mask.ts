@@ -46,7 +46,10 @@ export function unmaskAuth(auth: FriAuth, key: Uint8Array): FriAuth {
 /**
  * Degree-0 mask felt. Leftover for contrast tests: opened[i]−opened[j] = Q[i]−Q[j]
  * because the constant cancels. Production openings use `openingMaskAt` (on-domain
- * poly plus off-domain Z·R, ePrint 2024/1037-style).
+ * poly plus off-domain Z·R, ePrint 2024/1037-style). Coeffs are a PRF of the
+ * **published** viewingCommit so a public verifier can check N=(opened−R)Z.
+ * A key-only PRF would not be checkable after encodeFriProof drops the key.
+ * Not a Lean HVZK theorem.
  */
 export function openingMaskFelt(commit: Uint8Array, hash: InternalHash = defaultInternalHash()): bigint {
   if (commit.length !== 32) throw new Error("viewing commit width");

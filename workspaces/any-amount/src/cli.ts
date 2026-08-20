@@ -69,7 +69,8 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
                           partial withdraw (same hash/plugin as the machine)
                           --batch-exit is opt-in: join a shared round. First
                           waiter opens a 180s window (override with --batch-window).
-                          At close, flush whoever already opted in. Not FUSE.
+                          At close, flush whoever already opted in as N P2PKH
+                          payouts (each lock+value bound). Not FUSE.
 
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
   pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded

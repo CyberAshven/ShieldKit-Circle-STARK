@@ -7,6 +7,7 @@ import {
   EXTRACT_INSTANCE,
   EXTRACT_RESERVE_NUM,
   EXTRACT_SEQ_NUM,
+  EXTRACT_WD_NUM,
   encodeWalkSteps,
 } from "./note-merkle.ts";
 import { STATE_BASE_SATS } from "../pool/state.ts";
@@ -24,6 +25,8 @@ import { AIR_OFF_PAYOUT, extractCellAsm } from "./air-cqz.ts";
  * incremental append), nullifierRoot (equal or SHA-256(old||nf)).
  * Unlocking: <packed AIR 1608> [<redeem>]. Membership, nullifier, and note
  * preimage stay inside verifyFri — they are not published on the successor.
+ * CashVM does not run full verifyFri. Withdraw binds every payout lock+value
+ * (not only output 1) and withdrawalCount delta = payout count.
  */
 export const FIVE_POINT_PAA1 = `
 OP_0 OP_OUTPUTBYTECODE
@@ -163,9 +166,58 @@ OP_IF
   <32>
   OP_SPLIT
   OP_DROP
-  OP_1 OP_OUTPUTBYTECODE
-  OP_HASH256
+  OP_TXOUTPUTCOUNT
+  <4>
+  OP_LESSTHAN
+  OP_IF
+    OP_1 OP_OUTPUTBYTECODE
+    OP_HASH256
+  OP_ELSE
+    OP_1 OP_OUTPUTBYTECODE
+    OP_HASH256
+    OP_1 OP_OUTPUTVALUE
+    <8> OP_NUM2BIN
+    OP_CAT
+    <2>
+    OP_BEGIN
+      OP_DUP
+      OP_OUTPUTBYTECODE
+      OP_HASH256
+      OP_OVER
+      OP_OUTPUTVALUE
+      <8> OP_NUM2BIN
+      OP_CAT
+      OP_ROT
+      OP_SWAP
+      OP_CAT
+      OP_SWAP
+      OP_1ADD
+      OP_DUP
+      OP_TXOUTPUTCOUNT
+      OP_1SUB
+      OP_GREATERTHANOREQUAL
+    OP_UNTIL
+    OP_DROP
+    OP_HASH256
+  OP_ENDIF
   OP_EQUALVERIFY
+  OP_INPUTINDEX OP_UTXOTOKENCOMMITMENT
+  ${EXTRACT_WD_NUM}
+  OP_0 OP_OUTPUTTOKENCOMMITMENT
+  ${EXTRACT_WD_NUM}
+  OP_SWAP
+  OP_SUB
+  OP_TXOUTPUTCOUNT
+  <3>
+  OP_LESSTHAN
+  OP_IF
+    <1>
+  OP_ELSE
+    OP_TXOUTPUTCOUNT
+    <2>
+    OP_SUB
+  OP_ENDIF
+  OP_NUMEQUALVERIFY
   OP_DUP
   <${AIR_OFF_PAYOUT}>
   OP_SPLIT

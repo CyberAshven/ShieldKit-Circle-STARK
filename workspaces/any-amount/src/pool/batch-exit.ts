@@ -8,8 +8,9 @@
  * when one person's clock fires before another's.
  *
  * Outputs are CashFusion-*shaped* shuffled multi-P2PKH. Not CashFusion
- * (no OP_RETURN FUSE, no Pedersen / blind Schnorr). One-successor N-payout
- * is a later lock; today's redeem still HASH256-binds output 1.
+ * (no OP_RETURN FUSE, no Pedersen / blind Schnorr). One successor pays N
+ * P2PKH outputs; the lock HASH256-binds every payout lock+value (not only
+ * output 1). Fee change is a dust coin to a fresh address.
  */
 
 /** How long a round stays open after the first joiner. CLI `--batch-window`. */

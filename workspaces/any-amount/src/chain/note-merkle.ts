@@ -50,6 +50,8 @@ OP_BIN2NUM
 
 export const EXTRACT_SEQ_NUM = `<8> OP_SPLIT OP_NIP\n${U64BE_FIELD_TO_NUM}`;
 export const EXTRACT_RESERVE_NUM = `<16> OP_SPLIT OP_NIP\n${U64BE_FIELD_TO_NUM}`;
+/** PAA1 withdrawalCount at offset 28, u32-BE. */
+export const EXTRACT_WD_NUM = `<28> OP_SPLIT OP_NIP <4> OP_SPLIT OP_DROP OP_REVERSEBYTES OP_BIN2NUM`;
 
 export function encodeWalkSteps(index: number, path: Uint8Array[]): Uint8Array {
   const parts: Uint8Array[] = [];

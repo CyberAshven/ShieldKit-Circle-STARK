@@ -14,7 +14,7 @@ import { applyBatchExit, applyDeposit, type PoolMachine } from "../src/pool/tran
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
 import { emptyState, encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
 import { createLabWallet, loadLabWallet, saveLabWallet } from "../src/chain/wallet.ts";
-import { proveFri, wWithdraw, encodeFriProof } from "../src/backends/circle/fri.ts";
+import { encodeFriProof, proveFri, wBatchExit } from "../src/backends/circle/fri.ts";
 import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import {
   compileCovenantSpend,
@@ -23,7 +23,7 @@ import {
   compileSelfSendVout0,
 } from "../src/chain/covenant-spend.ts";
 import { broadcast, connectChipnet, listUnspent } from "../src/chain/electrum.ts";
-import { hashPayoutLocking } from "../src/chain/payout.ts";
+import { hashPayoutSet } from "../src/chain/payout.ts";
 
 const COUNT = 24;
 
@@ -93,12 +93,17 @@ async function main(): Promise<void> {
   if (batch.payouts.some((p, i) => p.sats !== items[i]!.withdrawSats)) {
     throw new Error("payout does not match its note");
   }
-  if (hashPayoutLocking(batch.payouts[0]!.lockingBytecode).some((b, i) => b !== batch.statement.payoutLockingDigest[i])) {
-    throw new Error("output-1 digest mismatch");
+  const setDigest = hashPayoutSet(batch.payouts);
+  if (setDigest.some((b, i) => b !== batch.statement.payoutLockingDigest[i])) {
+    throw new Error("payout-set digest mismatch");
   }
 
-  const first = batch.spent[0]!;
-  const proof = encodeFriProof(proveFri(batch.statement, wWithdraw(first.note, first.index, first.path)));
+  const proof = encodeFriProof(
+    proveFri(
+      batch.statement,
+      wBatchExit(batch.spent.map((s) => ({ note: s.note, index: s.index, path: s.path }))),
+    ),
+  );
   const v = circleFriPlugin.verify(batch.statement, proof);
   if (!v.ok) throw new Error(`verify: ${v.reason}`);
 

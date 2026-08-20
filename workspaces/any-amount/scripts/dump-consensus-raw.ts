@@ -14,6 +14,7 @@ import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "../src/pool/mix-successor.ts";
 import { encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
 import { SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
+import { successorFeeCoinSats } from "../src/chain/envelope.ts";
 import { foldKernelCount } from "../src/chain/fold-kernel.ts";
 
 const out = process.argv[2];
@@ -66,6 +67,7 @@ try {
     { tx_hash: genesis.txid, tx_pos: 1, value: genesis.changeValue },
     1_000,
     SLOT_KERNEL_COUNT_CONSENSUS,
+    successorFeeCoinSats("consensus"),
   );
   const kernelsPath = join(dir, "kernels.hex");
   writeFileSync(kernelsPath, binToHex(funded.raw));

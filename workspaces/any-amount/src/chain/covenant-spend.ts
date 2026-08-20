@@ -10,7 +10,7 @@ import {
 import { encodePublicPaa1, encodeState, STATE_BASE_SATS, utxoValueFor, type AnyAmountState } from "../pool/state.ts";
 import { isZero32 } from "../pool/bytes.ts";
 import { LAB_PAYOUT_LOCKING } from "./payout.ts";
-import { createLabWallet, privateKeyOf, type LabWallet } from "./wallet.ts";
+import { createLabWallet, p2pkhLockingOf, privateKeyOf, type LabWallet } from "./wallet.ts";
 import { broadcast, connectChipnet, getTx, listUnspent } from "./electrum.ts";
 
 async function sleep(ms: number): Promise<void> {
@@ -55,7 +55,12 @@ import {
 import { decodeFriProof } from "../backends/circle/fri.ts";
 import { decodeState } from "../pool/state.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
-import { CONSENSUS_TX_BYTES, RELAY_STANDARD_TX_BYTES, type TxEnvelope } from "./envelope.ts";
+import {
+  DUST_SATS,
+  successorFeeCoinSats,
+  successorFeeSats,
+  type TxEnvelope,
+} from "./envelope.ts";
 import { friShardUnlockings } from "./fri-openings.ts";
 import {
   compileCqzLockP2sh32,
@@ -211,6 +216,8 @@ export function compileCovenantSuccessor(args: {
   feeSats?: bigint;
   payoutLockingBytecode?: Uint8Array;
   extraPayouts?: Array<{ lockingBytecode: Uint8Array; sats: bigint }>;
+  /** Last output (fee change). Default is a fresh P2PKH, not the funder. */
+  changeLockingBytecode?: Uint8Array;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -218,9 +225,7 @@ export function compileCovenantSuccessor(args: {
     (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
-  // Public Chipnet relay is 1 sat/byte. 100k covers the 95 KB standard spend;
-  // consensus (~269 KB) needs a matching fee or electrum returns code 66.
-  const fee = args.feeSats ?? (args.envelope === "consensus" ? 400_000n : 100_000n);
+  const fee = args.feeSats ?? successorFeeSats(args.envelope ?? "standard");
   const value = utxoValueFor(args.newState);
   const poolIn = BigInt(args.pool.value);
   const net = value - poolIn;
@@ -331,7 +336,7 @@ export function compileCovenantSuccessor(args: {
       },
       ...payoutOutputs,
       {
-        lockingBytecode: { compiler: c, script: "lock", data },
+        lockingBytecode: args.changeLockingBytecode ?? p2pkhLockingOf(createLabWallet()),
         valueSatoshis: change,
       },
     ],
@@ -431,12 +436,13 @@ export function compileSelfSendVout0(
   return { raw, txid: hashTransaction(raw), value: Number(value) };
 }
 
-/** 10 FRI + bind-T + slot C=QZ carriers. */
+/** 10 FRI + bind-T + slot C=QZ carriers. Fat leftover is a fresh treasury, not the successor. */
 export function compileFundVerifierKernels(
   wallet: LabWallet,
   utxo: { tx_hash: string; tx_pos: number; value: number },
   kernelSats = 1_000,
   slotKernels = SLOT_KERNEL_COUNT,
+  feeCoinSats: bigint = successorFeeCoinSats("standard"),
 ): {
   raw: Uint8Array;
   txid: string;
@@ -444,6 +450,9 @@ export function compileFundVerifierKernels(
   extra: Array<{ tx_hash: string; tx_pos: number; value: number }>;
   changeValue: number;
   changePos: number;
+  treasuryValue?: number;
+  treasuryPos?: number;
+  treasuryAddress?: string;
 } {
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
@@ -452,9 +461,20 @@ export function compileFundVerifierKernels(
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
   const fee = 2_000n + BigInt(count) * 80n;
-  const change = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - fee;
-  if (change < 546n) throw new Error("utxo too small to fund verifier kernels");
+  const leftover = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - fee;
+  if (leftover < DUST_SATS) throw new Error("utxo too small to fund verifier kernels");
+  const split =
+    leftover >= feeCoinSats + DUST_SATS && feeCoinSats >= DUST_SATS;
+  const feeCoin = split ? feeCoinSats : leftover;
+  const treasuryAmt = split ? leftover - feeCoinSats : 0n;
+  const treasuryWallet = split ? createLabWallet() : undefined;
   const friOut = { lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: BigInt(kernelSats) };
+  const tail = split
+    ? [
+        { lockingBytecode: p2pkhLockingOf(treasuryWallet!), valueSatoshis: treasuryAmt },
+        { lockingBytecode: { compiler: c, script: "lock", data }, valueSatoshis: feeCoin },
+      ]
+    : [{ lockingBytecode: { compiler: c, script: "lock", data }, valueSatoshis: leftover }];
   const generated = generateTransaction({
     version: 2,
     locktime: 0,
@@ -482,7 +502,7 @@ export function compileFundVerifierKernels(
         lockingBytecode: compileSlotsLockP2sh32(i),
         valueSatoshis: BigInt(kernelSats),
       })),
-      { lockingBytecode: { compiler: c, script: "lock", data }, valueSatoshis: change },
+      ...tail,
     ],
   });
   if (!generated.success) {
@@ -499,8 +519,11 @@ export function compileFundVerifierKernels(
       tx_pos: FRI_KERNEL_INPUTS + i,
       value: kernelSats,
     })),
-    changeValue: Number(change),
-    changePos: count,
+    changeValue: Number(feeCoin),
+    changePos: split ? count + 1 : count,
+    treasuryValue: split ? Number(treasuryAmt) : undefined,
+    treasuryPos: split ? count : undefined,
+    treasuryAddress: treasuryWallet?.address,
   };
 }
 
