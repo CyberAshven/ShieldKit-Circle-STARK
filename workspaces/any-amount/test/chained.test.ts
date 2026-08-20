@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { decodeTransaction } from "@bitauth/libauth";
 import { encodeFriProof, proveFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
+import { FRI_QUERIES } from "../src/backends/circle/params.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
 import { emptyState, encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
@@ -81,6 +82,8 @@ describe("envelope C chained tape + last-hop pay", () => {
     assert.equal(chain.envelope, "chained");
     assert.equal(chain.hops.length, CHAINED_HOPS_DEFAULT);
     assert.equal(chain.payIndex, CHAINED_HOPS_DEFAULT - 1);
+    assert.ok(chain.payIndex * 2 >= FRI_QUERIES, "tape hops cover 36 extra unique-orbit slices without shrinking qn then padding");
+    assert.equal(CHAINED_HOPS_DEFAULT, 19, "18 tape hops × 2 queries + pay hop = B");
     assert.ok(chain.totalBytes <= CHAINED_TX_BYTES);
     assert.ok(chain.totalBytes > chain.hops[chain.payIndex]!.txBytes);
 

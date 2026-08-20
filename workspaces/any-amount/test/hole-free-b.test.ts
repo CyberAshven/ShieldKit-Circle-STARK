@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  decodeFriProof,
   encodeFriProof,
   mutateTraceAndProve,
   proveFri,
@@ -8,7 +9,26 @@ import {
   wDeposit,
   wWithdraw,
 } from "../src/backends/circle/fri.ts";
-import { FRI_QUERIES } from "../src/backends/circle/params.ts";
+import { FRI_QUERIES, FRI_VERSION } from "../src/backends/circle/params.ts";
+import { encodeLe, mul } from "../src/backends/circle/m31.ts";
+import { openingMaskAt } from "../src/backends/circle/witness-mask.ts";
+import { defaultInternalHash } from "../src/backends/circle/internal-hash.ts";
+import { encodeStatement } from "../src/pool/statement.ts";
+import { sha256 } from "../src/pool/bytes.ts";
+import {
+  AIR_NEWTON_BYTES,
+  AIR_OFF_EVEN,
+  AIR_OFF_NTABLE,
+  AIR_OFF_ODD,
+  AIR_OFF_OPEN_MASK,
+  AIR_OFF_QTABLE,
+  SLOT_KERNEL_COUNT,
+  SLOT_KERNEL_COUNT_CONSENSUS,
+  encodeAirPacked,
+  fiatShamirQueryIndices,
+  nqzAt,
+} from "../src/chain/air-cqz.ts";
+import { collectFriOpenings, friShardUnlockings } from "../src/chain/fri-openings.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
 import { emptyState } from "../src/pool/state.ts";
@@ -19,12 +39,9 @@ import { compilePoolCovenant } from "../src/chain/covenant-p2s.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
 import { encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
-import { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
 import { CONSENSUS_TX_BYTES, RELAY_STANDARD_TX_BYTES, UNLOCKING_MAX_BYTES } from "../src/chain/envelope.ts";
 import { evaluateFriQueryOpening, evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
 import { compileFriQueryKernel } from "../src/chain/fri-kernel.ts";
-import { collectFriOpenings } from "../src/chain/fri-openings.ts";
-import { encodeAirPacked } from "../src/chain/air-cqz.ts";
 import { COMMITTED_LAYERS } from "../src/backends/circle/params.ts";
 import { foldQueriesAsm } from "../src/chain/fold-asm.ts";
 
@@ -44,6 +61,13 @@ function mix() {
 }
 
 describe("hole-free statistical-soundness kernels (B)", () => {
+  it("B is 36 unique-orbit Circle FRI M31, FRI_VERSION 8, not a second family", () => {
+    assert.equal(FRI_VERSION, 8);
+    assert.equal(FRI_QUERIES, 36);
+    assert.equal(SLOT_KERNEL_COUNT_CONSENSUS, FRI_QUERIES);
+    assert.ok(SLOT_KERNEL_COUNT < FRI_QUERIES, "A may chunk fewer slots; B keeps 36");
+  });
+
   it("grind and algebraicC redeems stay under 10 KB", () => {
     const g = compileGrindKernel();
     const a = compileAlgebraicCKernel();
@@ -73,6 +97,54 @@ describe("hole-free statistical-soundness kernels (B)", () => {
       standard: false,
     });
     assert.equal(ev.accepted, true, ev.error ?? "honest B");
+  });
+
+  it("36-query B rejects cooked viewing-commit, recooked Q/N, and cooked pair blob", () => {
+    const { w, proof } = mix();
+    const base = {
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof,
+      statement: w.statement,
+      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+      standard: false as const,
+    };
+    const packed = encodeAirPacked(w.statement, proof);
+    const cookCommit = new Uint8Array(packed);
+    cookCommit[AIR_OFF_OPEN_MASK] ^= 0xff;
+    const commitEv = evaluatePoolSuccessorVm({ ...base, airPacked: cookCommit });
+    assert.equal(commitEv.accepted, false, "cooked viewing-commit must fail on-chain R");
+
+    const decoded = decodeFriProof(proof);
+    const i0 = fiatShamirQueryIndices(
+      sha256(encodeStatement(w.statement)),
+      decoded,
+      defaultInternalHash(),
+      packed.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES),
+      packed.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES),
+    )[0]!;
+    const nqz = nqzAt(w.statement, i0);
+    if (nqz.z !== 0n) {
+      const r = openingMaskAt(decoded.viewingCommit ?? new Uint8Array(32), i0, undefined, nqz.z);
+      const qPrime = (nqz.q + r + 1n) % 2147483647n;
+      const nPrime = mul(qPrime, nqz.z);
+      const cookQn = new Uint8Array(packed);
+      cookQn.set(encodeLe(qPrime), AIR_OFF_QTABLE);
+      cookQn.set(encodeLe(nPrime), AIR_OFF_NTABLE);
+      const qnEv = evaluatePoolSuccessorVm({ ...base, airPacked: cookQn });
+      assert.equal(qnEv.accepted, false, "masked-consistent recook of Q/N must fail independent N");
+    }
+
+    const shards = friShardUnlockings(proof, { allPairGroups: true });
+    const cooked0 = new Uint8Array(shards[0]!);
+    const op = cooked0[0]!;
+    const dataOff = op === 0x4d ? 3 : op === 0x4c ? 2 : 1;
+    cooked0[dataOff] ^= 0xff;
+    const blobEv = evaluatePoolSuccessorVm({
+      ...base,
+      kernelUnlockings: [cooked0, ...shards.slice(1)],
+    });
+    assert.equal(blobEv.accepted, false, "cooked pair blob with honest Merkle left||right must fail");
   });
 
   it("A still fits 100 KB after grind + algebraicC; B fits 1 MB; leftover is unused not cargo", () => {
