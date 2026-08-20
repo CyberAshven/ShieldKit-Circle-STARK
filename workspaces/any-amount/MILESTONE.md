@@ -14,9 +14,9 @@ Any-amount pool. Circle FRI is **plugin #1**, not the pool identity.
 | `--hash sha256` / `blake2s` / `poseidon2-m31` | default **sha256** (CashVM `OP_SHA256`) | Poseidon2-M31 is toorik Grain (ePrint 2023/323), not a lock opcode. |
 | `--plugin` | **circle-fri-m31** first; `hash-lab-v0` lab stub | Reserved sandwiches: `goldilocks-fri` (AIR+FRI), `air-whir` (AIR+WHIR), `spartan-whir` (Spartan+WHIR), `groth16` (pairing). `whir` is a PCS; `spartan` is an IOP. |
 
-Envelope **B** is the hole-free statistical-soundness envelope: 36 unique-orbit foldPair + `(q−R)·Z = N` from T, plus grind and algebraicC kernels (chunked across 10 KB inputs). Leftover bytes of the 1 MB cap are unused headroom, not OP_DROP cargo. Envelope **C** pay hop is B. Tape hops are extra real fold/R-slot slices in 100 KB (2 queries per hop); they do not accumulate 36 queries across txs. Skip-tape still hits the B pay hop. Envelope **A** stays inside 100 KB (1 fold + 4 R-slots, grind, algebraicC). Slot kernels evaluate `R_on(i)+Z(i)·R_off(i)` and compare to the AIR numerator, not masked nTable.
+Envelope **B** is the hole-free statistical-soundness envelope: 36 unique-orbit foldPair + `(q−R)·Z = N` from T, plus grind and algebraicC kernels (chunked across 10 KB inputs). Fold pair blobs are bound to the merklized `left||right` on the same FRI unlocking — cooking the first push while leaving Merkle items honest fails. Leftover bytes of the 1 MB cap are unused headroom, not OP_DROP cargo. Envelope **C** pay hop is B. Tape hops are extra real fold/R-slot slices in 100 KB (2 queries per hop); they do not accumulate 36 queries across txs. Skip-tape still hits the B pay hop. Envelope **A** stays inside 100 KB (1 fold + 4 R-slots, grind, algebraicC). Slot kernels evaluate `R_on(i)+Z(i)·R_off(i)` and compare to the AIR numerator, not masked nTable.
 
-Compile size proof (not a land): A **97650 B** (unlock 2685), B **569130 B** (unlock 5365), 1 MB headroom **430870 B** unused (not cargo). Each unlocking ≤ 10 KB.
+Compile size proof (not a land): A **98750 B** (unlock 2685), B **570230 B** (unlock 5365), 1 MB headroom **429770 B** unused (not cargo). Each unlocking ≤ 10 KB.
 
 ### On Chipnet this session
 

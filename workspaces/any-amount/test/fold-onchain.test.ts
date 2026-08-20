@@ -14,6 +14,7 @@ import { COMMITTED_LAYERS, FRI_N } from "../src/backends/circle/params.ts";
 import { encodeAirPacked } from "../src/chain/air-cqz.ts";
 import { compileFoldPairLock, compileM31InvLock, lambdaFromPackedAsm } from "../src/chain/fold-asm.ts";
 import { compileFirstQueryPairsLock, compileFoldKernel, foldKernelAsm } from "../src/chain/fold-kernel.ts";
+import { compileFriQueryKernel } from "../src/chain/fri-kernel.ts";
 import { friShardUnlockings } from "../src/chain/fri-openings.ts";
 import { pushData } from "../src/chain/covenant-p2s.ts";
 import {
@@ -110,6 +111,8 @@ describe("on-chain Circle fold", () => {
     assert.ok(redeem.length > 200, "fold kernel is not a stub");
     assert.ok(redeem.length <= 10_000, `fold redeem ${redeem.length} > 10KB`);
     assert.ok(foldKernelAsm(6).includes("OP_INVOKE"));
+    const fri = compileFriQueryKernel();
+    assert.ok(fri.length <= 10_000, `FRI kernel ${fri.length}`);
   });
 
   it("one-query fold kernel accepts honest packed and shard 0", () => {
@@ -170,6 +173,25 @@ describe("on-chain Circle fold", () => {
     const on = evaluateOnChainVerify(d.statement, raw);
     assert.equal(on.stark.ok, true, on.stark.ok ? "" : on.stark.reason);
     assert.equal(on.pool.accepted, true, on.pool.error ?? "honest fold successor");
+  });
+
+  it("cooked pair blob is rejected when Merkle left/right stay honest", () => {
+    const d = deposit();
+    const proof = proveFri(d.statement, d.witness);
+    const raw = encodeFriProof(proof);
+    const shards = friShardUnlockings(raw);
+    const cooked0 = new Uint8Array(shards[0]!);
+    const op = cooked0[0]!;
+    const dataOff = op === 0x4d ? 3 : op === 0x4c ? 2 : 1;
+    cooked0[dataOff] ^= 0xff;
+    const ev = evaluatePoolSuccessorVm({
+      oldState: d.statement.oldState,
+      newState: d.statement.newState,
+      proof: raw,
+      statement: d.statement,
+      kernelUnlockings: [cooked0, ...shards.slice(1)],
+    });
+    assert.equal(ev.accepted, false, "fold pair blob must equal merklized left||right");
   });
 
   it("wrong FS index on a folded query is rejected", () => {

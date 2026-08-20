@@ -29,6 +29,8 @@ On BCH, verifying SP1 *natively* means a Plonky3/FRI verifier in script (same si
 
 Keep SP1 as: “how people write statements in Rust and then pick a *different* on-chain verifier.” Our statement should stay a small AIR (`PoolActionFv1`), not a general RISC-V trace.
 
+Proofnote/APNT (`v0.4.4`) is the BCH datapoint for that wrap: SP1 guest over the protocol’s real SHA-256 note commitment, Groth16 on CashVM, **not** a shielded pool. See `prior-art/proofnote.md`. Do not take their pairing verifier or equal-value cells as this lab’s backend.
+
 ## Triton VM (Neptune)
 
 - https://github.com/TritonVM/triton-vm

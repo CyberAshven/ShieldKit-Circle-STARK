@@ -49,6 +49,7 @@ Did not change:
 | TXv5 (not live) | https://github.com/bitjson/bch-txv5 |
 | EC opcode CHIP | https://bitcoincashresearch.org/t/chip-2025-05-native-elliptic-curve-arithmetic-operations/1570 |
 | Groth16 on BCH | https://github.com/mr-zwets/groth16_cashscript https://www.verifier.cash/ |
+| Proofnote / APNT (not a pool) | https://proofnote.cash/ https://github.com/casablanca-labs/proofnote |
 | Confidential txs writeup | https://github.com/bastiancarmy/bitcoin-cash-confidential-transactions |
 | Proof-bound P2S | https://github.com/bastiancarmy/bitcoin-cash-proof-bound-p2s |
 | SRPA / stealth | https://bitcoincashresearch.org/t/silent-reusable-payment-addresses-srpa/1637 |

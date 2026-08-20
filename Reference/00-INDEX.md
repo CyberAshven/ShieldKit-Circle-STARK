@@ -42,6 +42,7 @@ Last updated 2026-08-20. Every entry below exists on disk or is a public URL tha
 | Voidify gitbook | https://github.com/VoidifyDAO/voidify-gitbook | Nova/Classic docs |
 | Voidify SDK | https://github.com/VoidifyCommunity/voidify-sdk | browser prove + relayer |
 | SP1 | https://github.com/succinctlabs/sp1 | RISC-V zkVM (wraps to SNARK on EVM) |
+| Proofnote / APNT | https://github.com/casablanca-labs/proofnote | No-pool private notes; SP1+Groth16 wrap. Comparator only: `prior-art/proofnote.md` |
 | Triton VM | https://github.com/TritonVM/triton-vm | Tip5 recursive STARK VM |
 | BCH_Knowledge_Base (public) | https://github.com/toorik2/BCH_Knowledge_Base | CashScript KB |
 

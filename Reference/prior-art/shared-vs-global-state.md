@@ -13,6 +13,8 @@ Three words people mash together:
 | **State shards** | Several covenant UTXOs updated in parallel | **Later**, only if one serial UTXO contends; must not split the anonymity set |
 | **Verifier shards** | Several inputs in *one* tx that check one proof | **Yes as needed** — 10 KB cap; not user batching |
 
+Proofnote/APNT is a public **no-pool** design (ordinary UTXOs as backing cells, no global private-value UTXO). That is a different product. It does not falsify the pool choice here. See `prior-art/proofnote.md`.
+
 ## Ideal design (what the old talk already had)
 
 1. Wallet is a frontend. The pool lives on BCH as a covenant. No validators, no sequencer.

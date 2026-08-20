@@ -15,8 +15,122 @@ export const FRI_KERNEL_INPUTS = 10;
  */
 export const FRI_LAYER_UNBOUND = 16;
 
-export const FRI_ONE_OPENING = `
+/** First unlocking push body (pair blob when present). Stack: unlocking → body. */
+export const FIRST_PUSH_BODY = `
+<1> OP_SPLIT
+OP_OVER
+<0x4c>
+OP_NUMEQUAL
+OP_IF
+  OP_NIP
+  <1> OP_SPLIT
+  OP_SWAP
+  <0x00>
+  OP_CAT
+  OP_BIN2NUM
+  OP_SPLIT
+  OP_DROP
+OP_ELSE
+  OP_OVER
+  <0x4d>
+  OP_NUMEQUAL
+  OP_IF
+    OP_NIP
+    <2> OP_SPLIT
+    OP_SWAP
+    <0x00>
+    OP_CAT
+    OP_BIN2NUM
+    OP_SPLIT
+    OP_DROP
+  OP_ELSE
+    OP_SWAP
+    OP_BIN2NUM
+    OP_SPLIT
+    OP_DROP
+  OP_ENDIF
+OP_ENDIF
+`;
+
+/**
+ * If this kernel's first push is a pair blob (len≥8 and len%8==0), the
+ * merklized left||right must equal blob[remaining*8 : remaining*8+8].
+ * Isolated 4-byte first pushes (no blob) skip. Remaining is the loop
+ * index already on alt under hasL0.
+ */
+const PAIR_BLOB_BIND = `
 OP_TOALTSTACK
+OP_3 OP_PICK
+OP_3 OP_PICK
+OP_CAT
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_DUP
+OP_TOALTSTACK
+OP_SWAP
+OP_TOALTSTACK
+OP_SWAP
+OP_TOALTSTACK
+<8>
+OP_MUL
+OP_TOALTSTACK
+OP_INPUTINDEX
+OP_INPUTBYTECODE
+${FIRST_PUSH_BODY}
+OP_DUP
+OP_SIZE
+OP_NIP
+OP_DUP
+<8>
+OP_MOD
+OP_0
+OP_NUMEQUAL
+OP_IF
+  OP_DUP
+  <8>
+  OP_GREATERTHANOREQUAL
+  OP_IF
+    OP_DROP
+    OP_FROMALTSTACK
+    OP_DUP
+    <8>
+    OP_ADD
+    OP_2 OP_PICK
+    OP_SIZE
+    OP_NIP
+    OP_SWAP
+    OP_GREATERTHANOREQUAL
+    OP_IF
+      OP_SPLIT
+      OP_NIP
+      <8>
+      OP_SPLIT
+      OP_DROP
+      OP_EQUALVERIFY
+    OP_ELSE
+      OP_DROP
+      OP_DROP
+      OP_DROP
+    OP_ENDIF
+  OP_ELSE
+    OP_DROP
+    OP_DROP
+    OP_DROP
+    OP_FROMALTSTACK
+    OP_DROP
+  OP_ENDIF
+OP_ELSE
+  OP_DROP
+  OP_DROP
+  OP_DROP
+  OP_FROMALTSTACK
+  OP_DROP
+OP_ENDIF
+`;
+
+export const FRI_ONE_OPENING = `
+${PAIR_BLOB_BIND}
 OP_DUP
 <${FRI_LAYER_UNBOUND}>
 OP_GREATERTHANOREQUAL
