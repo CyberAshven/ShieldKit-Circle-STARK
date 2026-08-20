@@ -555,7 +555,7 @@ async function main(): Promise<void> {
         ? chainedShape(
             compileChainedWithdraw({
               wallet: createLabWallet(),
-              tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 50_000 },
+              tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 400_000 },
               hops: hopsArg(),
               digest: proof.slice(0, 32),
               proof,
@@ -746,7 +746,7 @@ async function main(): Promise<void> {
     });
     const chained = compileChainedWithdraw({
       wallet: createLabWallet(),
-      tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 50_000 },
+      tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 400_000 },
       hops: hopsArg(),
       digest: proof.slice(0, 32),
       proof,

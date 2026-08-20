@@ -23,14 +23,16 @@ import {
   DUST_SATS,
   parseChainedHops,
   RELAY_STANDARD_TX_BYTES,
+  STANDARD_HOP_TARGET_BYTES,
+  STANDARD_SUCCESSOR_FEE_SATS,
   TAPE_TIMEOUT_CSV,
 } from "./envelope.ts";
+import { cargoInputs, packCargoUnlockings, proofCargoLock, type CargoUtxo } from "./proof-cargo.ts";
 import { p2pkhLockingOf, privateKeyOf, type LabWallet } from "./wallet.ts";
 import type { AnyAmountState } from "../pool/state.ts";
 import type { PoolStatement } from "../pool/statement.ts";
 
 export const TAPE_MAGIC = new Uint8Array([0x54, 0x41, 0x50, 0x45, 0x31]); // TAPE1
-const TAPE_FEE_SATS = 800n;
 const TIMEOUT_FEE_SATS = 400n;
 
 export type ChainUtxo = { tx_hash: string; tx_pos: number; value: number };
@@ -74,44 +76,72 @@ export function compileTapeHop(args: {
   index: number;
   hopCount: number;
   chunkHash: Uint8Array;
+  proof?: Uint8Array;
+  packTo?: number;
+  cargoUtxos?: CargoUtxo[];
   feeSats?: bigint;
-}): { raw: Uint8Array; txid: string; nextUtxo: ChainUtxo; commit: Uint8Array } {
-  const fee = args.feeSats ?? TAPE_FEE_SATS;
+}): { raw: Uint8Array; txid: string; nextUtxo: ChainUtxo; commit: Uint8Array; cargoCount: number } {
+  const packTo = args.packTo ?? STANDARD_HOP_TARGET_BYTES;
+  const fee = args.feeSats ?? STANDARD_SUCCESSOR_FEE_SATS;
   const nextValue = BigInt(args.utxo.value) - fee;
   if (nextValue < DUST_SATS) throw new Error("tape utxo too small");
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const commit = tapeCommit(args.digest, args.index, args.hopCount, args.chunkHash);
+  const carrier = {
+    outpointIndex: args.utxo.tx_pos,
+    outpointTransactionHash: hexToBin(args.utxo.tx_hash),
+    sequenceNumber: 0xffffffff,
+    unlockingBytecode: {
+      compiler: c,
+      script: "unlock" as const,
+      data,
+      valueSatoshis: BigInt(args.utxo.value),
+    },
+  };
+  const outputs = [
+    { lockingBytecode: p2pkhLockingOf(args.wallet), valueSatoshis: nextValue },
+    { lockingBytecode: opReturnLocking(commit), valueSatoshis: 0n },
+  ];
+  const bare = generateTransaction({
+    version: 2,
+    locktime: 0,
+    inputs: [carrier],
+    outputs,
+  });
+  if (!bare.success) throw new Error(`tape hop: ${JSON.stringify(bare.errors).slice(0, 400)}`);
+  const baseBytes = encodeTransaction(bare.transaction).length;
+  const unlockings =
+    packTo > 0
+      ? packCargoUnlockings({
+          baseBytes,
+          proof: args.proof ?? args.chunkHash,
+          hopIndex: args.index,
+          targetBytes: packTo,
+        })
+      : [];
   const generated = generateTransaction({
     version: 2,
     locktime: 0,
     inputs: [
-      {
-        outpointIndex: args.utxo.tx_pos,
-        outpointTransactionHash: hexToBin(args.utxo.tx_hash),
-        sequenceNumber: 0xffffffff,
-        unlockingBytecode: {
-          compiler: c,
-          script: "unlock",
-          data,
-          valueSatoshis: BigInt(args.utxo.value),
-        },
-      },
+      carrier,
+      ...cargoInputs({ unlockings, utxos: args.cargoUtxos, hopIndex: args.index }),
     ],
-    outputs: [
-      { lockingBytecode: p2pkhLockingOf(args.wallet), valueSatoshis: nextValue },
-      { lockingBytecode: opReturnLocking(commit), valueSatoshis: 0n },
-    ],
+    outputs,
   });
   if (!generated.success) {
-    throw new Error(`tape hop: ${JSON.stringify(generated.errors).slice(0, 400)}`);
+    throw new Error(`tape hop packed: ${JSON.stringify(generated.errors).slice(0, 400)}`);
   }
   const raw = encodeTransaction(generated.transaction);
+  if (raw.length > RELAY_STANDARD_TX_BYTES) {
+    throw new Error(`tape hop ${raw.length} > ${RELAY_STANDARD_TX_BYTES}`);
+  }
   const txid = hashTransaction(raw);
   return {
     raw,
     txid,
     commit,
+    cargoCount: unlockings.length,
     nextUtxo: { tx_hash: txid, tx_pos: 0, value: Number(nextValue) },
   };
 }
@@ -149,20 +179,24 @@ export function compileTapeTimeout(args: {
   return { raw, txid: hashTransaction(raw), sequence: TAPE_TIMEOUT_CSV };
 }
 
-/** Split genesis-change into a tape carrier + kernel funder. Both P2PKH to the lab wallet. */
+/** Split genesis-change into a tape carrier, optional proof-cargo dust, and kernel funder. */
 export function compileTapeFunder(args: {
   wallet: LabWallet;
   utxo: ChainUtxo;
   tapeSats?: bigint;
+  cargoCount?: number;
   feeSats?: bigint;
-}): { raw: Uint8Array; txid: string; tapeUtxo: ChainUtxo; funderUtxo: ChainUtxo } {
-  const tapeSats = args.tapeSats ?? 50_000n;
-  const fee = args.feeSats ?? 800n;
-  const rest = BigInt(args.utxo.value) - tapeSats - fee;
+}): { raw: Uint8Array; txid: string; tapeUtxo: ChainUtxo; funderUtxo: ChainUtxo; cargo: CargoUtxo[] } {
+  const tapeSats = args.tapeSats ?? 300_000n;
+  const cargoCount = args.cargoCount ?? 0;
+  const cargoSats = DUST_SATS * BigInt(cargoCount);
+  const fee = args.feeSats ?? 2_000n + BigInt(cargoCount) * 80n;
+  const rest = BigInt(args.utxo.value) - tapeSats - cargoSats - fee;
   if (rest < DUST_SATS) throw new Error("change too small to fund tape + kernels");
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const lock = p2pkhLockingOf(args.wallet);
+  const cargoLock = proofCargoLock();
   const generated = generateTransaction({
     version: 2,
     locktime: 0,
@@ -181,6 +215,10 @@ export function compileTapeFunder(args: {
     ],
     outputs: [
       { lockingBytecode: lock, valueSatoshis: tapeSats },
+      ...Array.from({ length: cargoCount }, () => ({
+        lockingBytecode: cargoLock,
+        valueSatoshis: DUST_SATS,
+      })),
       { lockingBytecode: lock, valueSatoshis: rest },
     ],
   });
@@ -193,7 +231,12 @@ export function compileTapeFunder(args: {
     raw,
     txid,
     tapeUtxo: { tx_hash: txid, tx_pos: 0, value: Number(tapeSats) },
-    funderUtxo: { tx_hash: txid, tx_pos: 1, value: Number(rest) },
+    cargo: Array.from({ length: cargoCount }, (_, i) => ({
+      tx_hash: txid,
+      tx_pos: 1 + i,
+      value: Number(DUST_SATS),
+    })),
+    funderUtxo: { tx_hash: txid, tx_pos: 1 + cargoCount, value: Number(rest) },
   };
 }
 
@@ -216,11 +259,13 @@ export function compileChainedWithdraw(args: {
   extraKernels?: Array<ChainUtxo>;
   extraPayouts?: Array<{ lockingBytecode: Uint8Array; sats: bigint }>;
   payoutLockingBytecode?: Uint8Array;
+  cargoUtxos?: CargoUtxo[];
 }): ChainedWithdraw {
   const hopCount = parseChainedHops(args.hops ?? CHAINED_HOPS_DEFAULT);
   const digest = args.digest.length === 32 ? args.digest : hash256(args.digest);
   const hops: ChainedHop[] = [];
   let utxo = args.tapeUtxo;
+  let cargoOff = 0;
   const tapeN = hopCount - 1;
   for (let i = 0; i < tapeN; i += 1) {
     const chunk = args.proof.subarray(0, Math.min(32, args.proof.length));
@@ -232,7 +277,10 @@ export function compileChainedWithdraw(args: {
       index: i,
       hopCount,
       chunkHash,
+      proof: args.proof,
+      cargoUtxos: args.cargoUtxos?.slice(cargoOff),
     });
+    cargoOff += hop.cargoCount;
     if (hop.raw.length > RELAY_STANDARD_TX_BYTES) {
       throw new Error(`tape hop ${i} ${hop.raw.length} > ${RELAY_STANDARD_TX_BYTES}`);
     }
@@ -261,6 +309,9 @@ export function compileChainedWithdraw(args: {
     extraKernels: args.extraKernels,
     extraPayouts: args.extraPayouts,
     payoutLockingBytecode: args.payoutLockingBytecode,
+    packTo: STANDARD_HOP_TARGET_BYTES,
+    packHopIndex: tapeN,
+    cargoUtxos: args.cargoUtxos?.slice(cargoOff),
   });
   if (successor.txBytes > RELAY_STANDARD_TX_BYTES) {
     throw new Error(`pay hop ${successor.txBytes} > ${RELAY_STANDARD_TX_BYTES}`);
@@ -323,6 +374,6 @@ export function chainedShape(chain: ChainedWithdraw): Record<string, unknown> {
     totalBytes: chain.totalBytes,
     timeoutCsv: chain.timeout.sequence,
     timeoutTxid: chain.timeout.txid,
-    note: "tape hops do not spend the pool; last hop pays; missing hop rejects the pay tx",
+    note: "tape hops do not spend the pool; last hop pays; each standard hop packs toward 99 KB",
   };
 }

@@ -59,8 +59,10 @@ import {
   DUST_SATS,
   successorFeeCoinSats,
   successorFeeSats,
+  STANDARD_HOP_TARGET_BYTES,
   type TxEnvelope,
 } from "./envelope.ts";
+import { cargoInputs, packCargoUnlockings, proofCargoLock, type CargoUtxo } from "./proof-cargo.ts";
 import { friShardUnlockings } from "./fri-openings.ts";
 import {
   compileCqzLockP2sh32,
@@ -221,6 +223,10 @@ export function compileCovenantSuccessor(args: {
   changeLockingBytecode?: Uint8Array;
   /** Envelope C: spend the tape tip so a missing/wrong hop rejects the pay tx. */
   tapeUtxo?: { tx_hash: string; tx_pos: number; value: number };
+  /** Pack leftover standard-envelope bytes with proof cargo (default 99 KB). 0 = skip. */
+  packTo?: number;
+  packHopIndex?: number;
+  cargoUtxos?: CargoUtxo[];
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -292,10 +298,14 @@ export function compileCovenantSuccessor(args: {
     throw new Error(`need ${1 + foldN + slotKernels} extra kernel UTXOs, got ${extras.length}`);
   }
 
-  const generated = generateTransaction({
-    version: 2,
-    locktime: 0,
-    inputs: [
+  const packTo =
+    args.packTo !== undefined
+      ? args.packTo
+      : args.envelope === "consensus"
+        ? 0
+        : STANDARD_HOP_TARGET_BYTES;
+  const packHopIndex = args.packHopIndex ?? 0;
+  const baseInputs = [
       {
         outpointIndex: args.pool.tx_pos,
         outpointTransactionHash: hexToBin(args.pool.tx_hash),
@@ -356,15 +366,15 @@ export function compileCovenantSuccessor(args: {
             },
           ]
         : []),
-    ],
-    outputs: [
+  ];
+  const outputs = [
       {
         lockingBytecode: lockOf(lockKind, slotKernels),
         valueSatoshis: value,
         token: {
           amount: 0n,
           category: args.pool.category,
-          nft: { capability: "mutable", commitment },
+          nft: { capability: "mutable" as const, commitment },
         },
       },
       ...payoutOutputs,
@@ -376,10 +386,32 @@ export function compileCovenantSuccessor(args: {
             },
           ]
         : []),
+  ];
+  const bare = generateTransaction({ version: 2, locktime: 0, inputs: baseInputs, outputs });
+  if (!bare.success) {
+    throw new Error(`covenant successor: ${JSON.stringify(bare.errors).slice(0, 500)}`);
+  }
+  const baseBytes = encodeTransaction(bare.transaction).length;
+  const cargo =
+    packTo > 0
+      ? packCargoUnlockings({
+          baseBytes,
+          proof: args.proof,
+          hopIndex: packHopIndex,
+          targetBytes: packTo,
+        })
+      : [];
+  const generated = generateTransaction({
+    version: 2,
+    locktime: 0,
+    inputs: [
+      ...baseInputs,
+      ...cargoInputs({ unlockings: cargo, utxos: args.cargoUtxos, hopIndex: packHopIndex }),
     ],
+    outputs,
   });
   if (!generated.success) {
-    throw new Error(`covenant successor: ${JSON.stringify(generated.errors).slice(0, 500)}`);
+    throw new Error(`covenant successor packed: ${JSON.stringify(generated.errors).slice(0, 500)}`);
   }
   const raw = encodeTransaction(generated.transaction);
   const poolUnlock = generated.transaction.inputs[0]!.unlockingBytecode.length;
@@ -480,11 +512,13 @@ export function compileFundVerifierKernels(
   kernelSats = 1_000,
   slotKernels = SLOT_KERNEL_COUNT,
   feeCoinSats: bigint = successorFeeCoinSats("standard"),
+  cargoCount = 0,
 ): {
   raw: Uint8Array;
   txid: string;
   fri: Array<{ tx_hash: string; tx_pos: number; value: number }>;
   extra: Array<{ tx_hash: string; tx_pos: number; value: number }>;
+  cargo: Array<{ tx_hash: string; tx_pos: number; value: number }>;
   changeValue: number;
   changePos: number;
   treasuryValue?: number;
@@ -499,12 +533,24 @@ export function compileFundVerifierKernels(
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
   const fee = 2_000n + BigInt(count) * 80n;
   const minerPad = feeCoinSats;
-  const leftover = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - minerPad - fee;
+  const leftover =
+    BigInt(utxo.value) -
+    BigInt(kernelSats) * BigInt(count) -
+    minerPad -
+    fee -
+    DUST_SATS * BigInt(cargoCount);
   if (leftover < DUST_SATS) throw new Error("utxo too small to fund verifier kernels");
   const treasuryWallet = createLabWallet();
   const fatFri = BigInt(kernelSats) + minerPad;
   const friLock = compileFriQueryLockP2sh32();
-  const tail = [{ lockingBytecode: p2pkhLockingOf(treasuryWallet), valueSatoshis: leftover }];
+  const cargoLock = proofCargoLock();
+  const tail = [
+    ...Array.from({ length: cargoCount }, () => ({
+      lockingBytecode: cargoLock,
+      valueSatoshis: DUST_SATS,
+    })),
+    { lockingBytecode: p2pkhLockingOf(treasuryWallet), valueSatoshis: leftover },
+  ];
   const generated = generateTransaction({
     version: 2,
     locktime: 0,
@@ -560,10 +606,15 @@ export function compileFundVerifierKernels(
       tx_pos: FRI_KERNEL_INPUTS + i,
       value: kernelSats,
     })),
+    cargo: Array.from({ length: cargoCount }, (_, i) => ({
+      tx_hash: txid,
+      tx_pos: count + i,
+      value: Number(DUST_SATS),
+    })),
     changeValue: Number(leftover),
-    changePos: count,
+    changePos: count + cargoCount,
     treasuryValue: Number(leftover),
-    treasuryPos: count,
+    treasuryPos: count + cargoCount,
     treasuryAddress: treasuryWallet.address,
   };
 }

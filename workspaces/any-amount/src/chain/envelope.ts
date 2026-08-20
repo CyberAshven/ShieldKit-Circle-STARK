@@ -9,6 +9,8 @@
 import { concatBytes } from "../pool/bytes.ts";
 
 export const RELAY_STANDARD_TX_BYTES = 100_000;
+/** Fill each standard hop up to this; leave ~1 KB so Electrum/policy does not clip. */
+export const STANDARD_HOP_TARGET_BYTES = 99_000;
 export const CONSENSUS_TX_BYTES = 1_000_000;
 /** Sum of chained hops (historical 32 MB block floor). Each hop is still ≤ 100 KB. */
 export const CHAINED_TX_BYTES = 32_000_000;
@@ -21,7 +23,7 @@ export const CHAINED_HOPS_MAX = 320;
 export const TAPE_TIMEOUT_CSV = 2;
 export const UNLOCKING_MAX_BYTES = 10_000;
 export const DUST_SATS = 546n;
-/** Public Chipnet relay is 1 sat/byte. 100k covers the ~80–95 KB standard spend. */
+/** Public Chipnet relay is 1 sat/byte. 100k covers a packed ~99 KB standard hop. */
 export const STANDARD_SUCCESSOR_FEE_SATS = 100_000n;
 /** Consensus (~270–480 KB) needs a matching fee or electrum/BCHN returns code 66. */
 export const CONSENSUS_SUCCESSOR_FEE_SATS = 400_000n;

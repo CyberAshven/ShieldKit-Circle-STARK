@@ -15,6 +15,7 @@ import {
   CHAINED_HOPS_MAX,
   CHAINED_TX_BYTES,
   RELAY_STANDARD_TX_BYTES,
+  STANDARD_HOP_TARGET_BYTES,
   TAPE_TIMEOUT_CSV,
   parseChainedHops,
   parseTxEnvelope,
@@ -65,7 +66,7 @@ describe("envelope C chained tape + last-hop pay", () => {
     const wallet = createLabWallet();
     const chain = compileChainedWithdraw({
       wallet,
-      tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 50_000 },
+      tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 400_000 },
       digest: proof.slice(0, 32),
       proof,
       pool: {
@@ -88,6 +89,7 @@ describe("envelope C chained tape + last-hop pay", () => {
       const hop = chain.hops[i]!;
       assert.equal(hop.role, "tape");
       assert.equal(hop.payoutCount, 0);
+      assert.ok(hop.txBytes >= STANDARD_HOP_TARGET_BYTES - 1_500, `tape hop ${i} ${hop.txBytes} should fill the 100 KB envelope`);
       assert.ok(hop.txBytes <= RELAY_STANDARD_TX_BYTES);
       const decoded = decodeTransaction(hop.raw);
       if (typeof decoded === "string") throw new Error(decoded);
@@ -105,6 +107,7 @@ describe("envelope C chained tape + last-hop pay", () => {
     const pay = chain.hops[chain.payIndex]!;
     assert.equal(pay.role, "pay");
     assert.ok(pay.payoutCount >= 1);
+    assert.ok(pay.txBytes >= STANDARD_HOP_TARGET_BYTES - 1_500, `pay hop ${pay.txBytes} should fill the 100 KB envelope`);
     assert.ok(pay.txBytes <= RELAY_STANDARD_TX_BYTES);
     const payTx = decodeTransaction(pay.raw);
     if (typeof payTx === "string") throw new Error(payTx);
@@ -129,7 +132,7 @@ describe("envelope C chained tape + last-hop pay", () => {
     const { w, proof } = mixProof();
     const chain = compileChainedWithdraw({
       wallet: createLabWallet(),
-      tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 50_000 },
+      tapeUtxo: { tx_hash: "aa".repeat(32), tx_pos: 0, value: 400_000 },
       hops: 2,
       digest: proof.slice(0, 32),
       proof,

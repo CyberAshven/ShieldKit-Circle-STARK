@@ -98,7 +98,7 @@ async function landAB(
   let step = "connect";
   try {
     step = "listunspent";
-    const need = envelope === "consensus" ? 800_000 : 350_000;
+    const need = envelope === "consensus" ? 800_000 : 400_000;
     const utxos = await listUnspent(client, wallet.address);
     let picked = pickFunded(utxos, need);
     if (!picked) {
@@ -151,6 +151,7 @@ async function landAB(
       1_000,
       slots,
       successorFeeCoinSats(envelope),
+      envelope === "consensus" ? 0 : 12,
     );
     const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);
@@ -172,6 +173,7 @@ async function landAB(
       slotKernels: slots,
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
+      cargoUtxos: funded.cargo,
     });
     mkdirSync(scratch, { recursive: true });
     writeFileSync(join(scratch, `successor-${envelope}.hex`), binToHex(successor.raw));
@@ -213,7 +215,7 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
   let step = "connect";
   try {
     step = "listunspent";
-    const need = 400_000;
+    const need = 800_000;
     const utxos = await listUnspent(client, wallet.address);
     let picked = pickFunded(utxos, need);
     if (!picked) {
@@ -248,13 +250,15 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
     });
     const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;
     await waitForTxid(client, genesisTxid);
-    if (genesis.changeValue === undefined || genesis.changeValue < 250_000) {
+    if (genesis.changeValue === undefined || genesis.changeValue < 400_000) {
       return { envelope: "chained", ok: false, genesis: genesisTxid, error: `change too small ${genesis.changeValue}` };
     }
     step = "tape-funder";
     const split = compileTapeFunder({
       wallet,
       utxo: { tx_hash: genesisTxid, tx_pos: 1, value: genesis.changeValue },
+      tapeSats: 300_000n,
+      cargoCount: 24,
     });
     const splitTxid = (await broadcastRetry(client, split.raw, split.txid)).txid;
     await waitForTxid(client, split.txid);
@@ -286,6 +290,7 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       statement: mix.statement,
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
+      cargoUtxos: split.cargo,
     });
     mkdirSync(scratch, { recursive: true });
     for (const hop of chain.hops) {
