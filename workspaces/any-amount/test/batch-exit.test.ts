@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import {
   BATCH_EXIT_KNOB_CEILING_SECONDS,
   BATCH_EXIT_KNOB_FLOOR_SECONDS,
+  BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT,
+  BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT,
   BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
   decodeRound,
   encodeRound,
@@ -16,6 +18,7 @@ import {
   remainingSeconds,
   roundIsOpen,
   runBatchExitCountdown,
+  sampleBatchWindowSeconds,
   shapeFusionOutputs,
   shuffleInPlace,
 } from "../src/pool/batch-exit.ts";
@@ -30,6 +33,8 @@ function lock(fill: number): Uint8Array {
 describe("opt-in batch exit", () => {
   it("one shared window default 180s; rejects out-of-range", () => {
     assert.equal(BATCH_EXIT_WINDOW_SECONDS_DEFAULT, 180);
+    assert.equal(BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT, 30);
+    assert.equal(BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT, 180);
     assert.equal(BATCH_EXIT_KNOB_FLOOR_SECONDS, 1);
     assert.equal(BATCH_EXIT_KNOB_CEILING_SECONDS, 86_400);
     assert.equal(parseBatchWindowSeconds(180), 180);
@@ -37,6 +42,51 @@ describe("opt-in batch exit", () => {
     assert.throws(() => parseBatchWindowSeconds(0), /must be in/);
     assert.throws(() => parseBatchWindowSeconds(86_401), /must be in/);
     assert.throws(() => parseBatchWindowSeconds(30.5), /integer/);
+  });
+
+  it("first waiter samples one shared length in [min, max]; later joiners do not re-roll", () => {
+    const t0 = 2_000_000;
+    const entropyMin = new Uint8Array(16);
+    const sampled = sampleBatchWindowSeconds({ minSeconds: 30, maxSeconds: 180, entropy: entropyMin });
+    assert.equal(sampled, 30);
+    const entropyMax = new Uint8Array(16).fill(0xff);
+    const hi = sampleBatchWindowSeconds({ minSeconds: 30, maxSeconds: 180, entropy: entropyMax });
+    assert.ok(hi >= 30 && hi <= 180);
+    assert.notEqual(hi, sampled);
+    assert.throws(() => sampleBatchWindowSeconds({ minSeconds: 180, maxSeconds: 30 }), /batch-min/);
+
+    const first = joinRound({
+      round: null,
+      sats: 1_000n,
+      lockingBytecode: lock(1),
+      nowMs: t0,
+      windowMinSeconds: 30,
+      windowMaxSeconds: 180,
+      windowEntropy: entropyMin,
+      id: "aa",
+      noteIndex: 0,
+      address: "bchtest:qqsample",
+    });
+    assert.equal(first.openedNew, true);
+    assert.equal(first.round.windowSeconds, 30);
+    assert.equal(first.remainingSeconds, 30);
+    assert.equal(first.claim.noteIndex, 0);
+
+    const late = joinRound({
+      round: first.round,
+      sats: 2_000n,
+      lockingBytecode: lock(2),
+      nowMs: t0 + 10_000,
+      windowMinSeconds: 30,
+      windowMaxSeconds: 180,
+      windowEntropy: entropyMax,
+      id: "bb",
+      noteIndex: 1,
+    });
+    assert.equal(late.openedNew, false);
+    assert.equal(late.round.windowSeconds, 30);
+    assert.equal(late.round.closesAtMs, first.round.closesAtMs);
+    assert.equal(late.remainingSeconds, 20);
   });
 
   it("first joiner opens the round; later joiners share the same close and do not restart the clock", () => {
@@ -168,13 +218,16 @@ describe("opt-in batch exit", () => {
     assert.deepEqual([...items].sort(), [1, 2, 3, 4]);
   });
 
-  it("CLI uses --batch-window, not per-user min/max waits", () => {
+  it("CLI samples a shared [min, max] round, not a per-user wait", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const cli = readFileSync(join(here, "..", "src", "cli.ts"), "utf8");
     assert.match(cli, /--batch-exit/);
-    assert.match(cli, /\[--batch-window 180\]/);
+    assert.match(cli, /--batch-min 30/);
+    assert.match(cli, /--batch-max 180/);
+    assert.match(cli, /--batch-window N/);
     assert.match(cli, /planBatchExit/);
-    assert.match(cli, /shared round/);
+    assert.match(cli, /one clock per batch/);
+    assert.match(cli, /sampleBatchWindowSeconds|windowMinSeconds|sampled/);
     const lock = readFileSync(join(here, "..", "src", "chain", "covenant-p2s.ts"), "utf8");
     assert.match(lock, /OP_1 OP_OUTPUTBYTECODE/);
     assert.match(lock, /OP_HASH256/);

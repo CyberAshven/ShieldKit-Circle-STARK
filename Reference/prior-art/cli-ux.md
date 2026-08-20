@@ -102,7 +102,7 @@ Recipient is the pool. **You type the amount.**
 3. Fresh destination: paste or generate. Full address on review, never truncated.
 4. Exit speed (two buttons, default is fast):
    - **Withdraw now** — prove and broadcast as soon as the review is confirmed.
-   - **Batch exit** — opt-in. Joins a **shared round**. The first waiter opens a `--batch-window` (default **180 s**). Anyone else who opts in before close is in the same flush. Countdown shows **time left in this round**, not a personal random delay. At close, batch whoever is already in as N P2PKH payouts (each lock+value HASH256-bound). Arrive after close → next round. Not CashFusion: no `OP_RETURN FUSE`, no Pedersen/blind Schnorr. Fee change is dust to a fresh address.
+   - **Batch exit** — opt-in. Joins a **shared round**. The first waiter samples a CSPRNG-uniform wait in `[--batch-min, --batch-max]` (default **30..180 s**). `--batch-window N` pins a fixed length. Anyone else who opts in before close waits the **remaining** time on that same clock (not their own roll). Countdown shows time left in this round. At close, one successor pays each waiter to that waiter's P2PKH (each lock+value HASH256-bound). Arrive after close → next round (new sample). Not CashFusion: no `OP_RETURN FUSE`, no Pedersen/blind Schnorr. Fee change is dust to a fresh address.
 5. Review: amount out, full `to`, fee, change left shielded, and (if batch) remaining countdown.
 6. `Back` · `Withdraw now` · `Batch exit`
 6. Same progress / success / fail states. Batch path never silently skips the countdown.

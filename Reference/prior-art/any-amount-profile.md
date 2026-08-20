@@ -16,7 +16,7 @@ Public deposit/withdraw amounts are still visible (Nova says this too). Weird am
 ## What it is not (yet)
 
 - Private transfer to someone else’s note — same family as Nova/Zcash, not required to type an amount. Add as a later action on this profile if we want it.
-- One-successor N-payout (sum of shuffled P2PKH = abs-net). Opt-in **batch-exit** is a shared `--batch-window` round (default 180s) on the any-amount CLI; the redeem still binds one HASH256 payout.
+- One-successor N-payout is shipped (sum of shuffled P2PKH = abs-net; every lock+value HASH256-bound). Opt-in **batch-exit** samples a shared CSPRNG-uniform wait in [30, 180]s (knobs `--batch-min`/`--batch-max`; `--batch-window` pins). Later opt-ins wait the remaining time on that clock. Each waiter is paid to that waiter's P2PKH.
 - Fv1’s frozen 0.1 ticket — that stays the **joint ShieldKit size gate** with toorik. Do not rename or widen `PoolActionFv1` on `main`. Our product statement is a **new profile** (`any-amount`, Nova-shaped) that still calls `Verify`.
 
 ## Statement (plugin, not a new STARK brand)

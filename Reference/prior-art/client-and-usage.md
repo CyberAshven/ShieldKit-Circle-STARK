@@ -25,7 +25,7 @@ Fv1 commands, conceptually:
 | wait | Nothing. Anonymity is everyone in this one set | Other people's deposits (any size) |
 | `action withdraw --to <fresh address>` | Prove membership + unused nullifier; pay **the amount you typed**; change stays as a new note; fee from a separate transparent input | reserve −=, new nullifier (+ change leaf) |
 
-Fast withdraw is the default. Opt-in `--batch-exit` joins a shared `--batch-window` round (default 180s): the first waiter opens the clock; at close, whoever already opted in is flushed together as N P2PKH payouts (each lock+value HASH256-bound). CLI countdown. Not the CashFusion FUSE protocol, and Fv1 still has no user batching. Fee change is dust to a fresh address. Private send-to-another-person is the same family but not required to type an amount.
+Fast withdraw is the default. Opt-in `--batch-exit` joins a shared round: the first waiter samples CSPRNG-uniform seconds in `[--batch-min, --batch-max]` (default 30..180); `--batch-window` pins a fixed length. Later opt-ins wait the remaining time on that clock. At close, one successor pays each waiter to that waiter's P2PKH. CLI countdown. Not the CashFusion FUSE protocol, and Fv1 still has no user batching. Fee change is dust to a fresh address. Private send-to-another-person is the same family but not required to type an amount.
 
 If two withdraw/deposit txs race the same state outpoint, ordinary UTXO rules pick a winner. The loser re-reads the new public roots, rebuilds the proof if needed, and retries. That is why the wallet must reconstruct state from chain, not from a server.
 

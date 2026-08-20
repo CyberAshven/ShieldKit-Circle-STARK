@@ -1,20 +1,23 @@
 /**
- * Opt-in batch exit is a **shared round**, not a per-user random delay.
+ * Opt-in batch exit is a **shared round**.
  *
- * First waiter opens a round of `--batch-window` seconds (default 180).
- * Anyone else who opts in before the round closes is in the same flush.
- * At close, batch whoever is already in. A late arriver after close opens
- * the next round. Per-user min/max waits were removed: they miss the group
- * when one person's clock fires before another's.
+ * First waiter opens one clock. Length is CSPRNG-uniform in
+ * [`--batch-min`, `--batch-max`] seconds (default 30..180), unless
+ * `--batch-window` pins a fixed length. Later opt-ins wait the **remaining**
+ * time — they do not roll their own timer (that would miss the group).
+ * At close, one successor pays each waiter to **that waiter's** P2PKH.
+ * A late arriver after close opens the next round (new entropy sample).
  *
  * Outputs are CashFusion-*shaped* shuffled multi-P2PKH. Not CashFusion
- * (no OP_RETURN FUSE, no Pedersen / blind Schnorr). One successor pays N
- * P2PKH outputs; the lock HASH256-binds every payout lock+value (not only
- * output 1). Fee change is a dust coin to a fresh address.
+ * (no OP_RETURN FUSE, no Pedersen / blind Schnorr). The lock HASH256-binds
+ * every payout lock+value. Fee change is a dust coin to a fresh address.
  */
 
-/** How long a round stays open after the first joiner. CLI `--batch-window`. */
-export const BATCH_EXIT_WINDOW_SECONDS_DEFAULT = 180;
+/** Default range the first waiter samples when `--batch-window` is omitted. */
+export const BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT = 30;
+export const BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT = 180;
+/** Pinned `--batch-window` default (also the default max of the sample range). */
+export const BATCH_EXIT_WINDOW_SECONDS_DEFAULT = BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT;
 export const BATCH_EXIT_KNOB_FLOOR_SECONDS = 1;
 export const BATCH_EXIT_KNOB_CEILING_SECONDS = 86_400;
 
@@ -23,6 +26,10 @@ export type BatchExitClaim = {
   sats: bigint;
   lockingBytecode: Uint8Array;
   enqueuedAtMs: number;
+  /** Local notebook index so a flush can pay this note, not someone else's. */
+  noteIndex?: number;
+  /** CashAddr this claim pays. Distinct per waiter. */
+  address?: string;
 };
 
 export type BatchRound = {
@@ -60,6 +67,21 @@ export function defaultBatchWindowSeconds(): number {
   return BATCH_EXIT_WINDOW_SECONDS_DEFAULT;
 }
 
+/**
+ * CSPRNG uniform integer in [min, max] inclusive. First waiter uses this as
+ * the shared round length. Not a per-person wait.
+ */
+export function sampleBatchWindowSeconds(args?: {
+  minSeconds?: number;
+  maxSeconds?: number;
+  entropy?: Uint8Array;
+}): number {
+  const min = parseBatchWindowSeconds(args?.minSeconds ?? BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT);
+  const max = parseBatchWindowSeconds(args?.maxSeconds ?? BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT);
+  if (min > max) throw new Error("batch-min must be <= batch-max");
+  return uniformInt(min, max, args?.entropy ?? crypto.getRandomValues(new Uint8Array(16)));
+}
+
 export function roundIsOpen(round: BatchRound, nowMs: number): boolean {
   return nowMs < round.closesAtMs;
 }
@@ -79,6 +101,8 @@ export function makeBatchExitClaim(args: {
   lockingBytecode: Uint8Array;
   nowMs?: number;
   id?: string;
+  noteIndex?: number;
+  address?: string;
 }): BatchExitClaim {
   if (args.sats <= 0n) throw new Error("batch-exit claim sats must be positive");
   if (args.lockingBytecode.length === 0) throw new Error("batch-exit claim needs a locking bytecode");
@@ -87,6 +111,8 @@ export function makeBatchExitClaim(args: {
     sats: args.sats,
     lockingBytecode: args.lockingBytecode,
     enqueuedAtMs: args.nowMs ?? Date.now(),
+    noteIndex: args.noteIndex,
+    address: args.address,
   };
 }
 
@@ -109,16 +135,23 @@ export function joinRound(args: {
   sats: bigint;
   lockingBytecode: Uint8Array;
   nowMs?: number;
+  /** Pin the shared length. Omit to sample uniform in [min, max]. */
   windowSeconds?: number;
+  windowMinSeconds?: number;
+  windowMaxSeconds?: number;
+  windowEntropy?: Uint8Array;
   id?: string;
+  noteIndex?: number;
+  address?: string;
 }): { round: BatchRound; remainingSeconds: number; openedNew: boolean; claim: BatchExitClaim } {
   const nowMs = args.nowMs ?? Date.now();
-  const windowSeconds = args.windowSeconds ?? defaultBatchWindowSeconds();
   const claim = makeBatchExitClaim({
     sats: args.sats,
     lockingBytecode: args.lockingBytecode,
     nowMs,
     id: args.id,
+    noteIndex: args.noteIndex,
+    address: args.address,
   });
   if (args.round && roundIsOpen(args.round, nowMs)) {
     const round: BatchRound = {
@@ -127,11 +160,18 @@ export function joinRound(args: {
     };
     return { round, remainingSeconds: remainingSeconds(round, nowMs), openedNew: false, claim };
   }
+  const windowSeconds =
+    args.windowSeconds ??
+    sampleBatchWindowSeconds({
+      minSeconds: args.windowMinSeconds,
+      maxSeconds: args.windowMaxSeconds,
+      entropy: args.windowEntropy,
+    });
   const round = openRound(windowSeconds, claim, nowMs);
   return { round, remainingSeconds: remainingSeconds(round, nowMs), openedNew: true, claim };
 }
 
-/** Map CSPRNG bytes onto [min, max] inclusive. Used to shuffle outputs, not wait times. */
+/** Map CSPRNG bytes onto [min, max] inclusive. Shared round length and output shuffle. */
 export function uniformInt(min: number, max: number, entropy: Uint8Array): number {
   if (!Number.isInteger(min) || !Number.isInteger(max)) throw new Error("uniformInt bounds must be integers");
   if (min > max) throw new Error("uniformInt min > max");
@@ -224,9 +264,14 @@ export function planBatchExit(args: {
   lockingBytecode: Uint8Array;
   round?: BatchRound | null;
   windowSeconds?: number;
+  windowMinSeconds?: number;
+  windowMaxSeconds?: number;
+  windowEntropy?: Uint8Array;
   entropy?: Uint8Array;
   nowMs?: number;
   id?: string;
+  noteIndex?: number;
+  address?: string;
 }): BatchExitPlan {
   const joined = joinRound({
     round: args.round ?? null,
@@ -234,7 +279,12 @@ export function planBatchExit(args: {
     lockingBytecode: args.lockingBytecode,
     nowMs: args.nowMs,
     windowSeconds: args.windowSeconds,
+    windowMinSeconds: args.windowMinSeconds,
+    windowMaxSeconds: args.windowMaxSeconds,
+    windowEntropy: args.windowEntropy,
     id: args.id,
+    noteIndex: args.noteIndex,
+    address: args.address,
   });
   const entropy = args.entropy ?? crypto.getRandomValues(new Uint8Array(32));
   const outputs = shapeFusionOutputs(joined.round.claims, entropy);
@@ -254,7 +304,14 @@ export type StoredBatchRound = {
   windowSeconds: number;
   openedAtMs: number;
   closesAtMs: number;
-  claims: Array<{ id: string; sats: string; lockingHex: string; enqueuedAtMs: number }>;
+  claims: Array<{
+    id: string;
+    sats: string;
+    lockingHex: string;
+    enqueuedAtMs: number;
+    noteIndex?: number;
+    address?: string;
+  }>;
 };
 
 export function encodeRound(round: BatchRound): StoredBatchRound {
@@ -268,6 +325,8 @@ export function encodeRound(round: BatchRound): StoredBatchRound {
       sats: c.sats.toString(),
       lockingHex: Buffer.from(c.lockingBytecode).toString("hex"),
       enqueuedAtMs: c.enqueuedAtMs,
+      noteIndex: c.noteIndex,
+      address: c.address,
     })),
   };
 }
@@ -283,6 +342,8 @@ export function decodeRound(stored: StoredBatchRound): BatchRound {
       sats: BigInt(c.sats),
       lockingBytecode: Uint8Array.from(Buffer.from(c.lockingHex, "hex")),
       enqueuedAtMs: c.enqueuedAtMs,
+      noteIndex: c.noteIndex,
+      address: c.address,
     })),
   };
 }

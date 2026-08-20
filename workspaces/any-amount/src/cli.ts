@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { circleFriPlugin } from "./backends/circle/plugin.ts";
 import { hashLabPlugin } from "./backends/hash-lab.ts";
 import { requestFaucet, walletBalance } from "./chain/chipnet.ts";
-import { createLabWallet, loadLabWallet, saveLabWallet, type LabWallet } from "./chain/wallet.ts";
+import { createLabWallet, loadLabWallet, p2pkhLockingOf, saveLabWallet, type LabWallet } from "./chain/wallet.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "./pool/notes.ts";
 import {
   DEFAULT_INTERNAL_HASH_ID,
@@ -15,6 +15,8 @@ import {
   type InternalHashId,
 } from "./backends/circle/internal-hash.ts";
 import {
+  BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT,
+  BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT,
   BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
   decodeRound,
   encodeRound,
@@ -26,9 +28,9 @@ import {
   fusionBatchSketch,
   type BatchRound,
 } from "./pool/batch-exit.ts";
-import { LAB_PAYOUT_LOCKING } from "./chain/payout.ts";
+import { hashPayoutLocking } from "./chain/payout.ts";
 import { emptyState, encodeState, STATE_BASE_SATS, utxoValueFor } from "./pool/state.ts";
-import { applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition.ts";
+import { applyBatchExit, applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "./pool/mix-successor.ts";
 import { announceEvent, newRoundKey } from "./nostr/bus.ts";
 import { torStatus } from "./nostr/tor.ts";
@@ -53,6 +55,7 @@ import {
   proveFri,
   proofByteLength,
   verifyFri,
+  wBatchExit,
   wDeposit,
   wWithdraw,
 } from "./backends/circle/fri.ts";
@@ -65,12 +68,15 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   balance                 electrum listunspent
   pool create             local genesis state (PAA1)
   pool deposit --sats N [--hash sha256|blake2s|poseidon2-m31] [--plugin circle-fri-m31|hash-lab-v0]
-  pool withdraw --sats N [--batch-exit] [--batch-window 180]
+  pool withdraw --sats N [--batch-exit] [--batch-min 30] [--batch-max 180] [--batch-window N]
                           partial withdraw (same hash/plugin as the machine)
                           --batch-exit is opt-in: join a shared round. First
-                          waiter opens a 180s window (override with --batch-window).
-                          At close, flush whoever already opted in as N P2PKH
-                          payouts (each lock+value bound). Not FUSE.
+                          waiter samples CSPRNG uniform seconds in [min, max]
+                          (default 30..180). Later opt-ins wait the remaining
+                          time — one clock per batch, not per person.
+                          --batch-window pins a fixed length (no sample).
+                          At close, one successor pays each waiter to that
+                          waiter's P2PKH. Not FUSE.
 
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
   pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded
@@ -102,21 +108,22 @@ function flag(name: string): boolean {
   return process.argv.includes(name);
 }
 
-function batchWindowArg(): number {
-  if (flag("--batch-min")) {
-    throw new Error(
-      "batch-exit is one shared round, not a per-user min/max wait. Use --batch-window seconds (default 180).",
-    );
+function batchWindowOpts(): {
+  pinned?: number;
+  minSeconds: number;
+  maxSeconds: number;
+} {
+  const minSeconds = flag("--batch-min")
+    ? parseBatchWindowSeconds(Number(arg("--batch-min")))
+    : BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT;
+  const maxSeconds = flag("--batch-max")
+    ? parseBatchWindowSeconds(Number(arg("--batch-max")))
+    : BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT;
+  if (minSeconds > maxSeconds) throw new Error("batch-min must be <= batch-max");
+  if (flag("--batch-window")) {
+    return { pinned: parseBatchWindowSeconds(Number(arg("--batch-window"))), minSeconds, maxSeconds };
   }
-  const raw = flag("--batch-window")
-    ? arg("--batch-window")
-    : flag("--batch-max")
-      ? arg("--batch-max")
-      : String(BATCH_EXIT_WINDOW_SECONDS_DEFAULT);
-  if (flag("--batch-max") && !flag("--batch-window")) {
-    console.error("note: --batch-max is an alias for --batch-window (shared round close, not a personal max)");
-  }
-  return parseBatchWindowSeconds(Number(raw));
+  return { minSeconds, maxSeconds };
 }
 
 function batchRoundPath(): string {
@@ -135,6 +142,14 @@ async function loadBatchRound(): Promise<BatchRound | null> {
 async function saveBatchRound(round: BatchRound): Promise<void> {
   await mkdir(join(process.cwd(), ".local", "batch-exit"), { recursive: true });
   await writeFile(batchRoundPath(), JSON.stringify(encodeRound(round), null, 2));
+}
+
+async function clearBatchRound(): Promise<void> {
+  try {
+    await unlink(batchRoundPath());
+  } catch {
+    /* already gone */
+  }
 }
 
 function pluginFamilyArg(fallback: string = DEFAULT_ZKP_FAMILY): string {
@@ -246,7 +261,10 @@ async function main(): Promise<void> {
           internalHashIds: INTERNAL_HASH_IDS,
           batchExit: {
             optIn: true,
-            windowSeconds: BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
+            windowMinSeconds: BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT,
+            windowMaxSeconds: BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT,
+            windowSecondsPinnedDefault: BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
+            sample: "csprng-uniform-shared-round",
             shape: "cashfusion-like-multi-p2pkh",
             model: "shared-round",
           },
@@ -351,23 +369,62 @@ async function main(): Promise<void> {
     const held = loaded.notes.find((n) => n.note.amountSats >= sats);
     if (!held) throw new Error("no note covers that amount");
     let batchNote: string | undefined;
+    let payoutDigest = new Uint8Array(32);
     if (flag("--batch-exit")) {
-      const windowSeconds = batchWindowArg();
+      const opts = batchWindowOpts();
+      const dest = createLabWallet();
+      const payoutDir = join(process.cwd(), ".local", "batch-exit");
+      await mkdir(payoutDir, { recursive: true });
       const plan = planBatchExit({
         sats,
-        lockingBytecode: LAB_PAYOUT_LOCKING,
+        lockingBytecode: p2pkhLockingOf(dest),
         round: await loadBatchRound(),
-        windowSeconds,
+        windowSeconds: opts.pinned,
+        windowMinSeconds: opts.minSeconds,
+        windowMaxSeconds: opts.maxSeconds,
+        noteIndex: held.index,
+        address: dest.address,
       });
+      await saveLabWallet(dest, join(payoutDir, `payout-${plan.claim.id}.json`));
       await saveBatchRound(plan.round);
       const who = plan.openedNew ? "opened a new round" : "joined the open round";
+      const sampled = opts.pinned === undefined && plan.openedNew ? " sampled" : "";
       console.error(
-        `batch-exit opt-in: ${who}; ${plan.round.claims.length} waiter(s); closes in ${plan.remainingSeconds}s (window ${plan.windowSeconds}s)`,
+        `batch-exit opt-in: ${who}; ${plan.round.claims.length} waiter(s); closes in ${plan.remainingSeconds}s (${sampled ? "sampled " : ""}window ${plan.windowSeconds}s in [${opts.minSeconds}, ${opts.maxSeconds}]); pay ${dest.address}`,
       );
       await runBatchExitCountdown(plan.remainingSeconds);
       const latest = (await loadBatchRound()) ?? plan.round;
       const left = remainingSeconds(latest, Date.now());
       if (left === 0) {
+        const items = latest.claims.flatMap((c) => {
+          if (c.noteIndex === undefined) return [];
+          const n = loaded.notes.find((h) => h.index === c.noteIndex);
+          if (!n || c.sats !== n.note.amountSats) return [];
+          return [
+            {
+              note: n.note,
+              index: n.index,
+              withdrawSats: c.sats,
+              payoutLocking: c.lockingBytecode,
+            },
+          ];
+        });
+        if (items.length >= 1) {
+          const batch = applyBatchExit(loaded.machine, items);
+          const wit = wBatchExit(batch.spent.map((s) => ({ note: s.note, index: s.index, path: s.path })));
+          const proof = await plugin.prove(batch.statement, { ...wit, hash: hash.id });
+          const vFlush = plugin.verify(batch.statement, proof, { hash: hash.id });
+          if (!vFlush.ok) throw new Error(vFlush.reason);
+          const next = loaded.notes.filter((n) => !items.some((it) => it.index === n.index));
+          await saveMachine(batch.machine, next, plugin.family);
+          await clearBatchRound();
+          const sketch = fusionBatchSketch(shapeFusionOutputs(latest.claims));
+          console.log(JSON.stringify({ ...sketch, addresses: latest.claims.map((c) => c.address ?? null) }));
+          console.log(
+            `batch-exit flush waiters=${items.length} window=${latest.windowSeconds}s reserve=${batch.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} verify=ok`,
+          );
+          return;
+        }
         const sketch = fusionBatchSketch(shapeFusionOutputs(latest.claims));
         batchNote = `batch-exit waiters=${latest.claims.length} window=${latest.windowSeconds}s shape=${sketch.shape}`;
         console.log(JSON.stringify(sketch));
@@ -375,8 +432,9 @@ async function main(): Promise<void> {
         batchNote = `batch-exit still-open remaining=${left}s waiters=${latest.claims.length}`;
         console.log(JSON.stringify({ remainingSeconds: left, waiters: latest.claims.length }));
       }
+      payoutDigest = hashPayoutLocking(p2pkhLockingOf(dest));
     }
-    const w = applyWithdraw(loaded.machine, held.note, held.index, new Uint8Array(32), sats);
+    const w = applyWithdraw(loaded.machine, held.note, held.index, payoutDigest, sats);
     const witness = { ...wWithdraw(held.note, held.index, w.path, w.created), hash: hash.id };
     const proof = await plugin.prove(w.statement, witness);
     const v = plugin.verify(w.statement, proof, { hash: hash.id });

@@ -23,10 +23,13 @@ export {
   permutePoseidon2M31,
 } from "./backends/circle/poseidon2-m31.ts";
 export {
+  BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT,
+  BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT,
   BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
   defaultBatchWindowSeconds,
   joinRound,
   planBatchExit,
+  sampleBatchWindowSeconds,
   shapeFusionOutputs,
 } from "./pool/batch-exit.ts";
 export { soundnessWorksheet } from "./backends/circle/soundness.ts";
