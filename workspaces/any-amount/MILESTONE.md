@@ -14,7 +14,7 @@ Any-amount pool. Circle FRI is **plugin #1**, not the pool identity.
 | `--hash sha256` / `blake2s` / `poseidon2-m31` | default **sha256** (CashVM `OP_SHA256`) | Poseidon2-M31 is toorik Grain (ePrint 2023/323), not a lock opcode. |
 | `--plugin` | **circle-fri-m31** first; `hash-lab-v0` lab stub | Reserved sandwiches: `goldilocks-fri` (AIR+FRI), `air-whir` (AIR+WHIR), `spartan-whir` (Spartan+WHIR), `groth16` (pairing). `whir` is a PCS; `spartan` is an IOP. |
 
-Envelope **B** is the hole-free statistical-soundness envelope (C pay hop is the same spend). One consensus tx, Circle FRI M31, TRACE=64, FRI_N=1024, **36 unique-orbit** queries, 20-bit grind, FRI_VERSION 9. CashVM kernels (chunked, 10 KB unlocking each):
+Envelope **B** is the hole-free statistical-soundness envelope (C's pay hop runs the same kernels, but 4 R-slots instead of 36 — see Envelope C below). One consensus tx, Circle FRI M31, TRACE=64, FRI_N=1024, **36 unique-orbit** queries, 20-bit grind, FRI_VERSION 9. CashVM kernels (chunked, 10 KB unlocking each):
 
 | Kernel | On-chain check |
 | --- | --- |
@@ -23,7 +23,7 @@ Envelope **B** is the hole-free statistical-soundness envelope (C pay hop is the
 | Fold ×36 | Remaining FRI layers (`COMMITTED_LAYERS` = 7) + foldPair, one query per redeem |
 | Bind-T | Newton T interpolates packed cells |
 | algebraicC | Point checks (digest cell, seq+1, action 1\|2, UTXO conservation). **Is** the FRI interpolant: C = interpolant(algebraicC residuals), Q = C/Z (`FRI_VERSION` 9). Off-trace airNumerator (`FRI_VERSION` 8) is prior art, not this statement |
-| Slot ×36 | FS index recomputed; `R_on(i)+Z(i)·R_off(i)`; `(qTable−R)·Z` equals AIR numerator from T. Masked nTable cannot cancel R |
+| Slot ×36 | FS index recomputed; `R_on(i)+Z(i)·R_off(i)`; `(qTable−R)·Z` equals `C(z)`, the algebraicC residual interpolant (`FRI_VERSION` 9); honest C is the zero polynomial. Independent of nTable — masked nTable cannot cancel R |
 | Note-auth ×1 | SHA-256 note preimage → leaf; Merkle walk to NFT `noteRoot`; `nf = SHA256(instance\|\|owner\|\|rho)`; `SHA256(oldNfRoot\|\|nf)` (withdraw) or equal nfRoots (deposit). Change-note append when `createdSteps` is non-empty. On **B and C's pay hop** (C funds it with `forceNoteAuth`). A has no room for this kernel. |
 
 **99 KB packing is not the verifier.** `packTo` defaults to **0**. Dummy `OP_DROP` leftover-fill cargo is not foldPair / C=QZ / R / note-auth. Density pad on high-index FS kernels (unlocking longer so `800×(41+unlocking)` covers the hash loop) is the VM meter, not cargo. Leftover 1 MB on B is unused headroom for more real kernels.
@@ -116,7 +116,7 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
 ## What compile + 2026 VM tests prove (not a new Chipnet land)
 
-- Hole-free 36-query B: grind, Merkle + pair-blob bind, remaining fold layers, foldPair, `(q−R)·Z = N` from T, algebraicC point checks, on-chain R, note Merkle + nullifier chain + amount/auth preimage.
+- Hole-free 36-query B: grind, Merkle + pair-blob bind, remaining fold layers, foldPair, `(q−R)·Z = C(z)` (honest C = 0), algebraicC point checks, on-chain R, note Merkle + nullifier chain + amount/auth preimage.
 - False AIR rejected on the 36-query lock, not only by `verifyFri`. Fake note / cooked path / cooked nfRoot rejected on CashVM.
 - A ≤ 100 KB (no note-auth kernel); B ≤ 1 MB; leftover unused, not cargo.
 - C is 19 standard txs: 18 tape query slices + a standard pay hop (89338 B), none over 100 KB.
