@@ -106,15 +106,19 @@ export function encodeFriQueryUnlocking(args: {
   parentPath: Uint8Array[];
   parentIndex: number;
   layerIndex?: number;
+  slot?: number;
 }): Uint8Array {
   const steps = encodeSteps(args.parentIndex, args.parentPath);
   const layer = args.layerIndex ?? 0;
-  const layerPush = layer === 0 ? Uint8Array.of(0x00) : Uint8Array.of(0x50 + layer);
+  const layerPush = layer === 0 ? Uint8Array.of(0x00) : layer <= 16 ? Uint8Array.of(0x50 + layer) : Uint8Array.of(1, layer);
+  const slot = args.slot ?? 0;
+  const slotPush = slot === 0 ? Uint8Array.of(0x00) : slot <= 16 ? Uint8Array.of(0x50 + slot) : Uint8Array.of(1, slot);
   return concat([
     push(args.left),
     push(args.right),
     push(steps),
     layerPush,
+    slotPush,
     Uint8Array.of(0x51),
     push(compileFriMerkleOnlyKernel()),
   ]);

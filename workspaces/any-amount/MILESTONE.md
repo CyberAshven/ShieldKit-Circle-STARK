@@ -16,7 +16,7 @@ Any-amount pool. Circle FRI is **plugin #1**, not the pool identity.
 
 Envelope **B** is the hole-free statistical-soundness envelope: 36 unique-orbit foldPair + C=QZ, plus grind and algebraicC kernels (chunked across 10 KB inputs). Leftover bytes of the 1 MB cap are unused headroom, not OP_DROP cargo. Envelope **C** pay hop is B. Tape hops are extra real fold/C=QZ slices in 100 KB (more hops if needed); they do not accumulate 36 queries across txs. Skip-tape still hits the B pay hop. Envelope **A** stays inside 100 KB (1 fold + 6 C=QZ, plus grind/algebraicC if they fit). CashVM still does not evaluate R (statistical-ZK is later). Merkle auth of openings and remaining fold layers already run in the FRI/fold kernels.
 
-`pool measure-tx` after this compiler. Do not treat 99 KB dummy-pack tables as current.
+Compile size proof (not a land): A **83268 B** (unlock 2765), B **480259 B** (unlock 5365), 1 MB headroom **519741 B** unused (not cargo). Each unlocking ≤ 10 KB.
 
 ### On Chipnet this session
 

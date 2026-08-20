@@ -1,5 +1,5 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
-import { FRI_LOG_N, FRI_QUERIES } from "../backends/circle/params.ts";
+import { FRI_LOG_N } from "../backends/circle/params.ts";
 import { AIR_OFF_QTABLE } from "./air-cqz.ts";
 
 /** Fixed kernel-input count in the pool lock (must be known at genesis). */
@@ -16,6 +16,7 @@ export const FRI_KERNEL_INPUTS = 10;
 export const FRI_LAYER_UNBOUND = 16;
 
 export const FRI_ONE_OPENING = `
+OP_TOALTSTACK
 OP_DUP
 <${FRI_LAYER_UNBOUND}>
 OP_GREATERTHANOREQUAL
@@ -88,11 +89,19 @@ OP_FROMALTSTACK
 OP_DROP
 OP_FROMALTSTACK
 OP_IF
+  OP_FROMALTSTACK
+  <4>
+  OP_MUL
+  <${AIR_OFF_QTABLE}>
+  OP_ADD
   <0> OP_INPUTBYTECODE
   <1> OP_SPLIT OP_NIP
   <2> OP_SPLIT OP_NIP
-  <${AIR_OFF_QTABLE}> OP_SPLIT OP_NIP
-  <${FRI_QUERIES * 4}> OP_SPLIT OP_DROP
+  OP_SWAP
+  OP_SPLIT OP_NIP
+  <4> OP_SPLIT OP_DROP
+  <0x00> OP_CAT
+  OP_BIN2NUM
   OP_TOALTSTACK
   <0x00> OP_CAT
   OP_BIN2NUM
@@ -100,42 +109,19 @@ OP_IF
   <0x00> OP_CAT
   OP_BIN2NUM
   OP_FROMALTSTACK
-  <0>
-  <0>
-  OP_BEGIN
-    OP_DUP
-    <${FRI_QUERIES}>
-    OP_LESSTHAN
-    OP_IF
-      OP_2 OP_PICK
-      OP_1 OP_PICK
-      <4> OP_MUL
-      OP_SPLIT OP_NIP
-      <4> OP_SPLIT OP_DROP
-      <0x00> OP_CAT
-      OP_BIN2NUM
-      OP_5 OP_PICK
-      OP_OVER
-      OP_NUMEQUAL
-      OP_SWAP
-      OP_5 OP_PICK
-      OP_NUMEQUAL
-      OP_BOOLOR
-      OP_2 OP_ROLL
-      OP_BOOLOR
-      OP_SWAP
-      OP_1ADD
-      OP_0
-    OP_ELSE
-      OP_DROP
-      OP_NIP
-      OP_VERIFY
-      OP_2DROP
-      OP_1
-    OP_ENDIF
-  OP_UNTIL
+  OP_DUP
+  OP_3 OP_PICK
+  OP_NUMEQUAL
+  OP_SWAP
+  OP_2 OP_PICK
+  OP_NUMEQUAL
+  OP_BOOLOR
+  OP_VERIFY
+  OP_2DROP
   OP_1
 OP_ELSE
+  OP_FROMALTSTACK
+  OP_DROP
   OP_2DROP
   OP_0
 OP_ENDIF

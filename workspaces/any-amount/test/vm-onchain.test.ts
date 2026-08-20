@@ -226,6 +226,7 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
       parentPath: firstL0!.parentPath,
       parentIndex: firstL0!.parentIndex,
       layerIndex: 0,
+      slot: firstL0!.slot,
       packed: honestPacked,
     });
     assert.equal(honestOpen.accepted, true, honestOpen.error ?? "honest leaf must be in qTable");

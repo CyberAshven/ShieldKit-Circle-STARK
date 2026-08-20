@@ -21,7 +21,12 @@ import { createLabWallet } from "../src/chain/wallet.ts";
 import { encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
 import { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
 import { CONSENSUS_TX_BYTES, RELAY_STANDARD_TX_BYTES, UNLOCKING_MAX_BYTES } from "../src/chain/envelope.ts";
-import { evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
+import { evaluateFriQueryOpening, evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
+import { compileFriQueryKernel } from "../src/chain/fri-kernel.ts";
+import { collectFriOpenings } from "../src/chain/fri-openings.ts";
+import { encodeAirPacked } from "../src/chain/air-cqz.ts";
+import { COMMITTED_LAYERS } from "../src/backends/circle/params.ts";
+import { foldQueriesAsm } from "../src/chain/fold-asm.ts";
 
 function mix() {
   const note: Note = {
@@ -52,6 +57,9 @@ describe("hole-free statistical-soundness kernels (B)", () => {
     const r36 = compilePoolCovenant({ slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
     assert.ok(r6.length <= UNLOCKING_MAX_BYTES, `6-slot redeem ${r6.length}`);
     assert.ok(r36.length <= UNLOCKING_MAX_BYTES, `36-slot redeem ${r36.length}`);
+    const fri = compileFriQueryKernel();
+    assert.ok(fri.length <= UNLOCKING_MAX_BYTES, `FRI kernel ${fri.length}`);
+    assert.ok(foldQueriesAsm(1).includes(String(COMMITTED_LAYERS)), "fold kernel walks every FRI layer");
   });
 
   it("honest 36-query B successor VM-accepts with grind + algebraicC", () => {
@@ -104,6 +112,36 @@ describe("hole-free statistical-soundness kernels (B)", () => {
     assert.ok(B.txBytes > RELAY_STANDARD_TX_BYTES, "B is the 36-query consensus tx");
     const headroom = CONSENSUS_TX_BYTES - B.txBytes;
     assert.ok(headroom > 0, "B leftover is unused envelope, not OP_DROP cargo");
+    console.log(`size-proof A=${A.txBytes} B=${B.txBytes} headroom=${headroom} Aunlock=${A.unlockingBytes} Bunlock=${B.unlockingBytes}`);
+  });
+
+  it("each layer-0 opening binds qTable[slot], not any slot", () => {
+    const { w, proof } = mix();
+    const packed = encodeAirPacked(w.statement, proof);
+    const firstL0 = collectFriOpenings(proof).find((o) => o.layerIndex === 0);
+    assert.ok(firstL0);
+    const ok = evaluateFriQueryOpening({
+      left: firstL0!.left,
+      right: firstL0!.right,
+      root: firstL0!.root,
+      parentPath: firstL0!.parentPath,
+      parentIndex: firstL0!.parentIndex,
+      layerIndex: 0,
+      slot: firstL0!.slot,
+      packed,
+    });
+    assert.equal(ok.accepted, true, ok.error ?? "honest slot");
+    const wrong = evaluateFriQueryOpening({
+      left: firstL0!.left,
+      right: firstL0!.right,
+      root: firstL0!.root,
+      parentPath: firstL0!.parentPath,
+      parentIndex: firstL0!.parentIndex,
+      layerIndex: 0,
+      slot: (firstL0!.slot + 1) % FRI_QUERIES,
+      packed,
+    });
+    assert.equal(wrong.accepted, false, "L0 felt must match qTable[slot], not another slot");
   });
 
   it("false AIR (trace bump) is rejected on-chain, not only by verifyFri", () => {

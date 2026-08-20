@@ -1,7 +1,7 @@
 import { encodeLe, M31 } from "../backends/circle/m31.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { MerkleTree } from "../backends/circle/merkle.ts";
-import { COMMITTED_LAYERS, FRI_N } from "../backends/circle/params.ts";
+import { COMMITTED_LAYERS, FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
 import { compileFriQueryKernel, FRI_KERNEL_INPUTS, FRI_LAYER_UNBOUND } from "./fri-kernel.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
 import { AIR_PACKED_SIZE, AIR_OFF_ROOTS } from "./air-cqz.ts";
@@ -35,6 +35,8 @@ export type FriOpening = {
   layerIndex: number;
   /** Fiat–Shamir domain index for this query (same on all 7 layers). */
   queryIndex: number;
+  /** Packed qTable slot 0..FRI_QUERIES-1. */
+  slot: number;
 };
 
 /** One PUSHDATA2 of the 1200-byte AIR packed blob (roots at offset 0). */
@@ -50,7 +52,8 @@ export function collectFriOpenings(proof: Uint8Array | FriProof): FriOpening[] {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
   const out: FriOpening[] = [];
   let boundQ = false;
-  for (const q of p.queries) {
+  for (let slot = 0; slot < p.queries.length; slot += 1) {
+    const q = p.queries[slot]!;
     for (let r = 0; r < q.layers.length; r += 1) {
       const layer = q.layers[r]!;
       const n = FRI_N >> r;
@@ -69,6 +72,7 @@ export function collectFriOpenings(proof: Uint8Array | FriProof): FriOpening[] {
         root: p.layerRoots[r]!,
         layerIndex,
         queryIndex: q.index,
+        slot,
       });
     }
   }
@@ -77,7 +81,7 @@ export function collectFriOpenings(proof: Uint8Array | FriProof): FriOpening[] {
 
 function openingPushBytes(o: FriOpening): number {
   const steps = encodeSteps(o.parentIndex, o.parentPath);
-  return pushData(o.left).length + pushData(o.right).length + pushData(steps).length + 1;
+  return pushData(o.left).length + pushData(o.right).length + pushData(steps).length + 2;
 }
 
 /** Split openings into exactly FRI_KERNEL_INPUTS shards, each under 10 KB unlocking. */
@@ -135,6 +139,7 @@ export function encodeFriBatchUnlocking(
       pushData(o.right),
       pushData(encodeSteps(o.parentIndex, o.parentPath)),
       pushScriptNumber(o.layerIndex),
+      pushScriptNumber(o.slot),
     );
   }
   parts.push(pushScriptNumber(openings.length));
@@ -179,6 +184,7 @@ export function dummyFriOpenings(count = FRI_KERNEL_INPUTS): FriOpening[] {
       root: tree.root,
       layerIndex: k % COMMITTED_LAYERS,
       queryIndex: 0,
+      slot: k % FRI_QUERIES,
     });
   }
   return out;
@@ -227,6 +233,7 @@ export function dummyFriOpeningsWide(count = 1): FriOpening[] {
       root: tree.root,
       layerIndex: 0,
       queryIndex: 0,
+      slot: 0,
     });
   }
   return out;
