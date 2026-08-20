@@ -9,7 +9,7 @@
 import { concatBytes } from "../pool/bytes.ts";
 
 export const RELAY_STANDARD_TX_BYTES = 100_000;
-/** Opt-in leftover-fill target. Not the verifier. `packTo` defaults to 0. */
+/** Legacy constant. Leftover-fill pack-to-99 KB is not used on A, B, or C. */
 export const STANDARD_HOP_TARGET_BYTES = 99_000;
 export const CONSENSUS_TX_BYTES = 1_000_000;
 /** Sum of chained hops (historical 32 MB block floor). Each hop is still ≤ 100 KB. */

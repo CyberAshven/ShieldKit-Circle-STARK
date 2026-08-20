@@ -45,7 +45,7 @@ import {
 } from "./params.ts";
 import { uniqueQueryIndices } from "./query-sample.ts";
 import {
-  airQuotientLde,
+  algebraicCQuotientLde,
   algebraicC,
   assertSatisfied,
   buildTrace,
@@ -233,7 +233,7 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
   const big = circleDomain(FRI_N);
   const viewingKey = freshViewingKey();
   const vCommit = viewingCommit(viewingKey, hash);
-  const { qLde, zLde } = airQuotientLde(statement, small, big, hash);
+  const { qLde, zLde } = algebraicCQuotientLde(statement, small, big, hash);
   const onC = openingMaskCoeffs(vCommit, hash, "on");
   const offC = openingMaskCoeffs(vCommit, hash, "off");
   const tLde = qLde.map((q, i) => add(q, add(evalMaskPoly(onC, i), mul(zLde[i]!, evalMaskPoly(offC, i)))));
@@ -318,7 +318,7 @@ export function proveFromTLde(
   const vCommit = viewingCommit(viewingKey, hash);
   const big = circleDomain(FRI_N);
   const small = circleDomain(TRACE_LEN);
-  const { zLde } = airQuotientLde(statement, small, big, hash);
+  const { zLde } = algebraicCQuotientLde(statement, small, big, hash);
   const onC = openingMaskCoeffs(vCommit, hash, "on");
   const offC = openingMaskCoeffs(vCommit, hash, "off");
   const masked = tLde.map((q, i) => add(q, add(evalMaskPoly(onC, i), mul(zLde[i]!, evalMaskPoly(offC, i)))));
@@ -387,7 +387,7 @@ export function mutateTraceAndProve(statement: PoolStatement, bumpIndex: number,
   const big = circleDomain(FRI_N);
   const trace = buildTrace(statement, witness);
   assertSatisfied(trace);
-  const { qLde } = airQuotientLde(statement, small, big, defaultInternalHash());
+  const { qLde } = algebraicCQuotientLde(statement, small, big, defaultInternalHash());
   const bumped = qLde.map((x, i) => (i === bumpIndex % qLde.length ? add(x, 1n) : add(x, 1n)));
   return proveFromTLde(statement, bumped, trace.auth);
 }
@@ -422,8 +422,8 @@ function resolveAuthForVerify(
 }
 
 /**
- * Opening-only verifier. FRI target is algebraicC / Z (conservation, sequence,
- * action). Membership is a sibling nativeWalk, not a residual flag.
+ * Opening-only verifier. FRI target is C/Z where C interpolates algebraicC
+ * residuals (FRI_VERSION 9). Membership is a sibling nativeWalk.
  * Published encodings mask the note preimage; pass `viewingKey` to open it.
  */
 export function verifyFri(
@@ -449,7 +449,7 @@ export function verifyFri(
 
   const cVec = algebraicC(publicCells(statement, hash), statement, hash);
   if (cVec.some((r) => r !== 0n)) return { ok: false, reason: "algebraicC" };
-  const { nLde, zLde } = airQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain(FRI_N), hash);
+  const { nLde, zLde } = algebraicCQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain(FRI_N), hash);
 
   const digest = hash.digest(encodeStatement(statement, hash));
   const commit = proof.viewingCommit && proof.viewingCommit.length === 32 ? proof.viewingCommit : new Uint8Array(32);
@@ -736,5 +736,5 @@ export {
   type InternalHashId,
 } from "./internal-hash.ts";
 export type { FriWitness, FriAuth };
-export { airQuotientLde, algebraicC, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wBatchExit, wDeposit, wWithdraw } from "./air.ts";
+export { airQuotientLde, algebraicC, algebraicCQuotientLde, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wBatchExit, wDeposit, wWithdraw } from "./air.ts";
 export { interpolateCircle, evalCirclePoly } from "./interpolate.ts";

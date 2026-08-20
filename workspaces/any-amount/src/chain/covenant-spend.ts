@@ -61,13 +61,7 @@ import {
   successorFeeSats,
   type TxEnvelope,
 } from "./envelope.ts";
-import {
-  cargoInputs,
-  packCargoUnlockings,
-  packedAirCarrierUnlocking,
-  proofCargoLock,
-  type CargoUtxo,
-} from "./proof-cargo.ts";
+import { packedAirCarrierUnlocking } from "./proof-cargo.ts";
 import { friShardUnlockings } from "./fri-openings.ts";
 import {
   compileCqzLockP2sh32,
@@ -238,12 +232,10 @@ export function compileCovenantSuccessor(args: {
   changeLockingBytecode?: Uint8Array;
   /** Envelope C: spend the tape tip so a missing/wrong hop rejects the pay tx. */
   tapeUtxo?: { tx_hash: string; tx_pos: number; value: number };
-  /** Pack leftover-fill cargo. Default 0 — dummy OP_DROP cargo is not the verifier. */
-  packTo?: number;
-  packHopIndex?: number;
-  cargoUtxos?: CargoUtxo[];
   /** When false, input 0 is an AIR carrier (tape hop), not the pool. */
   includePool?: boolean;
+  /** Real AIR-carrier UTXO for tape hops (tests may omit and use a dummy prevout). */
+  carrierUtxo?: { tx_hash: string; tx_pos: number; value: number };
   /** First FRI query index for fold/slot kernels on this hop. */
   queryStart?: number;
   /** How many foldPair kernels to run (default from slotKernels). */
@@ -264,6 +256,7 @@ export function compileCovenantSuccessor(args: {
   const depositNeed = net > 0n ? net : 0n;
   const userFee = Boolean(args.feeUtxo);
   const tape = Boolean(args.tapeUtxo);
+  const wantNote = (args.includePool !== false) && (includeNoteAuth(slotKernels) || Boolean(args.note));
   if (depositNeed > 0n && !args.feeUtxo) {
     throw new Error("deposit successor needs a funder utxo for the net");
   }
@@ -318,14 +311,14 @@ export function compileCovenantSuccessor(args: {
   if (kernels.length !== FRI_KERNEL_INPUTS) {
     throw new Error(`need ${FRI_KERNEL_INPUTS} FRI kernel UTXOs, got ${kernels.length}`);
   }
-  const prefixN = prefixExtraKernelCount(slotKernels, includePool);
+  const prefixN = prefixExtraKernelCount(slotKernels, includePool, wantNote);
   const extras = args.extraKernels ?? [
     { tx_hash: dummy, tx_pos: 10, value: 1000 },
     ...(includePool
       ? [
           { tx_hash: dummy, tx_pos: 11, value: 1000 },
           { tx_hash: dummy, tx_pos: 12, value: 1000 },
-          ...(includeNoteAuth(slotKernels) ? [{ tx_hash: dummy, tx_pos: 13, value: 1000 }] : []),
+          ...(wantNote ? [{ tx_hash: dummy, tx_pos: 13, value: 1000 }] : []),
         ]
       : []),
     ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + f, value: 1000 })),
@@ -334,13 +327,11 @@ export function compileCovenantSuccessor(args: {
   if (extras.length !== prefixN + foldN + slotN) {
     throw new Error(`need ${prefixN + foldN + slotN} extra kernel UTXOs, got ${extras.length}`);
   }
-  if (includePool && includeNoteAuth(slotKernels)) {
-    if (!args.note) throw new Error("B note-auth kernel needs the opened note (not the OTP-masked proof field)");
-    if (!args.statement) throw new Error("B note-auth kernel needs the statement");
+  if (wantNote) {
+    if (!args.note) throw new Error("note-auth kernel needs the opened note (not the OTP-masked proof field)");
+    if (!args.statement) throw new Error("note-auth kernel needs the statement");
   }
 
-  const packTo = args.packTo ?? 0;
-  const packHopIndex = args.packHopIndex ?? 0;
   const airPacked =
     packed instanceof Uint8Array && packed.length === AIR_PACKED_SIZE
       ? packed
@@ -355,8 +346,8 @@ export function compileCovenantSuccessor(args: {
         unlockingBytecode: unlocking,
       }
     : {
-        outpointIndex: 0,
-        outpointTransactionHash: hexToBin("aa".repeat(32)),
+        outpointIndex: args.carrierUtxo?.tx_pos ?? 0,
+        outpointTransactionHash: hexToBin(args.carrierUtxo?.tx_hash ?? "aa".repeat(32)),
         sequenceNumber: 0xffffffff,
         unlockingBytecode: packedAirCarrierUnlocking(airPacked ?? new Uint8Array(AIR_PACKED_SIZE)),
       };
@@ -388,7 +379,7 @@ export function compileCovenantSuccessor(args: {
               sequenceNumber: 0xffffffff,
               unlockingBytecode: algebraicCKernelUnlocking(),
             },
-            ...(includeNoteAuth(slotKernels)
+            ...(wantNote
               ? [
                   {
                     outpointIndex: extras[3]!.tx_pos,
@@ -475,31 +466,9 @@ export function compileCovenantSuccessor(args: {
           valueSatoshis: DUST_SATS * 2n,
         },
       ];
-  const bare = generateTransaction({ version: 2, locktime: 0, inputs: baseInputs, outputs });
-  if (!bare.success) {
-    throw new Error(`covenant successor: ${JSON.stringify(bare.errors).slice(0, 500)}`);
-  }
-  const baseBytes = encodeTransaction(bare.transaction).length;
-  const cargo =
-    packTo > 0
-      ? packCargoUnlockings({
-          baseBytes,
-          proof: args.proof,
-          hopIndex: packHopIndex,
-          targetBytes: packTo,
-        })
-      : [];
-  const generated = generateTransaction({
-    version: 2,
-    locktime: 0,
-    inputs: [
-      ...baseInputs,
-      ...cargoInputs({ unlockings: cargo, utxos: args.cargoUtxos, hopIndex: packHopIndex }),
-    ],
-    outputs,
-  });
+  const generated = generateTransaction({ version: 2, locktime: 0, inputs: baseInputs, outputs });
   if (!generated.success) {
-    throw new Error(`covenant successor packed: ${JSON.stringify(generated.errors).slice(0, 500)}`);
+    throw new Error(`covenant successor: ${JSON.stringify(generated.errors).slice(0, 500)}`);
   }
   const raw = encodeTransaction(generated.transaction);
   const poolUnlock = generated.transaction.inputs[0]!.unlockingBytecode.length;
@@ -600,7 +569,7 @@ export function compileFundVerifierKernels(
   kernelSats = 1_000,
   slotKernels = SLOT_KERNEL_COUNT,
   feeCoinSats: bigint = successorFeeCoinSats("standard"),
-  cargoCount = 0,
+  forceNoteAuth = false,
 ): {
   raw: Uint8Array;
   txid: string;
@@ -616,29 +585,17 @@ export function compileFundVerifierKernels(
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
   const foldN = foldKernelCount(slotKernels);
-  const extraCount = prefixExtraKernelCount(slotKernels) + foldN + slotKernels;
+  const extraCount = prefixExtraKernelCount(slotKernels, true, forceNoteAuth) + foldN + slotKernels;
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
   const fee = 2_000n + BigInt(count) * 80n;
   const minerPad = feeCoinSats;
-  const leftover =
-    BigInt(utxo.value) -
-    BigInt(kernelSats) * BigInt(count) -
-    minerPad -
-    fee -
-    DUST_SATS * BigInt(cargoCount);
+  const leftover = BigInt(utxo.value) - BigInt(kernelSats) * BigInt(count) - minerPad - fee;
   if (leftover < DUST_SATS) throw new Error("utxo too small to fund verifier kernels");
   const treasuryWallet = createLabWallet();
   const fatFri = BigInt(kernelSats) + minerPad;
   const friLock = compileFriQueryLockP2sh32();
-  const cargoLock = proofCargoLock();
-  const tail = [
-    ...Array.from({ length: cargoCount }, () => ({
-      lockingBytecode: cargoLock,
-      valueSatoshis: DUST_SATS,
-    })),
-    { lockingBytecode: p2pkhLockingOf(treasuryWallet), valueSatoshis: leftover },
-  ];
+  const tail = [{ lockingBytecode: p2pkhLockingOf(treasuryWallet), valueSatoshis: leftover }];
   const generated = generateTransaction({
     version: 2,
     locktime: 0,
@@ -664,7 +621,7 @@ export function compileFundVerifierKernels(
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
-      ...(includeNoteAuth(slotKernels)
+      ...(includeNoteAuth(slotKernels, forceNoteAuth)
         ? [{ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: BigInt(kernelSats) }]
         : []),
       ...Array.from({ length: foldN }, (_, f) => ({
@@ -699,15 +656,11 @@ export function compileFundVerifierKernels(
       tx_pos: FRI_KERNEL_INPUTS + i,
       value: kernelSats,
     })),
-    cargo: Array.from({ length: cargoCount }, (_, i) => ({
-      tx_hash: txid,
-      tx_pos: count + i,
-      value: Number(DUST_SATS),
-    })),
+    cargo: [],
     changeValue: Number(leftover),
-    changePos: count + cargoCount,
+    changePos: count,
     treasuryValue: Number(leftover),
-    treasuryPos: count + cargoCount,
+    treasuryPos: count,
     treasuryAddress: treasuryWallet.address,
   };
 }

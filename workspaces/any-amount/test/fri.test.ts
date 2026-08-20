@@ -4,6 +4,7 @@ import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import {
   airQuotientLde,
   algebraicC,
+  algebraicCQuotientLde,
   circleDomain,
   decodeFriProof,
   encodeFriProof,
@@ -16,7 +17,7 @@ import {
   wDeposit,
   wWithdraw,
 } from "../src/backends/circle/fri.ts";
-import { TRACE_LEN } from "../src/backends/circle/params.ts";
+import { FRI_VERSION, TRACE_LEN } from "../src/backends/circle/params.ts";
 import { onCircle } from "../src/backends/circle/group.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, commitNote, nullifierOf, type Note } from "../src/pool/notes.ts";
@@ -183,8 +184,22 @@ describe("Circle FRI prove/verify", () => {
     assert.ok(bad.some((r) => r !== 0n));
     const v = verifyFri(lied, proveFri(statement, witness));
     assert.equal(v.ok, false);
-    const { qLde } = airQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain());
-    assert.ok(qLde.some((x) => x !== 0n), "honest AIR quotient must not be the zero polynomial");
+    const v8Air = airQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain());
+    assert.ok(v8Air.qLde.some((x) => x !== 0n), "FRI_VERSION 8 airNumerator quotient is not the zero polynomial");
+    const v9 = algebraicCQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain());
+    assert.ok(v9.nLde.every((x) => x === 0n), "honest algebraicC interpolant is the zero polynomial");
+    assert.ok(v9.qLde.every((x) => x === 0n), "honest Q = C/Z is 0");
+  });
+
+  it("FRI_VERSION 9; a version-8 proof is rejected", () => {
+    const { statement, witness } = depositNote();
+    const proof = proveFri(statement, witness);
+    assert.equal(proof.version, FRI_VERSION);
+    assert.equal(FRI_VERSION, 9);
+    assert.equal(verifyFri(statement, proof).ok, true);
+    const v8 = { ...proof, version: 8 };
+    const rejected = verifyFri(statement, v8);
+    assert.equal(rejected.ok, false, "old FRI_VERSION 8 must not verify as 9");
   });
 
   it("statement polynomial moves when reserve, note, or nullifier change", () => {

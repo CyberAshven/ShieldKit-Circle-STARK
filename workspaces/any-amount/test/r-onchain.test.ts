@@ -98,7 +98,7 @@ describe("on-chain R_on + Z·R_off (plan 4)", () => {
     assert.equal(bad.accepted, false, "wrong R must fail");
   });
 
-  it("isolated N from T at FS slot 0 matches unmasked nLde", () => {
+  it("isolated N = C(z) at FS slot 0 matches residual interpolant", () => {
     const { packed, nqz } = mix();
     const ok = evalPadded(compileNFromTSlot0Lock(nqz.n), pushData(packed));
     assert.equal(ok.accepted, true, ok.error ?? `N=${nqz.n}`);
@@ -106,7 +106,7 @@ describe("on-chain R_on + Z·R_off (plan 4)", () => {
     assert.equal(bad.accepted, false, "wrong N must fail");
   });
 
-  it("honest (q−R)·Z == N_air accepts", () => {
+  it("honest (q−R)·Z == C(z) accepts", () => {
     const { packed } = mix();
     const ok = evalPadded(compileSlotRCqzLock(0), pushData(packed));
     assert.equal(ok.accepted, true, ok.error ?? "honest slot R");

@@ -20,7 +20,7 @@ import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitaut
 import { encodeStatement, type PoolStatement } from "../pool/statement.ts";
 import { encodePublicPaa1 } from "../pool/state.ts";
 import { concatBytes, writeU32BE } from "../pool/bytes.ts";
-import { airQuotientLde, onChainCells } from "../backends/circle/air.ts";
+import { algebraicCQuotientLde, onChainCells } from "../backends/circle/air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
@@ -290,7 +290,7 @@ export function encodeAirPacked(
 ): Uint8Array {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
   const commit = p.viewingCommit && p.viewingCommit.length === 32 ? p.viewingCommit : new Uint8Array(32);
-  const { qLde, nLde, zLde } = airQuotientLde(statement, smallDomain, bigDomain, hash);
+  const { qLde, nLde, zLde } = algebraicCQuotientLde(statement, smallDomain, bigDomain, hash);
   const digest = hash.digest(encodeStatement(statement, hash));
   const packed = new Uint8Array(AIR_PACKED_SIZE);
   for (let r = 0; r < COMMITTED_LAYERS; r += 1) {
@@ -363,7 +363,7 @@ export function nqzAt(
   index: number,
   hash: InternalHash = defaultInternalHash(),
 ): { n: M31El; z: M31El; q: M31El } {
-  const { nLde, zLde, qLde } = airQuotientLde(statement, smallDomain, bigDomain, hash);
+  const { nLde, zLde, qLde } = algebraicCQuotientLde(statement, smallDomain, bigDomain, hash);
   return { n: nLde[index]!, z: zLde[index]!, q: qLde[index]! };
 }
 

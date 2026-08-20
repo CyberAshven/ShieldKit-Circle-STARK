@@ -337,6 +337,22 @@ export function airQuotientLde(
   return { qLde, nLde, zLde };
 }
 
+/**
+ * FRI target (FRI_VERSION 9): C = interpolant(algebraicC residuals), Q = C/Z.
+ * Honest residuals vanish, so C is the zero polynomial and Q = 0.
+ * Off-trace airNumerator (FRI_VERSION 8) is prior art, not this statement.
+ */
+export function algebraicCQuotientLde(
+  statement: PoolStatement,
+  smallDomain: CirclePoint[],
+  bigDomain: CirclePoint[],
+  hash: InternalHash = defaultInternalHash(),
+): { qLde: M31El[]; nLde: M31El[]; zLde: M31El[] } {
+  const residuals = algebraicC(publicCells(statement, hash), statement, hash);
+  const { qLde, cLde, zLde } = quotientAtDomain(residuals, smallDomain, bigDomain);
+  return { qLde, nLde: cLde, zLde };
+}
+
 /** C = interpolant(residuals); Q = C/Z on the LDE. Honest residuals vanish ⇒ Q = 0. */
 export function quotientAtDomain(
   residuals: M31El[],

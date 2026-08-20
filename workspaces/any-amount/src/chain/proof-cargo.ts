@@ -1,6 +1,6 @@
 /**
- * Opt-in leftover-fill. Dummy OP_DROP cargo is envelope size / DA, not foldPair,
- * not C=QZ, not 36 unique-orbit queries. Callers pass packTo > 0 to use it.
+ * AIR-carrier redeem (tape hop input 0) is OP_DROP OP_1.
+ * Leftover-fill pack-to-99 KB is not wired into A, B, or C.
  * Density pad on high-index kernels is a different thing (VM op-cost meter).
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256, hexToBin } from "@bitauth/libauth";

@@ -8,6 +8,7 @@ import { binToHex, hexToBin } from "@bitauth/libauth";
 import { loadLabWallet } from "./wallet.ts";
 import { broadcast, connectChipnet, getTx, listUnspent } from "./electrum.ts";
 import { rpcConfigFromEnv } from "./bchn-rpc.ts";
+import { start9NsenterRpc } from "./start9-nsenter-rpc.ts";
 import { broadcastSized } from "./broadcast-tx.ts";
 import {
   compileCovenantSpend,
@@ -60,7 +61,12 @@ async function broadcastRetry(
         throw last ?? new Error("electrum broadcast failed");
       }
     },
-    rpc: raw.length > 100_000 ? rpcConfigFromEnv() : undefined,
+    rpc:
+      raw.length > 100_000
+        ? process.env.BCHN_RPC_URL
+          ? rpcConfigFromEnv()
+          : start9NsenterRpc()
+        : undefined,
   });
   return sent;
 }
@@ -151,7 +157,6 @@ async function landAB(
       1_000,
       slots,
       successorFeeCoinSats(envelope),
-      0,
     );
     const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);
@@ -173,7 +178,6 @@ async function landAB(
       slotKernels: slots,
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
-      cargoUtxos: funded.cargo,
       note: mix.spent.note,
       change: mix.witness.created?.note,
     });
@@ -217,7 +221,7 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
   let step = "connect";
   try {
     step = "listunspent";
-    const need = 2_000_000;
+    const need = 400_000;
     const utxos = await listUnspent(client, wallet.address);
     let picked = pickFunded(utxos, need);
     if (!picked) {
@@ -247,12 +251,12 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       state: mix.oldState,
       proof: mix.proof,
       lockKind: "p2sh32",
-      envelope: "consensus",
-      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+      envelope: "standard",
+      slotKernels: SLOT_KERNEL_COUNT,
     });
     const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;
     await waitForTxid(client, genesisTxid);
-    if (genesis.changeValue === undefined || genesis.changeValue < 400_000) {
+    if (genesis.changeValue === undefined || genesis.changeValue < 200_000) {
       return { envelope: "chained", ok: false, genesis: genesisTxid, error: `change too small ${genesis.changeValue}` };
     }
     step = "tape-funder";
@@ -260,7 +264,6 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       wallet,
       utxo: { tx_hash: genesisTxid, tx_pos: 1, value: genesis.changeValue },
       tapeSats: 300_000n,
-      cargoCount: 0,
     });
     const splitTxid = (await broadcastRetry(client, split.raw, split.txid)).txid;
     await waitForTxid(client, split.txid);
@@ -269,8 +272,9 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       wallet,
       split.funderUtxo,
       1_000,
-      SLOT_KERNEL_COUNT_CONSENSUS,
-      successorFeeCoinSats("consensus"),
+      SLOT_KERNEL_COUNT,
+      successorFeeCoinSats("standard"),
+      true,
     );
     const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);
@@ -292,7 +296,6 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       statement: mix.statement,
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
-      cargoUtxos: split.cargo,
       note: mix.spent.note,
       change: mix.witness.created?.note,
     });
@@ -324,6 +327,7 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
         }
         throw last ?? new Error("electrum broadcast failed");
       },
+      rpc: chain.hops.some((h) => h.raw.length > 100_000) ? rpcConfigFromEnv() : undefined,
     });
     const pay = sent[sent.length - 1]!;
     return {

@@ -1,6 +1,7 @@
 /**
  * On-chain R_on(i) + Z(i)·R_off(i). Slot kernels check (qTable−R)·Z against
- * the AIR numerator recomputed from T — not nTable−R·Z (that cancels R).
+ * C(z) of the algebraicC residual interpolant (FRI_VERSION 9) — not nTable.
+ * Honest C is the zero polynomial.
  */
 import { cashAssemblyToBin } from "@bitauth/libauth";
 import {
@@ -9,28 +10,15 @@ import {
   OPEN_MASK_OFF_DEGREE,
   VIEWING_TAG,
 } from "../backends/circle/witness-mask.ts";
-import { interpolateCircle } from "../backends/circle/interpolate.ts";
-import { TRACE_LEN } from "../backends/circle/params.ts";
-import { M31_ADD, M31_MUL, M31_SUB, encodeFeltBlob } from "./m31-asm.ts";
+import { M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
 import {
-  AIR_NEWTON_BYTES,
-  AIR_NEWTON_FELTS,
-  AIR_OFF_EVEN,
-  AIR_OFF_ODD,
   AIR_OFF_OPEN_MASK,
   AIR_OFF_QTABLE,
-  CIRCLE_ADD,
   G1024,
-  G64,
   SCALAR_MUL_FAST,
   VANISH_XS,
-  airNumeratorAsm,
-  evalTFromBlobAsm,
-  extractCellAsm,
   fsIndexSlotAsm,
-  newtonFromBlobAsm,
   packedMagicAsm,
-  smallDomain,
   vanishingUnrolledAsm,
 } from "./air-cqz.ts";
 
@@ -46,24 +34,6 @@ function defineFn(asm: string, index: number, name: string): string {
   const body = cashAssemblyToBin(asm);
   if (typeof body === "string") throw new Error(`${name}: ${body}`);
   return `${hexPush(body)}\n<${index}>\nOP_DEFINE`;
-}
-
-function padNewton(vals: bigint[]): bigint[] {
-  const out = vals.slice(0, AIR_NEWTON_FELTS);
-  while (out.length < AIR_NEWTON_FELTS) out.push(0n);
-  return out;
-}
-
-function oneHot(k: number): bigint[] {
-  return Array.from({ length: TRACE_LEN }, (_, i) => (i === k ? 1n : 0n));
-}
-
-function lagrangeBlobs(k: number): { even: Uint8Array; odd: Uint8Array } {
-  const interp = interpolateCircle(smallDomain, oneHot(k));
-  return {
-    even: encodeFeltBlob(padNewton(interp.even)),
-    odd: encodeFeltBlob(padNewton(interp.odd)),
-  };
 }
 
 /** SHA256 blob → M31 felt (first 4 bytes, high bit cleared). */
@@ -128,26 +98,13 @@ ${M31_ADD}
 `;
 }
 
-/** Top: packed copy → degree-0 openingMaskFelt. */
-function maskCFromPackedCopyAsm(): string {
-  return `
-<${AIR_OFF_OPEN_MASK}> OP_SPLIT OP_NIP
-<32> OP_SPLIT OP_DROP
-${hexPush(VIEWING_TAG)} OP_SWAP OP_CAT
-${hexPush(FRI_OPEN_MASK_TAG)} OP_CAT
-${FELT_FROM_SHA256}
-`;
-}
-
 /**
- * Requires OP_DEFINE 0=newton, 1=evalT, 2=fast, 3=vanish.
+ * Requires OP_DEFINE 2=fast, 3=vanish.
  * Stack: packed i → packed i N Z
- * Newton T interpolates cells+c, so N_T = N_air − c·L0; add c·L0 back.
+ * FRI_VERSION 9: N = C(z) of the algebraicC residual interpolant.
+ * Honest residuals vanish ⇒ C is the zero polynomial ⇒ N = 0.
  */
 export function nAndZFromPackedIAsm(): string {
-  const l0 = lagrangeBlobs(0);
-  const l23 = lagrangeBlobs(23);
-  const g = `${pushFelt(G64.x)}\n${pushFelt(G64.y)}`;
   return `
 OP_DUP
 ${pushFelt(G1024.x)}
@@ -156,89 +113,22 @@ ${pushFelt(G1024.y)}
 OP_OVER
 <3> OP_INVOKE
 OP_TOALTSTACK
-OP_3 OP_PICK
-<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
-<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
-OP_4 OP_PICK
-<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
-<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
-OP_2SWAP
-OP_3 OP_PICK
-OP_3 OP_PICK
-OP_3 OP_PICK
-OP_3 OP_PICK
-<1> OP_INVOKE
-OP_TOALTSTACK
-OP_2DUP
-${g}
-${CIRCLE_ADD}
-OP_5 OP_PICK
-OP_5 OP_PICK
-OP_3 OP_PICK
-OP_3 OP_PICK
-<1> OP_INVOKE
-OP_TOALTSTACK
-OP_2DUP
-${g}
-${CIRCLE_ADD}
-OP_7 OP_PICK
-OP_7 OP_PICK
-OP_3 OP_PICK
-OP_3 OP_PICK
-<1> OP_INVOKE
-OP_TOALTSTACK
 OP_2DROP
-OP_2DROP
-${hexPush(l0.even)}
-${hexPush(l0.odd)}
-OP_3 OP_PICK
-OP_3 OP_PICK
-<1> OP_INVOKE
-OP_TOALTSTACK
-${hexPush(l23.even)}
-${hexPush(l23.odd)}
-OP_3 OP_PICK
-OP_3 OP_PICK
-<1> OP_INVOKE
-OP_TOALTSTACK
-OP_2DROP
-OP_2DROP
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_SWAP
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_FROMALTSTACK
-OP_SWAP
-OP_ROT
-OP_4 OP_PICK
-OP_TOALTSTACK
-OP_6 OP_PICK
-${extractCellAsm(3)}
-${airNumeratorAsm()}
-OP_FROMALTSTACK
-OP_3 OP_PICK
-${maskCFromPackedCopyAsm()}
-OP_OVER
-${M31_MUL}
-OP_NIP
-${M31_ADD}
+<0>
 OP_FROMALTSTACK
 `;
 }
 
 function slotDefines(): string {
   return `
-${defineFn(newtonFromBlobAsm(), 0, "newton")}
-${defineFn(evalTFromBlobAsm(), 1, "evalT")}
 ${defineFn(SCALAR_MUL_FAST, 2, "fast")}
 ${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
 `;
 }
 
 /**
- * One FS slot: (qTable[slot] − R(i)) · Z([i]G) equals N from T.
- * i is recomputed. Independent N — masked nTable is not the right-hand side.
+ * One FS slot: (qTable[slot] − R(i)) · Z([i]G) equals C(z).
+ * Honest C = 0 (FRI_VERSION 9 residual interpolant). Independent of nTable.
  */
 export function slotRCqzAsm(slot = 0): string {
   const qOff = AIR_OFF_QTABLE + slot * 4;
@@ -313,7 +203,7 @@ OP_NUMEQUAL
   );
 }
 
-/** Isolated N from T at FS slot 0. Unlocking: packed. */
+/** Isolated N = C(z) at FS slot 0. Unlocking: packed. Honest C(z) = 0. */
 export function compileNFromTSlot0Lock(expected: bigint): Uint8Array {
   return compileOrThrow(
     `

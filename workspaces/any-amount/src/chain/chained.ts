@@ -16,7 +16,7 @@ import {
 import { concatBytes } from "../pool/bytes.ts";
 import { compileCovenantSuccessor, type MeasuredTx } from "./covenant-spend.ts";
 import { FRI_QUERIES } from "../backends/circle/params.ts";
-import { SLOT_KERNEL_COUNT_CONSENSUS } from "./air-cqz.ts";
+import { SLOT_KERNEL_COUNT } from "./air-cqz.ts";
 
 import { broadcastSized, type BroadcastPath } from "./broadcast-tx.ts";
 import type { BchnRpcConfig } from "./bchn-rpc.ts";
@@ -29,7 +29,7 @@ import {
   STANDARD_SUCCESSOR_FEE_SATS,
   TAPE_TIMEOUT_CSV,
 } from "./envelope.ts";
-import { cargoInputs, packCargoUnlockings, proofCargoLock, type CargoUtxo } from "./proof-cargo.ts";
+import type { CargoUtxo } from "./proof-cargo.ts";
 import { p2pkhLockingOf, privateKeyOf, type LabWallet } from "./wallet.ts";
 import type { AnyAmountState } from "../pool/state.ts";
 import type { PoolStatement } from "../pool/statement.ts";
@@ -79,11 +79,8 @@ export function compileTapeHop(args: {
   hopCount: number;
   chunkHash: Uint8Array;
   proof?: Uint8Array;
-  packTo?: number;
-  cargoUtxos?: CargoUtxo[];
   feeSats?: bigint;
 }): { raw: Uint8Array; txid: string; nextUtxo: ChainUtxo; commit: Uint8Array; cargoCount: number } {
-  const packTo = args.packTo ?? 0;
   const fee = args.feeSats ?? STANDARD_SUCCESSOR_FEE_SATS;
   const nextValue = BigInt(args.utxo.value) - fee;
   if (nextValue < DUST_SATS) throw new Error("tape utxo too small");
@@ -105,35 +102,13 @@ export function compileTapeHop(args: {
     { lockingBytecode: p2pkhLockingOf(args.wallet), valueSatoshis: nextValue },
     { lockingBytecode: opReturnLocking(commit), valueSatoshis: 0n },
   ];
-  const bare = generateTransaction({
+  const generated = generateTransaction({
     version: 2,
     locktime: 0,
     inputs: [carrier],
     outputs,
   });
-  if (!bare.success) throw new Error(`tape hop: ${JSON.stringify(bare.errors).slice(0, 400)}`);
-  const baseBytes = encodeTransaction(bare.transaction).length;
-  const unlockings =
-    packTo > 0
-      ? packCargoUnlockings({
-          baseBytes,
-          proof: args.proof ?? args.chunkHash,
-          hopIndex: args.index,
-          targetBytes: packTo,
-        })
-      : [];
-  const generated = generateTransaction({
-    version: 2,
-    locktime: 0,
-    inputs: [
-      carrier,
-      ...cargoInputs({ unlockings, utxos: args.cargoUtxos, hopIndex: args.index }),
-    ],
-    outputs,
-  });
-  if (!generated.success) {
-    throw new Error(`tape hop packed: ${JSON.stringify(generated.errors).slice(0, 400)}`);
-  }
+  if (!generated.success) throw new Error(`tape hop: ${JSON.stringify(generated.errors).slice(0, 400)}`);
   const raw = encodeTransaction(generated.transaction);
   if (raw.length > RELAY_STANDARD_TX_BYTES) {
     throw new Error(`tape hop ${raw.length} > ${RELAY_STANDARD_TX_BYTES}`);
@@ -143,7 +118,7 @@ export function compileTapeHop(args: {
     raw,
     txid,
     commit,
-    cargoCount: unlockings.length,
+    cargoCount: 0,
     nextUtxo: { tx_hash: txid, tx_pos: 0, value: Number(nextValue) },
   };
 }
@@ -181,24 +156,20 @@ export function compileTapeTimeout(args: {
   return { raw, txid: hashTransaction(raw), sequence: TAPE_TIMEOUT_CSV };
 }
 
-/** Split genesis-change into a tape carrier, optional proof-cargo dust, and kernel funder. */
+/** Split genesis-change into a tape carrier and kernel funder. No leftover-fill cargo. */
 export function compileTapeFunder(args: {
   wallet: LabWallet;
   utxo: ChainUtxo;
   tapeSats?: bigint;
-  cargoCount?: number;
   feeSats?: bigint;
 }): { raw: Uint8Array; txid: string; tapeUtxo: ChainUtxo; funderUtxo: ChainUtxo; cargo: CargoUtxo[] } {
   const tapeSats = args.tapeSats ?? 300_000n;
-  const cargoCount = args.cargoCount ?? 0;
-  const cargoSats = DUST_SATS * BigInt(cargoCount);
-  const fee = args.feeSats ?? 2_000n + BigInt(cargoCount) * 80n;
-  const rest = BigInt(args.utxo.value) - tapeSats - cargoSats - fee;
+  const fee = args.feeSats ?? 2_000n;
+  const rest = BigInt(args.utxo.value) - tapeSats - fee;
   if (rest < DUST_SATS) throw new Error("change too small to fund tape + kernels");
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const lock = p2pkhLockingOf(args.wallet);
-  const cargoLock = proofCargoLock();
   const generated = generateTransaction({
     version: 2,
     locktime: 0,
@@ -217,10 +188,6 @@ export function compileTapeFunder(args: {
     ],
     outputs: [
       { lockingBytecode: lock, valueSatoshis: tapeSats },
-      ...Array.from({ length: cargoCount }, () => ({
-        lockingBytecode: cargoLock,
-        valueSatoshis: DUST_SATS,
-      })),
       { lockingBytecode: lock, valueSatoshis: rest },
     ],
   });
@@ -233,12 +200,8 @@ export function compileTapeFunder(args: {
     raw,
     txid,
     tapeUtxo: { tx_hash: txid, tx_pos: 0, value: Number(tapeSats) },
-    cargo: Array.from({ length: cargoCount }, (_, i) => ({
-      tx_hash: txid,
-      tx_pos: 1 + i,
-      value: Number(DUST_SATS),
-    })),
-    funderUtxo: { tx_hash: txid, tx_pos: 1 + cargoCount, value: Number(rest) },
+    cargo: [],
+    funderUtxo: { tx_hash: txid, tx_pos: 1, value: Number(rest) },
   };
 }
 
@@ -261,9 +224,14 @@ export function compileChainedWithdraw(args: {
   extraKernels?: Array<ChainUtxo>;
   extraPayouts?: Array<{ lockingBytecode: Uint8Array; sats: bigint }>;
   payoutLockingBytecode?: Uint8Array;
-  cargoUtxos?: CargoUtxo[];
   note?: import("../pool/notes.ts").Note;
   change?: import("../pool/notes.ts").Note;
+  /** Per tape hop: AIR carrier + FRI + extras. Tests omit (dummy prevouts). */
+  tapeKernels?: Array<{
+    carrier?: ChainUtxo;
+    fri: ChainUtxo[];
+    extra: ChainUtxo[];
+  }>;
 }): ChainedWithdraw {
   const digest = args.digest.length === 32 ? args.digest : hash256(args.digest);
   const hops: ChainedHop[] = [];
@@ -272,20 +240,22 @@ export function compileChainedWithdraw(args: {
   const tapeN = Math.ceil(FRI_QUERIES / qn);
   const hopCount = parseChainedHops(args.hops ?? tapeN + 1);
   if (hopCount < tapeN + 1) {
-    throw new Error(`chained needs ${tapeN + 1} hops for ${FRI_QUERIES} extra unique-orbit slices (got ${hopCount})`);
+    throw new Error(`chained needs ${tapeN + 1} hops for ${FRI_QUERIES} unique-orbit slices (got ${hopCount})`);
   }
   for (let i = 0; i < tapeN; i += 1) {
     const q0 = i * qn;
     const thisN = Math.min(qn, FRI_QUERIES - q0);
+    const group = args.tapeKernels?.[i];
     const sliceTx = compileCovenantSuccessor({
       wallet: args.wallet,
       includePool: false,
       tapeUtxo: utxo,
+      carrierUtxo: group?.carrier,
       queryStart: q0,
       foldQueries: thisN,
       slotKernels: thisN,
-      packTo: 0,
-      packHopIndex: i,
+      kernelUtxos: group?.fri,
+      extraKernels: group?.extra,
       pool: args.pool,
       newState: args.newState,
       proof: args.proof,
@@ -294,7 +264,7 @@ export function compileChainedWithdraw(args: {
       envelope: "standard",
     });
     if (sliceTx.txBytes > RELAY_STANDARD_TX_BYTES) {
-      throw new Error(`tape verifier hop ${i} ${sliceTx.txBytes} > ${RELAY_STANDARD_TX_BYTES} (chunk queries across hops, do not pad)`);
+      throw new Error(`tape hop ${i} ${sliceTx.txBytes} > ${RELAY_STANDARD_TX_BYTES} (chunk queries across hops)`);
     }
     hops.push({
       role: "tape",
@@ -316,12 +286,8 @@ export function compileChainedWithdraw(args: {
     proof: args.proof,
     statement: args.statement,
     lockKind: "p2sh32",
-    envelope: "consensus",
-    slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
-    foldQueries: FRI_QUERIES,
-    queryStart: 0,
-    includePool: true,
-    packTo: 0,
+    envelope: "standard",
+    slotKernels: SLOT_KERNEL_COUNT,
     kernelUtxos: args.kernelUtxos,
     extraKernels: args.extraKernels,
     extraPayouts: args.extraPayouts,
@@ -329,6 +295,9 @@ export function compileChainedWithdraw(args: {
     note: args.note,
     change: args.change,
   });
+  if (successor.txBytes > RELAY_STANDARD_TX_BYTES) {
+    throw new Error(`C pay hop ${successor.txBytes} > ${RELAY_STANDARD_TX_BYTES}`);
+  }
   const payoutCount =
     args.extraPayouts && args.extraPayouts.length > 0
       ? args.extraPayouts.length

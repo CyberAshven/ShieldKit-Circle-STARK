@@ -205,14 +205,14 @@ export function compileNoteAuthLockP2sh32(): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compileNoteAuthKernel()));
 }
 
-export function includeNoteAuth(slotKernels: number): boolean {
-  return slotKernels > SLOT_KERNEL_COUNT;
+export function includeNoteAuth(slotKernels: number, force = false): boolean {
+  return force || slotKernels > SLOT_KERNEL_COUNT;
 }
 
-/** bind-T + grind + algebraicC [+ note-auth on B]. Tape hops (no pool) keep 1. */
-export function prefixExtraKernelCount(slotKernels: number, includePool = true): number {
+/** bind-T + grind + algebraicC [+ note-auth on B or C pay]. Tape hops (no pool) keep 1. */
+export function prefixExtraKernelCount(slotKernels: number, includePool = true, forceNoteAuth = false): number {
   if (!includePool) return 1;
-  return includeNoteAuth(slotKernels) ? 4 : 3;
+  return includeNoteAuth(slotKernels, forceNoteAuth) ? 4 : 3;
 }
 
 export function noteAuthKernelUnlocking(args: {

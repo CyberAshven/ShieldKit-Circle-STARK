@@ -62,8 +62,8 @@ function mix() {
 }
 
 describe("hole-free statistical-soundness kernels (B)", () => {
-  it("B is 36 unique-orbit Circle FRI M31, FRI_VERSION 8, not a second family", () => {
-    assert.equal(FRI_VERSION, 8);
+  it("B is 36 unique-orbit Circle FRI M31, FRI_VERSION 9, not a second family", () => {
+    assert.equal(FRI_VERSION, 9);
     assert.equal(FRI_QUERIES, 36);
     assert.equal(SLOT_KERNEL_COUNT_CONSENSUS, FRI_QUERIES);
     assert.ok(SLOT_KERNEL_COUNT < FRI_QUERIES, "A may chunk fewer slots; B keeps 36");
@@ -171,7 +171,6 @@ describe("hole-free statistical-soundness kernels (B)", () => {
       statement: w.statement,
       lockKind: "p2sh32",
       envelope: "standard",
-      packTo: 0,
     });
     const B = compileCovenantSuccessor({
       wallet: createLabWallet(),
@@ -182,7 +181,6 @@ describe("hole-free statistical-soundness kernels (B)", () => {
       lockKind: "p2sh32",
       envelope: "consensus",
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
-      packTo: 0,
       note,
       change,
     });

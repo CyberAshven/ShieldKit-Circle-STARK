@@ -16,14 +16,14 @@ export const FRI_LOG_N = 10;
 export const FRI_QUERIES = 36;
 export const GRIND_BITS = 20;
 export const FRI_FINAL = 8;
-export const FRI_VERSION = 8;
+export const FRI_VERSION = 9;
 export const COMMITTED_LAYERS = Math.log2(FRI_N / FRI_FINAL); // 7
 /** Cubic merkle mix ⇒ deg(C) ~ 3T, Q = C/Z_H ⇒ rate 2/B. */
 export const RATE: "2/B" = "2/B";
 export const SOUNDNESS_FLOOR = 100;
 export const SOUNDNESS_TARGET = 128;
 
-export const VK_ID = `circle-fri-m31-t${TRACE_LEN}-b${BLOWUP}-q${FRI_QUERIES}-g${GRIND_BITS}`;
+export const VK_ID = `circle-fri-m31-t${TRACE_LEN}-b${BLOWUP}-q${FRI_QUERIES}-g${GRIND_BITS}-fri${FRI_VERSION}`;
 
 export function log2pow2(n: number): number {
   if (n < 2 || (n & (n - 1)) !== 0) throw new Error(`not a power of two: ${n}`);
