@@ -51,8 +51,9 @@ Chipnet 10-wallet rehearsal on one machine can stay local. The moment we need **
 
 CashFusion remains **not** a ZKP plugin. Batch-exit is an opt-in *timing + output-shape* path for people who are not in a hurry:
 
-- CLI: `pool withdraw --sats N --batch-exit [--batch-min 30] [--batch-max 180]`
-- CSPRNG wait in the knob window, live countdown
+- CLI: `pool withdraw --sats N --batch-exit [--batch-window 180]`
+- Shared round: first waiter opens the window; at close, flush whoever already opted in
+- Live countdown of **remaining** time (not a per-user random min/max)
 - Ready waiters sketch one shuffled multi-P2PKH list (`cashfusion-like-multi-p2pkh`)
 - We do **not** speak CashFusion: no `OP_RETURN FUSE`, no Pedersen, no blind Schnorr
 - The shipped pool redeem still HASH256-binds **one** payout at output 1. Grouping N exits into that one successor is a later lock (`sum(payouts) = abs-net`)

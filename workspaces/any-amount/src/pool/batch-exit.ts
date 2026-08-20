@@ -1,31 +1,34 @@
 /**
- * Opt-in batch exit: wait a CSPRNG delay, then group ready claims into one
- * CashFusion-*shaped* multi-P2PKH output list (shuffled). Not the CashFusion
- * Pedersen / blind-Schnorr / OP_RETURN FUSE protocol.
+ * Opt-in batch exit is a **shared round**, not a per-user random delay.
  *
- * Timing privacy is the shipped increment (request time ↛ chain time).
- * One-successor N-payout (sum of P2PKH = abs-net) is a later lock; today's
- * redeem still binds a single HASH256 payout at output 1.
+ * First waiter opens a round of `--batch-window` seconds (default 180).
+ * Anyone else who opts in before the round closes is in the same flush.
+ * At close, batch whoever is already in. A late arriver after close opens
+ * the next round. Per-user min/max waits were removed: they miss the group
+ * when one person's clock fires before another's.
+ *
+ * Outputs are CashFusion-*shaped* shuffled multi-P2PKH. Not CashFusion
+ * (no OP_RETURN FUSE, no Pedersen / blind Schnorr). One-successor N-payout
+ * is a later lock; today's redeem still HASH256-binds output 1.
  */
 
-/** Default window. Knobs, not magic: CLI `--batch-min` / `--batch-max` override. */
-export const BATCH_EXIT_MIN_SECONDS_DEFAULT = 30;
-export const BATCH_EXIT_MAX_SECONDS_DEFAULT = 180;
-/** Inclusive floor/ceiling for the knobs so a later dapp can retune safely. */
-export const BATCH_EXIT_KNOB_FLOOR_SECONDS = 0;
+/** How long a round stays open after the first joiner. CLI `--batch-window`. */
+export const BATCH_EXIT_WINDOW_SECONDS_DEFAULT = 180;
+export const BATCH_EXIT_KNOB_FLOOR_SECONDS = 1;
 export const BATCH_EXIT_KNOB_CEILING_SECONDS = 86_400;
-
-export type BatchExitWindow = {
-  minSeconds: number;
-  maxSeconds: number;
-};
 
 export type BatchExitClaim = {
   id: string;
   sats: bigint;
   lockingBytecode: Uint8Array;
   enqueuedAtMs: number;
-  readyAtMs: number;
+};
+
+export type BatchRound = {
+  windowSeconds: number;
+  openedAtMs: number;
+  closesAtMs: number;
+  claims: BatchExitClaim[];
 };
 
 export type FusionPayout = {
@@ -39,30 +42,95 @@ export type FusionBatchSketch = {
   totalSats: string;
   shuffled: true;
   shape: "cashfusion-like-multi-p2pkh";
-  /** We do not emit OP_RETURN FUSE or speak CashFusion session hashes. */
   protocol: "not-cashfusion-fuse";
 };
 
-export function parseBatchWindow(minSeconds: number, maxSeconds: number): BatchExitWindow {
-  if (!Number.isInteger(minSeconds) || !Number.isInteger(maxSeconds)) {
-    throw new Error("batch-exit window must be integer seconds");
-  }
-  if (minSeconds < BATCH_EXIT_KNOB_FLOOR_SECONDS || maxSeconds > BATCH_EXIT_KNOB_CEILING_SECONDS) {
+export function parseBatchWindowSeconds(seconds: number): number {
+  if (!Number.isInteger(seconds)) throw new Error("batch-window must be an integer number of seconds");
+  if (seconds < BATCH_EXIT_KNOB_FLOOR_SECONDS || seconds > BATCH_EXIT_KNOB_CEILING_SECONDS) {
     throw new Error(
-      `batch-exit window must be in [${BATCH_EXIT_KNOB_FLOOR_SECONDS}, ${BATCH_EXIT_KNOB_CEILING_SECONDS}] seconds`,
+      `batch-window must be in [${BATCH_EXIT_KNOB_FLOOR_SECONDS}, ${BATCH_EXIT_KNOB_CEILING_SECONDS}] seconds`,
     );
   }
-  if (minSeconds > maxSeconds) {
-    throw new Error(`batch-exit min ${minSeconds} > max ${maxSeconds}`);
+  return seconds;
+}
+
+export function defaultBatchWindowSeconds(): number {
+  return BATCH_EXIT_WINDOW_SECONDS_DEFAULT;
+}
+
+export function roundIsOpen(round: BatchRound, nowMs: number): boolean {
+  return nowMs < round.closesAtMs;
+}
+
+/** Seconds left until the shared close. 0 if the round already closed (flush now). */
+export function remainingSeconds(round: BatchRound, nowMs: number): number {
+  if (nowMs >= round.closesAtMs) return 0;
+  return Math.max(0, Math.ceil((round.closesAtMs - nowMs) / 1000));
+}
+
+export function randomClaimId(entropy: Uint8Array = crypto.getRandomValues(new Uint8Array(16))): string {
+  return Buffer.from(entropy).toString("hex");
+}
+
+export function makeBatchExitClaim(args: {
+  sats: bigint;
+  lockingBytecode: Uint8Array;
+  nowMs?: number;
+  id?: string;
+}): BatchExitClaim {
+  if (args.sats <= 0n) throw new Error("batch-exit claim sats must be positive");
+  if (args.lockingBytecode.length === 0) throw new Error("batch-exit claim needs a locking bytecode");
+  return {
+    id: args.id ?? randomClaimId(),
+    sats: args.sats,
+    lockingBytecode: args.lockingBytecode,
+    enqueuedAtMs: args.nowMs ?? Date.now(),
+  };
+}
+
+function openRound(windowSeconds: number, first: BatchExitClaim, nowMs: number): BatchRound {
+  const window = parseBatchWindowSeconds(windowSeconds);
+  return {
+    windowSeconds: window,
+    openedAtMs: nowMs,
+    closesAtMs: nowMs + window * 1000,
+    claims: [first],
+  };
+}
+
+/**
+ * Join an open round, or open a new one if none exists / the previous already closed.
+ * Does **not** restart the clock for a late-but-still-in-window joiner.
+ */
+export function joinRound(args: {
+  round: BatchRound | null;
+  sats: bigint;
+  lockingBytecode: Uint8Array;
+  nowMs?: number;
+  windowSeconds?: number;
+  id?: string;
+}): { round: BatchRound; remainingSeconds: number; openedNew: boolean; claim: BatchExitClaim } {
+  const nowMs = args.nowMs ?? Date.now();
+  const windowSeconds = args.windowSeconds ?? defaultBatchWindowSeconds();
+  const claim = makeBatchExitClaim({
+    sats: args.sats,
+    lockingBytecode: args.lockingBytecode,
+    nowMs,
+    id: args.id,
+  });
+  if (args.round && roundIsOpen(args.round, nowMs)) {
+    const round: BatchRound = {
+      ...args.round,
+      claims: [...args.round.claims, claim],
+    };
+    return { round, remainingSeconds: remainingSeconds(round, nowMs), openedNew: false, claim };
   }
-  return { minSeconds, maxSeconds };
+  const round = openRound(windowSeconds, claim, nowMs);
+  return { round, remainingSeconds: remainingSeconds(round, nowMs), openedNew: true, claim };
 }
 
-export function defaultBatchWindow(): BatchExitWindow {
-  return parseBatchWindow(BATCH_EXIT_MIN_SECONDS_DEFAULT, BATCH_EXIT_MAX_SECONDS_DEFAULT);
-}
-
-/** Map CSPRNG bytes onto [min, max] inclusive. 8-byte modulus bias is negligible for these spans. */
+/** Map CSPRNG bytes onto [min, max] inclusive. Used to shuffle outputs, not wait times. */
 export function uniformInt(min: number, max: number, entropy: Uint8Array): number {
   if (!Number.isInteger(min) || !Number.isInteger(max)) throw new Error("uniformInt bounds must be integers");
   if (min > max) throw new Error("uniformInt min > max");
@@ -74,50 +142,12 @@ export function uniformInt(min: number, max: number, entropy: Uint8Array): numbe
   return min + Number(acc % BigInt(span));
 }
 
-export function sampleBatchWaitSeconds(
-  window: BatchExitWindow = defaultBatchWindow(),
-  entropy: Uint8Array = crypto.getRandomValues(new Uint8Array(8)),
-): number {
-  return uniformInt(window.minSeconds, window.maxSeconds, entropy);
-}
-
-export function randomClaimId(entropy: Uint8Array = crypto.getRandomValues(new Uint8Array(16))): string {
-  return Buffer.from(entropy).toString("hex");
-}
-
-export function makeBatchExitClaim(args: {
-  sats: bigint;
-  lockingBytecode: Uint8Array;
-  waitSeconds: number;
-  nowMs?: number;
-  id?: string;
-}): BatchExitClaim {
-  if (args.sats <= 0n) throw new Error("batch-exit claim sats must be positive");
-  if (args.lockingBytecode.length === 0) throw new Error("batch-exit claim needs a locking bytecode");
-  if (!Number.isInteger(args.waitSeconds) || args.waitSeconds < 0) {
-    throw new Error("batch-exit waitSeconds must be a non-negative integer");
-  }
-  const nowMs = args.nowMs ?? Date.now();
-  return {
-    id: args.id ?? randomClaimId(),
-    sats: args.sats,
-    lockingBytecode: args.lockingBytecode,
-    enqueuedAtMs: nowMs,
-    readyAtMs: nowMs + args.waitSeconds * 1000,
-  };
-}
-
-export function claimsReadyAt(claims: readonly BatchExitClaim[], nowMs: number): BatchExitClaim[] {
-  return claims.filter((c) => c.readyAtMs <= nowMs);
-}
-
 function entropyAt(entropy: Uint8Array, offset: number, width: number): Uint8Array {
   const out = new Uint8Array(width);
   for (let i = 0; i < width; i += 1) out[i] = entropy[(offset + i) % entropy.length]!;
   return out;
 }
 
-/** Fisher–Yates with supplied entropy (CSPRNG in production). */
 export function shuffleInPlace<T>(items: T[], entropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32))): T[] {
   for (let i = items.length - 1; i > 0; i -= 1) {
     const j = uniformInt(0, i, entropyAt(entropy, i * 8, 8));
@@ -128,11 +158,6 @@ export function shuffleInPlace<T>(items: T[], entropy: Uint8Array = crypto.getRa
   return items;
 }
 
-/**
- * CashFusion-shaped outputs: shuffled P2PKH (or any locking bytecode) list.
- * Any-amount means values are *not* equalized — equal outputs would be a
- * later denomination round, not this profile.
- */
 export function shapeFusionOutputs(
   claims: readonly BatchExitClaim[],
   entropy: Uint8Array = crypto.getRandomValues(new Uint8Array(32)),
@@ -168,27 +193,27 @@ function defaultSleep(ms: number): Promise<void> {
   });
 }
 
-/** One-second CLI countdown. Inject clock/sleep in tests. Seconds=0 is a no-op write. */
 export async function runBatchExitCountdown(seconds: number, io: CountdownIo = {}): Promise<void> {
   if (!Number.isInteger(seconds) || seconds < 0) throw new Error("countdown seconds must be a non-negative integer");
   const write = io.write ?? ((text: string) => process.stderr.write(text));
   const sleep = io.sleep ?? defaultSleep;
   if (seconds === 0) {
-    write("batch-exit countdown 0s remaining\n");
+    write("batch-exit round closing 0s remaining\n");
     return;
   }
   for (let left = seconds; left > 0; left -= 1) {
-    write(`\rbatch-exit countdown ${left}s remaining   `);
+    write(`\rbatch-exit round closing in ${left}s   `);
     await sleep(1000);
   }
-  write("\rbatch-exit countdown 0s remaining   \n");
+  write("\rbatch-exit round closing in 0s   \n");
 }
 
 export type BatchExitPlan = {
-  window: BatchExitWindow;
-  waitSeconds: number;
+  windowSeconds: number;
+  remainingSeconds: number;
+  openedNew: boolean;
+  round: BatchRound;
   claim: BatchExitClaim;
-  ready: BatchExitClaim[];
   outputs: FusionPayout[];
   sketch: FusionBatchSketch;
 };
@@ -196,25 +221,67 @@ export type BatchExitPlan = {
 export function planBatchExit(args: {
   sats: bigint;
   lockingBytecode: Uint8Array;
-  queued?: readonly BatchExitClaim[];
-  window?: BatchExitWindow;
+  round?: BatchRound | null;
+  windowSeconds?: number;
   entropy?: Uint8Array;
   nowMs?: number;
-  waitSeconds?: number;
+  id?: string;
 }): BatchExitPlan {
-  const window = args.window ?? defaultBatchWindow();
-  const entropy = args.entropy ?? crypto.getRandomValues(new Uint8Array(32));
-  const waitSeconds = args.waitSeconds ?? sampleBatchWaitSeconds(window, entropy.subarray(0, 8));
-  const nowMs = args.nowMs ?? Date.now();
-  const claim = makeBatchExitClaim({
+  const joined = joinRound({
+    round: args.round ?? null,
     sats: args.sats,
     lockingBytecode: args.lockingBytecode,
-    waitSeconds,
-    nowMs,
-    id: randomClaimId(entropy.subarray(8, 24)),
+    nowMs: args.nowMs,
+    windowSeconds: args.windowSeconds,
+    id: args.id,
   });
-  const queued = [...(args.queued ?? []), claim];
-  const ready = claimsReadyAt(queued, claim.readyAtMs);
-  const outputs = shapeFusionOutputs(ready, entropy);
-  return { window, waitSeconds, claim, ready, outputs, sketch: fusionBatchSketch(outputs) };
+  const entropy = args.entropy ?? crypto.getRandomValues(new Uint8Array(32));
+  const outputs = shapeFusionOutputs(joined.round.claims, entropy);
+  return {
+    windowSeconds: joined.round.windowSeconds,
+    remainingSeconds: joined.remainingSeconds,
+    openedNew: joined.openedNew,
+    round: joined.round,
+    claim: joined.claim,
+    outputs,
+    sketch: fusionBatchSketch(outputs),
+  };
+}
+
+export type StoredBatchRound = {
+  version: 1;
+  windowSeconds: number;
+  openedAtMs: number;
+  closesAtMs: number;
+  claims: Array<{ id: string; sats: string; lockingHex: string; enqueuedAtMs: number }>;
+};
+
+export function encodeRound(round: BatchRound): StoredBatchRound {
+  return {
+    version: 1,
+    windowSeconds: round.windowSeconds,
+    openedAtMs: round.openedAtMs,
+    closesAtMs: round.closesAtMs,
+    claims: round.claims.map((c) => ({
+      id: c.id,
+      sats: c.sats.toString(),
+      lockingHex: Buffer.from(c.lockingBytecode).toString("hex"),
+      enqueuedAtMs: c.enqueuedAtMs,
+    })),
+  };
+}
+
+export function decodeRound(stored: StoredBatchRound): BatchRound {
+  if (stored.version !== 1) throw new Error("unknown batch-exit round version");
+  return {
+    windowSeconds: stored.windowSeconds,
+    openedAtMs: stored.openedAtMs,
+    closesAtMs: stored.closesAtMs,
+    claims: stored.claims.map((c) => ({
+      id: c.id,
+      sats: BigInt(c.sats),
+      lockingBytecode: Uint8Array.from(Buffer.from(c.lockingHex, "hex")),
+      enqueuedAtMs: c.enqueuedAtMs,
+    })),
+  };
 }

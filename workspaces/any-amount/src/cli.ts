@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createServer } from "node:http";
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { circleFriPlugin } from "./backends/circle/plugin.ts";
 import { hashLabPlugin } from "./backends/hash-lab.ts";
@@ -15,11 +15,16 @@ import {
   type InternalHashId,
 } from "./backends/circle/internal-hash.ts";
 import {
-  BATCH_EXIT_MAX_SECONDS_DEFAULT,
-  BATCH_EXIT_MIN_SECONDS_DEFAULT,
-  parseBatchWindow,
+  BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
+  decodeRound,
+  encodeRound,
+  parseBatchWindowSeconds,
   planBatchExit,
+  remainingSeconds,
   runBatchExitCountdown,
+  shapeFusionOutputs,
+  fusionBatchSketch,
+  type BatchRound,
 } from "./pool/batch-exit.ts";
 import { LAB_PAYOUT_LOCKING } from "./chain/payout.ts";
 import { emptyState, encodeState, STATE_BASE_SATS, utxoValueFor } from "./pool/state.ts";
@@ -29,7 +34,7 @@ import { announceEvent, newRoundKey } from "./nostr/bus.ts";
 import { torStatus } from "./nostr/tor.ts";
 import { DEFAULT_ZKP_FAMILY, describePlugins, zkpPluginByFamily } from "./plugins/registry.ts";
 import { sendMany } from "./chain/send.ts";
-import { mkdir } from "node:fs/promises";
+
 import {
   broadcastCovenantGenesis,
   compileCovenantSuccessor,
@@ -60,10 +65,11 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   balance                 electrum listunspent
   pool create             local genesis state (PAA1)
   pool deposit --sats N [--hash sha256|blake2s|poseidon2-m31] [--plugin circle-fri-m31|hash-lab-v0]
-  pool withdraw --sats N [--batch-exit] [--batch-min 30] [--batch-max 180]
+  pool withdraw --sats N [--batch-exit] [--batch-window 180]
                           partial withdraw (same hash/plugin as the machine)
-                          --batch-exit is opt-in: CSPRNG wait, CLI countdown,
-                          CashFusion-shaped multi-output sketch (not FUSE protocol)
+                          --batch-exit is opt-in: join a shared round. First
+                          waiter opens a 180s window (override with --batch-window).
+                          At close, flush whoever already opted in. Not FUSE.
 
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
   pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded
@@ -93,6 +99,41 @@ function hashIdArg(fallback: InternalHashId = DEFAULT_INTERNAL_HASH_ID): Interna
 
 function flag(name: string): boolean {
   return process.argv.includes(name);
+}
+
+function batchWindowArg(): number {
+  if (flag("--batch-min")) {
+    throw new Error(
+      "batch-exit is one shared round, not a per-user min/max wait. Use --batch-window seconds (default 180).",
+    );
+  }
+  const raw = flag("--batch-window")
+    ? arg("--batch-window")
+    : flag("--batch-max")
+      ? arg("--batch-max")
+      : String(BATCH_EXIT_WINDOW_SECONDS_DEFAULT);
+  if (flag("--batch-max") && !flag("--batch-window")) {
+    console.error("note: --batch-max is an alias for --batch-window (shared round close, not a personal max)");
+  }
+  return parseBatchWindowSeconds(Number(raw));
+}
+
+function batchRoundPath(): string {
+  return join(process.cwd(), ".local", "batch-exit", "round.json");
+}
+
+async function loadBatchRound(): Promise<BatchRound | null> {
+  try {
+    const raw = JSON.parse(await readFile(batchRoundPath(), "utf8")) as Parameters<typeof decodeRound>[0];
+    return decodeRound(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function saveBatchRound(round: BatchRound): Promise<void> {
+  await mkdir(join(process.cwd(), ".local", "batch-exit"), { recursive: true });
+  await writeFile(batchRoundPath(), JSON.stringify(encodeRound(round), null, 2));
 }
 
 function pluginFamilyArg(fallback: string = DEFAULT_ZKP_FAMILY): string {
@@ -204,9 +245,9 @@ async function main(): Promise<void> {
           internalHashIds: INTERNAL_HASH_IDS,
           batchExit: {
             optIn: true,
-            minSeconds: BATCH_EXIT_MIN_SECONDS_DEFAULT,
-            maxSeconds: BATCH_EXIT_MAX_SECONDS_DEFAULT,
+            windowSeconds: BATCH_EXIT_WINDOW_SECONDS_DEFAULT,
             shape: "cashfusion-like-multi-p2pkh",
+            model: "shared-round",
           },
           vkId: circleFriPlugin.vkId,
           sound: circleFriPlugin.sound,
@@ -310,17 +351,29 @@ async function main(): Promise<void> {
     if (!held) throw new Error("no note covers that amount");
     let batchNote: string | undefined;
     if (flag("--batch-exit")) {
-      const window = parseBatchWindow(
-        Number(arg("--batch-min", String(BATCH_EXIT_MIN_SECONDS_DEFAULT))),
-        Number(arg("--batch-max", String(BATCH_EXIT_MAX_SECONDS_DEFAULT))),
-      );
-      const plan = planBatchExit({ sats, lockingBytecode: LAB_PAYOUT_LOCKING, window });
+      const windowSeconds = batchWindowArg();
+      const plan = planBatchExit({
+        sats,
+        lockingBytecode: LAB_PAYOUT_LOCKING,
+        round: await loadBatchRound(),
+        windowSeconds,
+      });
+      await saveBatchRound(plan.round);
+      const who = plan.openedNew ? "opened a new round" : "joined the open round";
       console.error(
-        `batch-exit opt-in: waiting ${plan.waitSeconds}s (window ${window.minSeconds}-${window.maxSeconds}s, CSPRNG entropy)`,
+        `batch-exit opt-in: ${who}; ${plan.round.claims.length} waiter(s); closes in ${plan.remainingSeconds}s (window ${plan.windowSeconds}s)`,
       );
-      await runBatchExitCountdown(plan.waitSeconds);
-      batchNote = `batch-exit wait=${plan.waitSeconds}s outputs=${plan.sketch.outputCount} shape=${plan.sketch.shape}`;
-      console.log(JSON.stringify(plan.sketch));
+      await runBatchExitCountdown(plan.remainingSeconds);
+      const latest = (await loadBatchRound()) ?? plan.round;
+      const left = remainingSeconds(latest, Date.now());
+      if (left === 0) {
+        const sketch = fusionBatchSketch(shapeFusionOutputs(latest.claims));
+        batchNote = `batch-exit waiters=${latest.claims.length} window=${latest.windowSeconds}s shape=${sketch.shape}`;
+        console.log(JSON.stringify(sketch));
+      } else {
+        batchNote = `batch-exit still-open remaining=${left}s waiters=${latest.claims.length}`;
+        console.log(JSON.stringify({ remainingSeconds: left, waiters: latest.claims.length }));
+      }
     }
     const w = applyWithdraw(loaded.machine, held.note, held.index, new Uint8Array(32), sats);
     const witness = { ...wWithdraw(held.note, held.index, w.path, w.created), hash: hash.id };
