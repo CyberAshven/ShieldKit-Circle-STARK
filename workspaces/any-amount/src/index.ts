@@ -1,4 +1,5 @@
-export { ANY_STATE_BYTES, ANY_STATE_MAGIC, decodeState, emptyState, encodeState } from "./pool/state.ts";
+export { ANY_STATE_BYTES, ANY_STATE_MAGIC, decodeState, emptyState, encodeState, utxoValueFor } from "./pool/state.ts";
+export { LAB_PAYOUT_DIGEST, LAB_PAYOUT_LOCKING, hashPayoutLocking } from "./chain/payout.ts";
 export { IncrementalMerkle, commitNote, nullifierOf } from "./pool/notes.ts";
 export { commitAmount, commitPublicNet, commitReserve, freshNetBlind } from "./amounts/hash-commit.ts";
 export { applyDeposit, applyWithdraw, applyAggregate, checkPublicTransition } from "./pool/transition.ts";

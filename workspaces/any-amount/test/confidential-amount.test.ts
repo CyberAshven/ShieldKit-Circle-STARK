@@ -9,7 +9,8 @@ import { commitAmount, commitPublicNet, commitReserve } from "../src/amounts/has
 import { encodeStatement } from "../src/pool/statement.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, commitNote, type Note } from "../src/pool/notes.ts";
-import { emptyState, encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { emptyState, encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
+import { LAB_PAYOUT_DIGEST } from "../src/chain/payout.ts";
 import { writeI64BE, writeI64LE, writeU64BE, writeU64LE } from "../src/pool/bytes.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
@@ -58,7 +59,7 @@ function amountEncodings(v: bigint): Uint8Array[] {
 
 function successorHex(note: Note) {
   const d = applyDeposit(machine(), note);
-  const w = applyWithdraw(d.machine, note, d.index, rnd32(), note.amountSats / 4n);
+  const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, note.amountSats / 4n);
   const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
   const measured = compileCovenantSuccessor({
     wallet: createLabWallet(),
@@ -66,7 +67,7 @@ function successorHex(note: Note) {
     pool: {
       tx_hash: "11".repeat(32),
       tx_pos: 0,
-      value: Number(STATE_BASE_SATS),
+      value: utxoValueFor(w.statement.oldState),
       category: new Uint8Array(32).fill(0x11),
       commitment: encodePublicPaa1(w.statement.oldState),
     },
@@ -96,10 +97,12 @@ describe("hash/PQ note-amount commit", () => {
     const a = successorHex({ amountSats: AMT_A, rho: rnd32(), ownerSecret: rnd32() });
     const b = successorHex({ amountSats: AMT_B, rho: rnd32(), ownerSecret: rnd32() });
     for (const built of [a, b]) {
-      const hex = built.measured.raw;
-      for (const amt of [AMT_A, AMT_B, AMT_A / 4n, AMT_B / 4n]) {
+      const unlocking = decodeTransaction(built.measured.raw);
+      if (typeof unlocking === "string") throw new Error(unlocking);
+      const unlock0 = unlocking.inputs[0]!.unlockingBytecode;
+      for (const amt of [AMT_A, AMT_B]) {
         for (const enc of amountEncodings(amt)) {
-          assert.equal(containsBytes(hex, enc), false, `successor must not publish ${amt}`);
+          assert.equal(containsBytes(unlock0, enc), false, `unlocking must not publish note amount ${amt}`);
         }
       }
       const pub = encodePublicPaa1(built.statement.newState);

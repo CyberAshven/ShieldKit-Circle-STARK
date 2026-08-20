@@ -13,7 +13,7 @@ import {
   internalHash,
   type InternalHashId,
 } from "./backends/circle/internal-hash.ts";
-import { emptyState, encodeState, STATE_BASE_SATS } from "./pool/state.ts";
+import { emptyState, encodeState, STATE_BASE_SATS, utxoValueFor } from "./pool/state.ts";
 import { applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "./pool/mix-successor.ts";
 import { announceEvent, newRoundKey } from "./nostr/bus.ts";
@@ -347,7 +347,7 @@ async function main(): Promise<void> {
   }
   if (cmd === "lab" && process.argv[3] === "e2e") {
     const run = (tag: string) => {
-      const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
+      const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 1_000n });
       const v = circleFriPlugin.verify(mix.statement, mix.proof);
       if (!v.ok) throw new Error(`${tag} mix proof: ${v.reason}`);
       if (!mixChangedRootsAndReserve(mix)) throw new Error(`${tag} mix did not update roots/reserve`);
@@ -431,11 +431,12 @@ async function main(): Promise<void> {
     const d = applyDeposit(machine, note);
     const depW = wDeposit(note, d.index, d.path);
     const proof = encodeFriProof(proveFri(d.statement, depW));
-    const w = applyWithdraw(d.machine, note, d.index, new Uint8Array(32), 3_000n);
+    const { LAB_PAYOUT_DIGEST } = await import("./chain/payout.ts");
+    const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
     const sizes = measureGenesisAndSuccessor(d.machine.state, w.machine.state, proof);
     const { compileCovenantSuccessor } = await import("./chain/covenant-spend.ts");
     const { createLabWallet } = await import("./chain/wallet.ts");
-    const { encodePublicPaa1, STATE_BASE_SATS } = await import("./pool/state.ts");
+    const { encodePublicPaa1, utxoValueFor } = await import("./pool/state.ts");
     const { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } = await import("./chain/air-cqz.ts");
     const cons = compileCovenantSuccessor({
       wallet: createLabWallet(),
@@ -443,7 +444,7 @@ async function main(): Promise<void> {
       pool: {
         tx_hash: "11".repeat(32),
         tx_pos: 0,
-        value: Number(STATE_BASE_SATS),
+        value: utxoValueFor(d.machine.state),
         category: new Uint8Array(32).fill(0x11),
         commitment: encodePublicPaa1(d.machine.state),
       },
@@ -522,7 +523,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "pool" && process.argv[3] === "chipnet-mix") {
-    const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
+    const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 1_000n });
     if (!mixChangedRootsAndReserve(mix)) throw new Error("mix did not update roots/reserve");
     const v = circleFriPlugin.verify(mix.statement, mix.proof);
     if (!v.ok) throw new Error(v.reason);
@@ -543,7 +544,7 @@ async function main(): Promise<void> {
         pool: {
           tx_hash: genesis.broadcast,
           tx_pos: 0,
-          value: Number(STATE_BASE_SATS),
+          value: utxoValueFor(mix.oldState),
           category: hexToBin(genesis.categoryHex),
           commitment: encodePublicPaa1(mix.oldState),
         },

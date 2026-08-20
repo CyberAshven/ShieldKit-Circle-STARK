@@ -15,7 +15,7 @@ import {
 } from "../src/chain/covenant-spend.ts";
 import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "../src/pool/mix-successor.ts";
-import { encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
 import { proofShardReport } from "../src/chain/fri-openings.ts";
 
 const scratch = process.argv[2];
@@ -27,7 +27,7 @@ function sleep(ms: number) {
 }
 
 const wallet = await loadLabWallet();
-const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
+const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 1_000n });
 if (!mixChangedRootsAndReserve(mix)) throw new Error("mix did not update roots/reserve");
 const v = circleFriPlugin.verify(mix.statement, mix.proof);
 if (!v.ok) throw new Error(`verify: ${v.reason}`);
@@ -92,7 +92,7 @@ try {
     pool: {
       tx_hash: genesisTxid,
       tx_pos: 0,
-      value: Number(STATE_BASE_SATS),
+      value: utxoValueFor(mix.oldState),
       category: hexToBin(picked.tx_hash),
       commitment: encodePublicPaa1(mix.oldState),
     },

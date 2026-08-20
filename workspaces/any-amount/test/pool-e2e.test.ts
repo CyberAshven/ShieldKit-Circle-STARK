@@ -10,7 +10,7 @@ import { emptyState } from "../src/pool/state.ts";
 import { writeI64BE, writeU64BE } from "../src/pool/bytes.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
-import { encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
 import {
   AIR_NEWTON_BYTES,
   AIR_OFF_EVEN,
@@ -130,7 +130,7 @@ describe("pool e2e mix", () => {
     assert.notDeepEqual(d.statement.noteCommitment, leaf.slice(0, 8));
     assert.equal(d.statement.noteCommitment.length, 32);
 
-    const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
+    const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 1_000n });
     assert.ok(mixChangedRootsAndReserve(mix));
     assert.equal(circleFriPlugin.verify(mix.statement, mix.proof).ok, true);
 
@@ -143,7 +143,7 @@ describe("pool e2e mix", () => {
       pool: {
         tx_hash: "11".repeat(32),
         tx_pos: 0,
-        value: Number(STATE_BASE_SATS),
+        value: utxoValueFor(mix.statement.oldState),
         category: new Uint8Array(32).fill(0x11),
         commitment: encodePublicPaa1(mix.statement.oldState),
       },

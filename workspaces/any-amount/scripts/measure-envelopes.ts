@@ -2,7 +2,8 @@
 import { writeFileSync } from "node:fs";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
-import { emptyState, encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { emptyState, encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
+import { LAB_PAYOUT_DIGEST } from "../src/chain/payout.ts";
 import { encodeFriProof, proveFri, wWithdraw } from "../src/backends/circle/fri.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
@@ -27,13 +28,13 @@ const d = applyDeposit(
   { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
   note,
 );
-const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
 const proof = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
 const wallet = createLabWallet();
 const pool = {
   tx_hash: "11".repeat(32),
   tx_pos: 0,
-  value: Number(STATE_BASE_SATS),
+  value: utxoValueFor(w.statement.oldState),
   category: new Uint8Array(32).fill(0x11),
   commitment: encodePublicPaa1(w.statement.oldState),
 };

@@ -7,7 +7,9 @@ import {
   walletTemplateP2pkhNonHd,
   walletTemplateToCompilerBCH,
 } from "@bitauth/libauth";
-import { encodePublicPaa1, encodeState, STATE_BASE_SATS, type AnyAmountState } from "../pool/state.ts";
+import { encodePublicPaa1, encodeState, STATE_BASE_SATS, utxoValueFor, type AnyAmountState } from "../pool/state.ts";
+import { isZero32 } from "../pool/bytes.ts";
+import { LAB_PAYOUT_LOCKING } from "./payout.ts";
 import { createLabWallet, privateKeyOf, type LabWallet } from "./wallet.ts";
 import { broadcast, connectChipnet, getTx, listUnspent } from "./electrum.ts";
 
@@ -135,7 +137,7 @@ export function compileCovenantSpend(args: {
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const fee = 1_200n;
-  const value = STATE_BASE_SATS;
+  const value = utxoValueFor(args.state);
   const change = BigInt(args.utxo.value) - value - fee;
   if (change < 546n) throw new Error("utxo too small for covenant spend");
 
@@ -193,7 +195,7 @@ export function compileCovenantSuccessor(args: {
   pool: {
     tx_hash: string;
     tx_pos: number;
-    value: number;
+    value: number | bigint;
     category: Uint8Array;
     commitment: Uint8Array;
   };
@@ -207,6 +209,7 @@ export function compileCovenantSuccessor(args: {
   envelope?: TxEnvelope;
   slotKernels?: number;
   feeSats?: bigint;
+  payoutLockingBytecode?: Uint8Array;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -217,9 +220,18 @@ export function compileCovenantSuccessor(args: {
   // Public Chipnet relay is 1 sat/byte. 100k covers the 95 KB standard spend;
   // consensus (~269 KB) needs a matching fee or electrum returns code 66.
   const fee = args.feeSats ?? (args.envelope === "consensus" ? 400_000n : 100_000n);
-  const value = STATE_BASE_SATS;
-  const change = BigInt(args.feeUtxo.value) - fee;
+  const value = utxoValueFor(args.newState);
+  const poolIn = BigInt(args.pool.value);
+  const net = value - poolIn;
+  const depositNeed = net > 0n ? net : 0n;
+  const change = BigInt(args.feeUtxo.value) - fee - depositNeed;
   if (change < 546n) throw new Error("fee utxo too small for successor");
+  const withdrawSats = net < 0n ? -net : 0n;
+  const payoutLock = args.payoutLockingBytecode ?? LAB_PAYOUT_LOCKING;
+  const wantPayout =
+    Boolean(args.statement) &&
+    args.statement!.publicAmountSats < 0n &&
+    !isZero32(args.statement!.payoutLockingDigest);
   const commitment = encodePublicPaa1(args.newState);
   const oldState = decodeState(args.pool.commitment);
   const decoded = decodeFriProof(args.proof);
@@ -303,9 +315,12 @@ export function compileCovenantSuccessor(args: {
           nft: { capability: "mutable", commitment },
         },
       },
+      ...(wantPayout
+        ? [{ lockingBytecode: payoutLock, valueSatoshis: withdrawSats }]
+        : []),
       {
         lockingBytecode: { compiler: c, script: "lock", data },
-        valueSatoshis: change + BigInt(args.pool.value) - value,
+        valueSatoshis: change,
       },
     ],
   });
@@ -353,7 +368,7 @@ export function measureGenesisAndSuccessor(state: AnyAmountState, next: AnyAmoun
     pool: {
       tx_hash: genesisP2sh32.txid,
       tx_pos: 0,
-      value: Number(STATE_BASE_SATS),
+      value: utxoValueFor(state),
       category: hexToBin("11".repeat(32)),
       commitment: encodePublicPaa1(state),
     },

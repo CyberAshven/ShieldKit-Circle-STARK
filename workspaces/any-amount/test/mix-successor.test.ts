@@ -30,7 +30,7 @@ describe("mix successor updates the public cell", () => {
   });
 
   it("VM-evals the mix withdraw successor; digest-only still fails", () => {
-    const mix = runMixSuccessor({ depositCount: 5, withdrawSats: 500n });
+    const mix = runMixSuccessor({ depositCount: 5, withdrawSats: 1_000n });
     const v = verifyFri(mix.statement, decodeFriProof(mix.proof));
     assert.equal(v.ok, true, v.ok ? "" : v.reason);
     const plugin = circleFriPlugin.verify(mix.statement, mix.proof);

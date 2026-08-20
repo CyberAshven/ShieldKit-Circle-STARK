@@ -61,7 +61,9 @@ import {
   poolLockP2sh32,
   pushData,
 } from "./covenant-p2s.ts";
-import { encodePublicPaa1, STATE_BASE_SATS, type AnyAmountState } from "../pool/state.ts";
+import { encodePublicPaa1, STATE_BASE_SATS, utxoValueFor, type AnyAmountState } from "../pool/state.ts";
+import { isZero32 } from "../pool/bytes.ts";
+import { LAB_PAYOUT_LOCKING } from "./payout.ts";
 
 export { compileFriQueryKernel, compileFriQueryLockP2sh32, FRI_QUERY_KERNEL };
 
@@ -224,6 +226,8 @@ export function evaluatePoolSuccessorVm(args: {
   statement?: PoolStatement;
   airPacked?: Uint8Array;
   outputValueSats?: bigint;
+  payoutLockingBytecode?: Uint8Array;
+  payoutValueSats?: bigint;
   /** Override output PAA1 (default encodePublicPaa1(newState)). */
   outputCommitment?: Uint8Array;
   slotKernels?: number;
@@ -236,8 +240,17 @@ export function evaluatePoolSuccessorVm(args: {
   const poolLock = poolLockP2sh32({ slotKernels });
   const friLock = compileFriQueryLockP2sh32();
   const category = args.category ?? new Uint8Array(32).fill(0x11);
-  const poolValue = STATE_BASE_SATS;
-  const newValue = args.outputValueSats ?? STATE_BASE_SATS;
+  const poolValue = utxoValueFor(args.oldState);
+  const newValue = args.outputValueSats ?? utxoValueFor(args.newState);
+  const net = newValue - poolValue;
+  const payoutLock = args.payoutLockingBytecode ?? LAB_PAYOUT_LOCKING;
+  const wantPayout =
+    Boolean(args.statement) &&
+    args.statement!.publicAmountSats < 0n &&
+    !isZero32(args.statement!.payoutLockingDigest);
+  const payoutValue = args.payoutValueSats ?? (net < 0n ? -net : 0n);
+  const funderNeed = net > 0n ? net : 0n;
+  const funderLock = Uint8Array.of(0x51);
   const foldN = foldKernelCount(slotKernels);
   const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
   const cqzLock = compileCqzLockP2sh32();
@@ -261,6 +274,7 @@ export function evaluatePoolSuccessorVm(args: {
     { lockingBytecode: cqzLock, valueSatoshis: 1000n },
     ...foldLocks.map((lockingBytecode) => ({ lockingBytecode, valueSatoshis: 1000n })),
     ...slotUnlocks.map((_, i) => ({ lockingBytecode: compileSlotsLockP2sh32(i), valueSatoshis: 1000n })),
+    ...(funderNeed > 0n ? [{ lockingBytecode: funderLock, valueSatoshis: funderNeed }] : []),
   ];
   const decoded = decodeFriProof(args.proof);
   const prefix = args.airPacked
@@ -300,6 +314,16 @@ export function evaluatePoolSuccessorVm(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: unlocking,
       })),
+      ...(funderNeed > 0n
+        ? [
+            {
+              outpointTransactionHash: dummyPrevout(0xd0, 0),
+              outpointIndex: 0,
+              sequenceNumber: 0xffffffff,
+              unlockingBytecode: new Uint8Array(),
+            },
+          ]
+        : []),
     ],
     outputs: [
       {
@@ -311,6 +335,7 @@ export function evaluatePoolSuccessorVm(args: {
           nft: { capability: "mutable" as const, commitment: args.outputCommitment ?? encodePublicPaa1(args.newState) },
         },
       },
+      ...(wantPayout ? [{ lockingBytecode: payoutLock, valueSatoshis: payoutValue }] : []),
     ],
   };
   const result = vm.verify({ sourceOutputs, transaction });

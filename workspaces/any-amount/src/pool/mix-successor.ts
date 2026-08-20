@@ -8,6 +8,7 @@ import { writeU64BE } from "./bytes.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "./notes.ts";
 import { applyDeposit, applyWithdraw, type PoolMachine } from "./transition.ts";
 import type { PoolStatement } from "./statement.ts";
+import { LAB_PAYOUT_DIGEST } from "../chain/payout.ts";
 
 export type PublicPoolView = {
   sequence: string;
@@ -53,7 +54,7 @@ export function runMixSuccessor(args?: {
   withdrawSats?: bigint;
 }): MixSuccessor {
   const n = args?.depositCount ?? 6;
-  const withdrawSats = args?.withdrawSats ?? 500n;
+  const withdrawSats = args?.withdrawSats ?? 1_000n;
   let machine: PoolMachine = {
     state: emptyState(args?.instance ?? rnd32()),
     notes: new IncrementalMerkle(),
@@ -73,7 +74,7 @@ export function runMixSuccessor(args?: {
   const leavesBefore = machine.notes.leaves.length;
   const oldState = structuredCloneState(machine.state);
   const spent = notes[0]!;
-  const w = applyWithdraw(machine, spent.note, spent.index, rnd32(), withdrawSats);
+  const w = applyWithdraw(machine, spent.note, spent.index, LAB_PAYOUT_DIGEST, withdrawSats);
   const witness = wWithdraw(spent.note, spent.index, w.path, w.created);
   const proof = encodeFriProof(proveFri(w.statement, witness));
   const newState = w.machine.state;

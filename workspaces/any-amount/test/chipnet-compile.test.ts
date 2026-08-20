@@ -4,7 +4,8 @@ import { hash256 } from "@bitauth/libauth";
 import { compileCovenantSuccessor, measureGenesisAndSuccessor } from "../src/chain/covenant-spend.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
-import { emptyState, encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { emptyState, encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
+import { LAB_PAYOUT_DIGEST } from "../src/chain/payout.ts";
 import { decodeFriProof, encodeFriProof, proveFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
 import {
   compilePoolCovenant,
@@ -28,7 +29,7 @@ describe("covenant five-point compile", () => {
       { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
       note,
     );
-    const w = applyWithdraw(d.machine, note, d.index, new Uint8Array(32), 3_000n);
+    const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
     const proof = encodeFriProof(proveFri(d.statement, wDeposit(note, d.index, d.path)));
     const sizes = measureGenesisAndSuccessor(d.machine.state, w.machine.state, proof);
     assert.ok(sizes.genesisP2sh32.txBytes <= 100_000);
@@ -60,7 +61,7 @@ describe("covenant five-point compile", () => {
       { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
       note,
     );
-    const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
     const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
     const measured = compileCovenantSuccessor({
       wallet: createLabWallet(),
@@ -68,7 +69,7 @@ describe("covenant five-point compile", () => {
       pool: {
         tx_hash: "11".repeat(32),
         tx_pos: 0,
-        value: Number(STATE_BASE_SATS),
+        value: utxoValueFor(w.statement.oldState),
         category: new Uint8Array(32).fill(0x11),
         commitment: encodePublicPaa1(w.statement.oldState),
       },
@@ -100,7 +101,7 @@ describe("covenant five-point compile", () => {
       { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
       note,
     );
-    const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
     const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
     const measured = compileCovenantSuccessor({
       wallet: createLabWallet(),
@@ -108,7 +109,7 @@ describe("covenant five-point compile", () => {
       pool: {
         tx_hash: "11".repeat(32),
         tx_pos: 0,
-        value: Number(STATE_BASE_SATS),
+        value: utxoValueFor(w.statement.oldState),
         category: new Uint8Array(32).fill(0x11),
         commitment: encodePublicPaa1(w.statement.oldState),
       },
@@ -152,7 +153,7 @@ describe("covenant five-point compile", () => {
       { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
       note,
     );
-    const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
     const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
     const vm = evaluatePoolSuccessorVm({
       oldState: w.statement.oldState,
@@ -178,7 +179,7 @@ describe("covenant five-point compile", () => {
       { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
       note,
     );
-    const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
     const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
     const bad = evaluateWrongFoldIndex({
       oldState: w.statement.oldState,

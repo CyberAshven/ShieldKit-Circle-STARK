@@ -79,8 +79,8 @@ export function encodeState(state: AnyAmountState): Uint8Array {
 }
 
 /**
- * On-chain NFT cell: instance, roots, sequence. Reserve bytes are zero —
- * pool value is not published in the cell. Conservation lives in the AIR.
+ * On-chain NFT cell: instance, roots, sequence. Reserve *bytes* stay zero —
+ * outstanding reserve lives in the covenant UTXO satoshis (`utxoValueFor`).
  */
 export function encodePublicPaa1(state: AnyAmountState): Uint8Array {
   const bin = encodeState(state);
@@ -116,6 +116,8 @@ export function stateFromHex(hex: string): AnyAmountState {
   return decodeState(hexToBytes(hex, "state"));
 }
 
-export function utxoValueFor(_state: AnyAmountState): bigint {
-  return STATE_BASE_SATS;
+/** Dust NFT carrier plus outstanding reserve. TVL is a public consensus field. */
+export function utxoValueFor(state: AnyAmountState): bigint {
+  if (state.reserveSats < 0n) throw new Error("negative reserve");
+  return STATE_BASE_SATS + state.reserveSats;
 }

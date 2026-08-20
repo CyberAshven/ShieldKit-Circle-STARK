@@ -281,7 +281,7 @@ const benchLog = {
 writeFileSync(join(scratch, "bench.log"), `${JSON.stringify(benchLog)}\n`);
 
 function e2e(tag: string) {
-  const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 500n });
+  const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 1_000n });
   const v = circleFriPlugin.verify(mix.statement, mix.proof);
   if (!v.ok) throw new Error(`${tag} mix proof: ${v.reason}`);
   if (!mixChangedRootsAndReserve(mix)) throw new Error(`${tag} mix did not update roots/reserve`);

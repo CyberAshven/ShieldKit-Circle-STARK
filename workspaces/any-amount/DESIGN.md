@@ -27,7 +27,7 @@ Output 0 must keep:
 
 1. locking bytecode (P2S / P2SH32 redeem)
 2. token category
-3. satoshis = `STATE_BASE` (reserve is not on the UTXO or in the public cell)
+3. satoshis = `STATE_BASE` + outstanding reserve (dust NFT carrier + public TVL; PAA1 reserve bytes stay zero)
 4. fungible token amount `0`
 5. new 128-byte commitment (`PAA1` any-amount, or `PAF1` Fv1 ticket)
 
@@ -41,7 +41,7 @@ input 11 bind-T, input 12 Circle fold (1 query), inputs 13..18 slot `C=Q·Z`
 382203 B compile). Prior Chipnet 10-fold land was 59 inputs / 301279 B. Unlocking of the pool input is the packed AIR
 (FS digest + public PAA1) plus redeem — not spent-leaf/rho/owner/`publicAmountSats`.
 A spend that is only `OP_RETURN PAA1PROF || SHA-256(proof)` **fails**. Recursion
-is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount output.
+is not used. The pool UTXO value is `STATE_BASE` + reserve (public TVL, not Maxwell/Orchard). CHIP 2025-05 EC ([BCR 1570](https://bitcoincashresearch.org/t/chip-2025-05-native-elliptic-curve-arithmetic-operations/1570)) is a later Pedersen/BP profile if it lands.
 
 ## Why not OP_RETURN (authoring)
 
@@ -63,7 +63,7 @@ is not used. The pool UTXO value stays `STATE_BASE`; that is not a hidden-amount
 ## Profiles
 
 - **Fv1** (joint, sealed): 0.1 ticket, public amount, PAF1. Size gate with toorik. Do not widen it on `main`.
-- **any-amount** (this workspace): type the number. Note amounts are a tagged SHA-256 commit; the public net and reserve are hiding tagged hashes in `encodeStatement`. Pool UTXO stays `STATE_BASE`.
+- **any-amount** (this workspace): type the number. Note amounts are a tagged SHA-256 commit; the public net and reserve are hiding tagged hashes in `encodeStatement`. Pool UTXO sats = `STATE_BASE` + reserve (public TVL).
 - **hidden-amount UTXO**: same covenant + hidden pool output value (later CHIP). Not this increment.
 
 P2PKH is **not** the shielded pool. The pool is the **covenant UTXO**.
@@ -122,7 +122,7 @@ No. SHA-256 as the internal hash does **not** make this lab better-than-XMR or Z
 
 - Circle FRI is a **hash STARK**: no trusted setup, no pairing curve, PQ *family* (SHA-256 + M31). Aztec (Honk/Plonk-ish) and Zcash (Halo2 / Groth16 history) sit on pairing or discrete-log assumptions. Monero is ring signatures + Bulletproofs, not a membership STARK.
 - The **shipped** worksheet is 128 conjectural bits. That is an ethSTARK-style count, not a proof those systems are weaker.
-- Pool UTXO sats stay public `STATE_BASE`. Note amounts are hash-committed; that is not Monero Bulletproofs or Zcash Orchard hiding of output value.
+- Pool UTXO sats are public `STATE_BASE` + reserve (TVL). Note amounts are hash-committed; that is not Monero Bulletproofs or Zcash Orchard hiding of output value. CHIP 2025-05 ([BCR 1570](https://bitcoincashresearch.org/t/chip-2025-05-native-elliptic-curve-arithmetic-operations/1570)) is later-if-lands.
 - See `COMPARISON.md` for the checkable axes. Do not quote a “better-than theorem.”
 
 ### Why Rust?

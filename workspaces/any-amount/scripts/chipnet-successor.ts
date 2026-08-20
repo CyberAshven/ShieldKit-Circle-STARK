@@ -22,7 +22,7 @@ try {
   const token = poolOut.token;
   if (!token?.nft) throw new Error("genesis output 0 has no NFT");
   const onChain = decodeState(token.nft.commitment);
-  const mix = runMixSuccessor({ instance: onChain.poolInstanceId, depositCount: 6, withdrawSats: 500n });
+  const mix = runMixSuccessor({ instance: onChain.poolInstanceId, depositCount: 6, withdrawSats: 1_000n });
   if (!mixChangedRootsAndReserve(mix)) {
     throw new Error("mix successor did not update noteRoot, nullifierRoot, and reserve");
   }

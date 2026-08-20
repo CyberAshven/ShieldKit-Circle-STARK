@@ -3,7 +3,8 @@ import { describe, it } from "node:test";
 import { encodeFriProof, proveFri, wDeposit, wWithdraw } from "../src/backends/circle/fri.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
-import { emptyState, encodePublicPaa1, encodeState, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { emptyState, encodePublicPaa1, encodeState, STATE_BASE_SATS, utxoValueFor } from "../src/pool/state.ts";
+import { LAB_PAYOUT_DIGEST } from "../src/chain/payout.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
 import { evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
@@ -18,7 +19,7 @@ function mix() {
     { state: emptyState(crypto.getRandomValues(new Uint8Array(32))), notes: new IncrementalMerkle(), nullifiers: new NullifierSet() },
     note,
   );
-  const w = applyWithdraw(d.machine, note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+  const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
   const raw = encodeFriProof(proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created)));
   return { note, d, w, raw };
 }
@@ -63,7 +64,7 @@ describe("on-chain seq / reserve-zero without publishing the spent note", () => 
       pool: {
         tx_hash: "11".repeat(32),
         tx_pos: 0,
-        value: Number(STATE_BASE_SATS),
+        value: utxoValueFor(w.statement.oldState),
         category: new Uint8Array(32).fill(0x11),
         commitment: encodePublicPaa1(w.statement.oldState),
       },

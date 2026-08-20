@@ -117,6 +117,22 @@ export function isZero32(bytes: Uint8Array): boolean {
   return bytes.length === 32 && bytes.every((b) => b === 0);
 }
 
+/** Minimally encoded Bitcoin script number (≤ 8 bytes). */
+export function encodeVmNumber(n: bigint): Uint8Array {
+  if (n === 0n) return Uint8Array.of(0x00);
+  const neg = n < 0n;
+  let v = neg ? -n : n;
+  const bytes: number[] = [];
+  while (v > 0n) {
+    bytes.push(Number(v & 0xffn));
+    v >>= 8n;
+  }
+  if ((bytes[bytes.length - 1]! & 0x80) !== 0) bytes.push(0);
+  if (neg) bytes[bytes.length - 1]! |= 0x80;
+  if (bytes.length > 8) throw new Error("vm number wider than 8 bytes");
+  return Uint8Array.from(bytes);
+}
+
 export function eq32(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === 32 && b.length === 32 && a.every((x, i) => x === b[i]);
 }

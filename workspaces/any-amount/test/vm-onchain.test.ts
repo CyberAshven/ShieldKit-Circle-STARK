@@ -43,6 +43,7 @@ import { NOTE_MERKLE_WALK, encodeWalkSteps } from "../src/chain/note-merkle.ts";
 import { cashAssemblyToBin } from "@bitauth/libauth";
 import { pushData } from "../src/chain/covenant-p2s.ts";
 import { compilePoolCovenant } from "../src/chain/covenant-p2s.ts";
+import { LAB_PAYOUT_DIGEST } from "../src/chain/payout.ts";
 
 function deposit() {
   const note: Note = {
@@ -76,7 +77,7 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
   });
 
   it("mix withdraw successor updates roots and VM-accepts; digest-only fails", () => {
-    const mix = runMixSuccessor({ depositCount: 5, withdrawSats: 500n });
+    const mix = runMixSuccessor({ depositCount: 5, withdrawSats: 1_000n });
     const on = evaluateOnChainVerify(mix.statement, mix.proof);
     assert.ok(mixChangedRootsAndReserve(mix));
     assert.equal(on.stark.ok, true, on.stark.ok ? "" : on.stark.reason);
@@ -87,7 +88,7 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
 
   it("honest successor accepts; digest-only, missing, and fake-membership fail", () => {
     const d = deposit();
-    const w = applyWithdraw(d.machine, d.note, d.index, crypto.getRandomValues(new Uint8Array(32)), 3_000n);
+    const w = applyWithdraw(d.machine, d.note, d.index, LAB_PAYOUT_DIGEST, 3_000n);
     const wit = wWithdraw(d.note, d.index, w.path, w.created);
     const proof = proveFri(w.statement, wit);
     const raw = encodeFriProof(proof);

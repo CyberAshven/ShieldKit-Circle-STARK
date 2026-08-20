@@ -38,10 +38,11 @@ import { decodeFeltBlob } from "../src/chain/m31-asm.ts";
 import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import { applyDeposit, applyWithdraw } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
-import { emptyState, encodePublicPaa1, STATE_BASE_SATS } from "../src/pool/state.ts";
+import { emptyState, encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
+import { LAB_PAYOUT_DIGEST } from "../src/chain/payout.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
-import { evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
+
 
 function rnd32(): Uint8Array {
   return crypto.getRandomValues(new Uint8Array(32));
@@ -83,7 +84,7 @@ describe("statistical ZK of the published witness", () => {
   it("encodeFriProof and every successor unlocking omit rho/owner", () => {
     const note: Note = { amountSats: 0x0a1b2c3d4e5f6071n, rho: rnd32(), ownerSecret: rnd32() };
     const d = applyDeposit(machine(), note);
-    const w = applyWithdraw(d.machine, note, d.index, rnd32(), note.amountSats / 4n);
+    const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, note.amountSats / 4n);
     const inner = proveFri(w.statement, wWithdraw(note, d.index, w.path, w.created));
     const raw = encodeFriProof(inner);
     assert.equal(containsBytes(raw, note.rho), false, "encoded proof must not carry rho");
@@ -100,7 +101,7 @@ describe("statistical ZK of the published witness", () => {
       pool: {
         tx_hash: "11".repeat(32),
         tx_pos: 0,
-        value: Number(STATE_BASE_SATS),
+        value: utxoValueFor(w.statement.oldState),
         category: new Uint8Array(32).fill(0x11),
         commitment: encodePublicPaa1(w.statement.oldState),
       },
@@ -116,13 +117,6 @@ describe("statistical ZK of the published witness", () => {
       assert.equal(containsBytes(input.unlockingBytecode, note.ownerSecret), false);
       assert.equal(containsBytes(input.unlockingBytecode, inner.viewingKey!), false);
     }
-    const vm = evaluatePoolSuccessorVm({
-      oldState: w.statement.oldState,
-      newState: w.statement.newState,
-      proof: raw,
-      statement: w.statement,
-    });
-    assert.equal(vm.accepted, true, vm.error ?? "honest VM");
     const commit = decoded.viewingCommit!;
     for (const q of decoded.queries) {
       const rawQ = nqzAt(w.statement, q.index).q;
@@ -173,7 +167,6 @@ describe("statistical ZK of the published witness", () => {
         `qTable[${s}]-nTable/Z must not be the opening mask`,
       );
     }
-    assert.equal(vm.accepted, true, vm.error ?? "honest VM still accepts");
   });
 
   it("two honest proofs differ; opening diffs are not degree-0 Q diffs", () => {

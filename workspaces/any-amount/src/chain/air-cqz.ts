@@ -8,6 +8,8 @@
  *   392   Newton odd
  *   524   FS digest + two public PAA1 cells
  *   812   unused (mask felt is not packed; Q and N are both opening-masked)
+ *   844   payout HASH256 (32)
+ *   876   public net vm-number (1-byte length + ≤8 bytes)
  *   957   Q table (36×4)
  *   1101  FS indices
  *   1173  on-chain cells
@@ -17,7 +19,7 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { encodeStatement, type PoolStatement } from "../pool/statement.ts";
 import { encodePublicPaa1 } from "../pool/state.ts";
-import { concatBytes, writeU32BE } from "../pool/bytes.ts";
+import { concatBytes, encodeVmNumber, writeU32BE } from "../pool/bytes.ts";
 import { airQuotientLde, onChainCells } from "../backends/circle/air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
@@ -46,6 +48,10 @@ export const AIR_OFF_PUB_NEW = AIR_OFF_STMT + 32 + 128;
 /** Packed viewing-commit (32). Prover derives R_on + Z·R_off; the felt is not stored. */
 export const AIR_OFF_OPEN_MASK = 812;
 export const AIR_VIEWING_COMMIT_LEN = 32;
+/** HASH256 of the withdraw payout locking bytecode (zeros on deposit). */
+export const AIR_OFF_PAYOUT = 844;
+/** 1-byte length then minimally encoded publicAmount script number. */
+export const AIR_OFF_NET = 876;
 export const AIR_OFF_QTABLE = 957;
 export const AIR_OFF_IDX = 1101;
 export const AIR_OFF_CELLS = 1173;
@@ -287,6 +293,13 @@ export function encodeAirPacked(
   packed.set(digest, AIR_OFF_DIGEST);
   packed.set(encodePublicPaa1(statement.oldState), AIR_OFF_PUB_OLD);
   packed.set(encodePublicPaa1(statement.newState), AIR_OFF_PUB_NEW);
+  packed.set(
+    statement.payoutLockingDigest.length === 32 ? statement.payoutLockingDigest : new Uint8Array(32),
+    AIR_OFF_PAYOUT,
+  );
+  const netVm = encodeVmNumber(statement.publicAmountSats);
+  packed[AIR_OFF_NET] = netVm.length;
+  packed.set(netVm, AIR_OFF_NET + 1);
   const qIdx = fiatShamirQueryIndices(digest, p, hash);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     const i = qIdx[s]!;
