@@ -210,6 +210,7 @@ export function compileCovenantSuccessor(args: {
   slotKernels?: number;
   feeSats?: bigint;
   payoutLockingBytecode?: Uint8Array;
+  extraPayouts?: Array<{ lockingBytecode: Uint8Array; sats: bigint }>;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -228,10 +229,23 @@ export function compileCovenantSuccessor(args: {
   if (change < 546n) throw new Error("fee utxo too small for successor");
   const withdrawSats = net < 0n ? -net : 0n;
   const payoutLock = args.payoutLockingBytecode ?? LAB_PAYOUT_LOCKING;
+  const extraPayouts = args.extraPayouts ?? [];
+  if (extraPayouts.length > 0) {
+    const paySum = extraPayouts.reduce((n, p) => n + p.sats, 0n);
+    if (paySum !== withdrawSats) {
+      throw new Error(`extraPayouts sum ${paySum} != pool net ${withdrawSats} (would steal or leak reserve)`);
+    }
+  }
   const wantPayout =
     Boolean(args.statement) &&
     args.statement!.publicAmountSats < 0n &&
     !isZero32(args.statement!.payoutLockingDigest);
+  const payoutOutputs =
+    extraPayouts.length > 0
+      ? extraPayouts.map((p) => ({ lockingBytecode: p.lockingBytecode, valueSatoshis: p.sats }))
+      : wantPayout
+        ? [{ lockingBytecode: payoutLock, valueSatoshis: withdrawSats }]
+        : [];
   const commitment = encodePublicPaa1(args.newState);
   const oldState = decodeState(args.pool.commitment);
   const decoded = decodeFriProof(args.proof);
@@ -315,9 +329,7 @@ export function compileCovenantSuccessor(args: {
           nft: { capability: "mutable", commitment },
         },
       },
-      ...(wantPayout
-        ? [{ lockingBytecode: payoutLock, valueSatoshis: withdrawSats }]
-        : []),
+      ...payoutOutputs,
       {
         lockingBytecode: { compiler: c, script: "lock", data },
         valueSatoshis: change,

@@ -2,7 +2,7 @@ export { ANY_STATE_BYTES, ANY_STATE_MAGIC, decodeState, emptyState, encodeState,
 export { LAB_PAYOUT_DIGEST, LAB_PAYOUT_LOCKING, hashPayoutLocking } from "./chain/payout.ts";
 export { IncrementalMerkle, commitNote, nullifierOf } from "./pool/notes.ts";
 export { commitAmount, commitPublicNet, commitReserve, freshNetBlind } from "./amounts/hash-commit.ts";
-export { applyDeposit, applyWithdraw, applyAggregate, checkPublicTransition } from "./pool/transition.ts";
+export { applyDeposit, applyWithdraw, applyAggregate, applyBatchExit, checkPublicTransition } from "./pool/transition.ts";
 export { runMixSuccessor, mixChangedRootsAndReserve, publicPoolView } from "./pool/mix-successor.ts";
 export { hashLabPlugin } from "./backends/hash-lab.ts";
 export { circleFriPlugin, CIRCLE_FRI_NOT_SOUND_YET } from "./backends/circle/plugin.ts";

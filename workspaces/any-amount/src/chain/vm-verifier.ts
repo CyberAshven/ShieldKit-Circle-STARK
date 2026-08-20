@@ -228,6 +228,7 @@ export function evaluatePoolSuccessorVm(args: {
   outputValueSats?: bigint;
   payoutLockingBytecode?: Uint8Array;
   payoutValueSats?: bigint;
+  extraPayouts?: Array<{ lockingBytecode: Uint8Array; sats: bigint }>;
   /** Override output PAA1 (default encodePublicPaa1(newState)). */
   outputCommitment?: Uint8Array;
   slotKernels?: number;
@@ -335,7 +336,17 @@ export function evaluatePoolSuccessorVm(args: {
           nft: { capability: "mutable" as const, commitment: args.outputCommitment ?? encodePublicPaa1(args.newState) },
         },
       },
-      ...(wantPayout ? [{ lockingBytecode: payoutLock, valueSatoshis: payoutValue }] : []),
+      ...(args.extraPayouts && args.extraPayouts.length > 0
+        ? [
+            ...args.extraPayouts.map((p) => ({
+              lockingBytecode: p.lockingBytecode,
+              valueSatoshis: p.sats,
+            })),
+            { lockingBytecode: Uint8Array.of(0x51), valueSatoshis: 546n },
+          ]
+        : wantPayout
+          ? [{ lockingBytecode: payoutLock, valueSatoshis: payoutValue }]
+          : []),
     ],
   };
   const result = vm.verify({ sourceOutputs, transaction });

@@ -3,6 +3,7 @@ import { type AnyAmountState } from "./state.ts";
 import type { ActionKind, PoolStatement } from "./statement.ts";
 import { commitAmount, freshNetBlind } from "../amounts/hash-commit.ts";
 import { isZero32, ZERO32 } from "./bytes.ts";
+import { hashPayoutLocking } from "../chain/payout.ts";
 
 export type PoolMachine = {
   state: AnyAmountState;
@@ -141,6 +142,86 @@ export function checkPublicTransition(s: PoolStatement): void {
   if (s.action === "WITHDRAW" && isZero32(s.amountCommitIn)) {
     throw new Error("withdraw amount commit");
   }
+}
+
+export type BatchExitPayout = {
+  sats: bigint;
+  lockingBytecode: Uint8Array;
+};
+
+export type BatchExitItem = {
+  note: Note;
+  index: number;
+  /** Must equal the note (full exit) so noteRoot stays put and one-auth FRI still type-checks. */
+  withdrawSats: bigint;
+  payoutLocking: Uint8Array;
+};
+
+/**
+ * One successor, many notes. Sequence +1 once. Each payout ≤ that note.
+ * Sum(payouts) = −publicAmount = pool UTXO drop. Cannot spend another's note
+ * or more than the reserve.
+ */
+export function applyBatchExit(
+  machine: PoolMachine,
+  items: BatchExitItem[],
+): {
+  machine: PoolMachine;
+  statement: PoolStatement;
+  payouts: BatchExitPayout[];
+  spent: Array<{ note: Note; index: number; path: Uint8Array[]; nullifier: Uint8Array }>;
+} {
+  if (items.length < 1) throw new Error("batch-exit needs at least one note");
+  const hash = machine.notes.hash;
+  const oldState = machine.state;
+  const spent: Array<{ note: Note; index: number; path: Uint8Array[]; nullifier: Uint8Array }> = [];
+  const payouts: BatchExitPayout[] = [];
+  let reserve = oldState.reserveSats;
+  for (const item of items) {
+    if (item.withdrawSats <= 0n) throw new Error("batch-exit amount must be > 0");
+    if (item.withdrawSats !== item.note.amountSats) {
+      throw new Error("batch-exit is full-note only (partial would mint change)");
+    }
+    if (item.payoutLocking.length === 0) throw new Error("batch-exit payout locking required");
+    const leaf = commitNote(item.note, hash);
+    const path = machine.notes.authPath(item.index);
+    if (!IncrementalMerkle.verify(leaf, item.index, path, machine.state.noteRoot, hash)) {
+      throw new Error("note not in tree");
+    }
+    const nf = nullifierOf(item.note, oldState.poolInstanceId, hash);
+    machine.nullifiers.add(nf);
+    reserve -= item.withdrawSats;
+    if (reserve < 0n) throw new Error("over-withdraw");
+    spent.push({ note: item.note, index: item.index, path, nullifier: nf });
+    payouts.push({ sats: item.withdrawSats, lockingBytecode: item.payoutLocking });
+  }
+  const sum = payouts.reduce((n, p) => n + p.sats, 0n);
+  const first = spent[0]!;
+  const newState: AnyAmountState = {
+    ...oldState,
+    sequence: oldState.sequence + 1n,
+    reserveSats: reserve,
+    withdrawalCount: oldState.withdrawalCount + BigInt(items.length),
+    noteRoot: oldState.noteRoot,
+    nullifierRoot: machine.nullifiers.root,
+  };
+  const statement: PoolStatement = {
+    profile: "any-amount-v0",
+    action: "WITHDRAW",
+    publicAmountSats: -sum,
+    netBlind: freshNetBlind(),
+    oldState,
+    newState,
+    noteCommitment: new Uint8Array(32),
+    nullifier: first.nullifier,
+    payoutLockingDigest: hashPayoutLocking(payouts[0]!.lockingBytecode),
+    amountCommitIn: commitAmount(first.note.amountSats, first.note.rho, hash),
+    amountCommitOut: new Uint8Array(ZERO32),
+  };
+  if (newState.sequence !== oldState.sequence + 1n) throw new Error("sequence");
+  if (newState.reserveSats !== oldState.reserveSats - sum) throw new Error("reserve");
+  if (sum !== items.reduce((n, i) => n + i.withdrawSats, 0n)) throw new Error("payout sum");
+  return { machine: { ...machine, state: newState }, statement, payouts, spent };
 }
 
 export function actionOf(delta: bigint): ActionKind {
