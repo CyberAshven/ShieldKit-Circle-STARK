@@ -4,17 +4,17 @@
 **Unlocking + redeem:** ≤ 10 KB (Velma).  
 Old txids stay. They are not relabeled.
 
-## Now (2026-08-20)
+## Now (2026-08-21)
 
 Any-amount pool. Circle FRI is **plugin #1**, not the pool identity.
 
 | Knob | Live | Notes |
 | --- | --- | --- |
-| `--envelope a` / `b` / `c` | A 100 KB (1 fold + 4 R-slots); B 1 MB 36-query R; C extra fold slices + pay hop = B | Dummy cargo is not the verifier. Unlocking 10 KB **per input** — chunk kernels. |
+| `--envelope a` / `b` / `c` | A 100 KB (1 fold + 4 R-slots); B one consensus tx, 36-query R; C the same work chunked across 19 standard txs (18 tape + 1 pay), every hop ≤ 100 KB | Dummy cargo is not the verifier. Unlocking 10 KB **per input** — chunk kernels. |
 | `--hash sha256` / `blake2s` / `poseidon2-m31` | default **sha256** (CashVM `OP_SHA256`) | Poseidon2-M31 is toorik Grain (ePrint 2023/323), not a lock opcode. |
 | `--plugin` | **circle-fri-m31** first; `hash-lab-v0` lab stub | Reserved sandwiches: `goldilocks-fri` (AIR+FRI), `air-whir` (AIR+WHIR), `spartan-whir` (Spartan+WHIR), `groth16` (pairing). `whir` is a PCS; `spartan` is an IOP. |
 
-Envelope **B** is the hole-free statistical-soundness envelope (C pay hop is the same spend). One consensus tx, Circle FRI M31, TRACE=64, FRI_N=1024, **36 unique-orbit** queries, 20-bit grind, FRI_VERSION 8. CashVM kernels (chunked, 10 KB unlocking each):
+Envelope **B** is the hole-free statistical-soundness envelope (C pay hop is the same spend). One consensus tx, Circle FRI M31, TRACE=64, FRI_N=1024, **36 unique-orbit** queries, 20-bit grind, FRI_VERSION 9. CashVM kernels (chunked, 10 KB unlocking each):
 
 | Kernel | On-chain check |
 | --- | --- |
@@ -22,19 +22,59 @@ Envelope **B** is the hole-free statistical-soundness envelope (C pay hop is the
 | FRI ×10 | Merkle auth of openings; L0 felt binds `qTable[slot]`; pair blob = merklized `left\|\|right` |
 | Fold ×36 | Remaining FRI layers (`COMMITTED_LAYERS` = 7) + foldPair, one query per redeem |
 | Bind-T | Newton T interpolates packed cells |
-| algebraicC | Point checks (digest cell, seq+1, action 1\|2, UTXO conservation). Not a FRI interpolant rewrite (`FRI_VERSION` stays 8) |
+| algebraicC | Point checks (digest cell, seq+1, action 1\|2, UTXO conservation). **Is** the FRI interpolant: C = interpolant(algebraicC residuals), Q = C/Z (`FRI_VERSION` 9). Off-trace airNumerator (`FRI_VERSION` 8) is prior art, not this statement |
 | Slot ×36 | FS index recomputed; `R_on(i)+Z(i)·R_off(i)`; `(qTable−R)·Z` equals AIR numerator from T. Masked nTable cannot cancel R |
 | Note-auth ×1 | SHA-256 note preimage → leaf; Merkle walk to NFT `noteRoot`; `nf = SHA256(instance\|\|owner\|\|rho)`; `SHA256(oldNfRoot\|\|nf)` (withdraw) or equal nfRoots (deposit). Change-note append when `createdSteps` is non-empty. A has no room for this kernel. |
 
 **99 KB packing is not the verifier.** `packTo` defaults to **0**. Dummy `OP_DROP` leftover-fill cargo is not foldPair / C=QZ / R / note-auth. Density pad on high-index FS kernels (unlocking longer so `800×(41+unlocking)` covers the hash loop) is the VM meter, not cargo. Leftover 1 MB on B is unused headroom for more real kernels.
 
-Envelope **C** has no separate soundness story: **pay hop = B**. Tape hops are extra real fold/R-slot slices (**18 hops × 2 queries** = 36 extra orbits), each ≤ 100 KB. They do not accumulate 36 same-tx binds across txs. Skip-tape still hits the B pay hop.
+Envelope **C** is B's work **chunked to stay standard**: 19 txs, every hop ≤ 100 KB, so
+the whole chain relays on public Electrum with no JSON-RPC. Tape hops are real
+fold/R-slot slices (**18 hops × 2 queries** = 36 orbits), 82814–87572 B each; the pay
+hop is standard (`SLOT_KERNEL_COUNT` = 4 R-slots), **89338 B**. Chain total 1659128 B.
+Skip-tape still rejects the pay tx.
+
+> The pay hop is no longer the consensus B spend (it was 498539 B when it carried
+> 36 slots). Whether the chunked chain preserves B's soundness bar is **not**
+> asserted here — the earlier note that tape hops "do not accumulate 36 same-tx
+> binds across txs" has not been retracted. That claim needs its own write-up.
 
 Envelope **A** is the 100 KB relay path: 1 fold + **4** R-slots + grind + algebraicC. Hole-free 36-query does not fit A; do not drop B’s 36 queries to make A look hole-free.
 
-Compile size proof (not a land): A **98750 B** (unlock 2685), B **571997 B** (unlock 5405), 1 MB headroom **428003 B** unused (not cargo). Each unlocking ≤ 10 KB. Gating VM tests: honest 36-query B accepts; cooked viewing-commit / recooked Q/N / cooked pair blob reject; false AIR (`mutateTraceAndProve`) rejects on-chain; fake note preimage / cooked Merkle path / cooked nfRoot reject on the note-auth kernel.
+Compile size proof (not a land): A **87611 B** (unlock 2685), B **498398 B** (unlock 5405), 1 MB headroom **501602 B** unused (not cargo). C: 19 hops, max **89338 B**, total **1659128 B**, none over the 100000 relay gate. Leftover-fill is stripped from A/B/C; unlocking bytes are unchanged. Each unlocking ≤ 10 KB. Gating VM tests: honest 36-query B accepts; cooked viewing-commit / recooked Q/N / cooked pair blob reject; false AIR (`mutateTraceAndProve`) rejects on-chain; fake note preimage / cooked Merkle path / cooked nfRoot reject on the note-auth kernel.
 
-### On Chipnet this session
+### On Chipnet 2026-08-21 (`FRI_VERSION` 9, leftover-fill stripped)
+
+**A — standard, Electrum, 87470 B** (unlock 2685). First land of these kernels on
+`FRI_VERSION` 9.
+
+| | |
+| --- | --- |
+| Successor | `614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024` |
+| Kernels | `834f8ca14ded7e15d3380678ce902f7cf7c16be53a9c9ec6fc3f1c8ab17d03a2` |
+| Genesis | `b08420db6850ea725d7d852c95804edc67d27db5c07411fdd8abf407650eb6b7` |
+| Prep | `c50663208b83e9b3eeaa472fabd2e3ee487e6e26468976df4bd0e6308a5f2a5e` |
+
+https://chipnet.imaginary.cash/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024
+
+**B — consensus, JSON-RPC. Not landed on these kernels.** Compile 498398 B. Needs
+the Start9 BCHN mempool (`acceptnonstdtxn=1`); public relay rejects >100000 B.
+
+| | |
+| --- | --- |
+| Successor | *(pending)* |
+| Kernels | *(pending)* |
+| Genesis | *(pending)* |
+
+**C — 19 chunked standard txs, Electrum. Not landed on these kernels.** Compile: 18
+tape hops 82814–87572 B + pay hop 89338 B, total 1659128 B.
+
+| Hop | Role | Bytes | Txid |
+| --- | --- | --- | --- |
+| 0–17 | tape | 82814–87572 | *(pending)* |
+| 18 | pay | 89338 | *(pending)* |
+
+### On Chipnet, earlier sessions
 
 These txs landed **before** grind/algebraicC kernels. `b6818bd2…` is the 479 KB 36-fold land, not the hole-free kernel. Do not relabel it. Next B/C land is a new txid.
 
@@ -74,7 +114,7 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 - Hole-free 36-query B: grind, Merkle + pair-blob bind, remaining fold layers, foldPair, `(q−R)·Z = N` from T, algebraicC point checks, on-chain R, note Merkle + nullifier chain + amount/auth preimage.
 - False AIR rejected on the 36-query lock, not only by `verifyFri`. Fake note / cooked path / cooked nfRoot rejected on CashVM.
 - A ≤ 100 KB (no note-auth kernel); B ≤ 1 MB; leftover unused, not cargo.
-- C pay hop size is consensus (B); tape hops are real query slices ≤ 100 KB.
+- C is 19 standard txs: 18 tape query slices + a standard pay hop (89338 B), none over 100 KB.
 
 ## What the Chipnet txs below prove (older kernels)
 
@@ -87,10 +127,10 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
 ## What is still not claimed
 
-- A new Chipnet land of the hole-free kernels (compile + VM only so far). Next B/C land is a **new txid**.
+- A new Chipnet land of these kernels for **B and C** (A landed 2026-08-21 as `614b7077…`; B and C are compile + VM only). Next B/C land is a **new txid**.
+- That C's chunked chain meets B's soundness bar. C's pay hop is now standard (4 R-slots), not the 36-slot consensus spend.
 - Envelope A note/nullifier membership (A has no room; still `verifyFri`).
 - Batch-exit extra notes (one-auth FRI + this kernel still walk the first spent note).
-- algebraicC as the FRI interpolant (`FRI_VERSION` 8 stays).
 - Dummy 99 KB cargo as a verifier (it never was).
 - A Lean theorem that FRI openings hide the statement.
 - Hidden pool-UTXO value (`STATE_BASE` + reserve is public TVL).
