@@ -24,7 +24,7 @@ Envelope **B** is the hole-free statistical-soundness envelope (C pay hop is the
 | Bind-T | Newton T interpolates packed cells |
 | algebraicC | Point checks (digest cell, seq+1, action 1\|2, UTXO conservation). **Is** the FRI interpolant: C = interpolant(algebraicC residuals), Q = C/Z (`FRI_VERSION` 9). Off-trace airNumerator (`FRI_VERSION` 8) is prior art, not this statement |
 | Slot ×36 | FS index recomputed; `R_on(i)+Z(i)·R_off(i)`; `(qTable−R)·Z` equals AIR numerator from T. Masked nTable cannot cancel R |
-| Note-auth ×1 | SHA-256 note preimage → leaf; Merkle walk to NFT `noteRoot`; `nf = SHA256(instance\|\|owner\|\|rho)`; `SHA256(oldNfRoot\|\|nf)` (withdraw) or equal nfRoots (deposit). Change-note append when `createdSteps` is non-empty. A has no room for this kernel. |
+| Note-auth ×1 | SHA-256 note preimage → leaf; Merkle walk to NFT `noteRoot`; `nf = SHA256(instance\|\|owner\|\|rho)`; `SHA256(oldNfRoot\|\|nf)` (withdraw) or equal nfRoots (deposit). Change-note append when `createdSteps` is non-empty. On **B and C's pay hop** (C funds it with `forceNoteAuth`). A has no room for this kernel. |
 
 **99 KB packing is not the verifier.** `packTo` defaults to **0**. Dummy `OP_DROP` leftover-fill cargo is not foldPair / C=QZ / R / note-auth. Density pad on high-index FS kernels (unlocking longer so `800×(41+unlocking)` covers the hash loop) is the VM meter, not cargo. Leftover 1 MB on B is unused headroom for more real kernels.
 
@@ -34,10 +34,15 @@ fold/R-slot slices (**18 hops × 2 queries** = 36 orbits), 82814–87572 B each;
 hop is standard (`SLOT_KERNEL_COUNT` = 4 R-slots), **89338 B**. Chain total 1659128 B.
 Skip-tape still rejects the pay tx.
 
-> The pay hop is no longer the consensus B spend (it was 498539 B when it carried
-> 36 slots). Whether the chunked chain preserves B's soundness bar is **not**
-> asserted here — the earlier note that tape hops "do not accumulate 36 same-tx
-> binds across txs" has not been retracted. That claim needs its own write-up.
+The pay hop carries **the same completeness kernels as B**: bind-T, grind,
+algebraicC, and the **note-auth kernel** (note Merkle + nullifier + amount/auth
+preimage). `landC` funds it with `forceNoteAuth`, and the opened note is threaded
+to the pay hop, so `wantNote` fires at 4 slots. Note/nullifier completeness is
+**not** back in `verifyFri` for C.
+
+What still differs from B is *binding*, not completeness: B runs all 36 R-slots in
+one tx, C runs 4 on the pay hop with the other 32 orbits across the 18 tape hops.
+So C does not accumulate 36 **same-tx** binds. Skip-tape rejects the pay tx.
 
 Envelope **A** is the 100 KB relay path: 1 fold + **4** R-slots + grind + algebraicC. Hole-free 36-query does not fit A; do not drop B’s 36 queries to make A look hole-free.
 
@@ -128,7 +133,7 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 ## What is still not claimed
 
 - A new Chipnet land of these kernels for **B and C** (A landed 2026-08-21 as `614b7077…`; B and C are compile + VM only). Next B/C land is a **new txid**.
-- That C's chunked chain meets B's soundness bar. C's pay hop is now standard (4 R-slots), not the 36-slot consensus spend.
+- That C's 36 orbits are **same-tx** binds. C matches B on the completeness kernels — note-auth included — but 32 of the 36 orbits sit on tape hops; only 4 R-slots run on the pay tx.
 - Envelope A note/nullifier membership (A has no room; still `verifyFri`).
 - Batch-exit extra notes (one-auth FRI + this kernel still walk the first spent note).
 - Dummy 99 KB cargo as a verifier (it never was).
