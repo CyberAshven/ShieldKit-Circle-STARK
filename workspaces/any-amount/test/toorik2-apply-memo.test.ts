@@ -69,7 +69,8 @@ describe("toorik2 apply-list memo vs shipped STATUS envelopes", () => {
     assert.match(status, /100 KB/);
     assert.match(status, /1 MB/);
     assert.match(status, /OP_SHA256/);
-    assert.match(status, /Poseidon2\/Monolith are prover-side hashes, not lock opcodes/);
+    assert.match(status, /Poseidon2-M31 is a prover-side InternalHash table entry/);
+    assert.match(status, /lock opcode/);
     const md = readFileSync(memoPath, "utf8");
     assert.match(md, /Poseidon2 \/ absorb-in-Q \*\*in the lock\*\*/);
     assert.match(md, /do-not-copy/);

@@ -104,7 +104,7 @@ N=1024 / 36 queries as the ABL worksheet):
 | Sibling-packed Merkle (`pairOrder`) | `fri.ts` `pairOrder` | Partial overlap with reverse-bit pairing; **not** a compact multiproof of many queries |
 | ZH·R-style opening mask \(R_{\mathrm{on}}+Z R_{\mathrm{off}}\) deg 7/35 | `witness-mask.ts`, `FRI_VERSION` 6 | Same paper as toorik `stark-zk.mjs`; different encoding (poly mask vs 128-coset tail) |
 | Degree-0 Newton-T classified as leak | packed Newton T zeroed; statistical-zk tests | Same “degree-0 failed” conclusion as `DEGREE0_MASK_KIND` |
-| Plugin ABI, SHA-256 default, BLAKE2s alternate, Poseidon2 table slot empty | `internal-hash.ts`, `plugins/registry.ts` | Toorik **implemented** Poseidon2-M31 AIR; ABL only reserved the table |
+| Plugin ABI, SHA-256 default, BLAKE2s + Poseidon2-M31 prover-side table | `internal-hash.ts`, `poseidon2-m31.ts` | Toorik permutation ported; Poseidon2-in-AIR still not the lock |
 | Any-amount notes / nullifiers / `STATE_BASE` / unlinked fee | `pool/`, `covenant-spend.ts` | Toorik’s relation is **Fv1 PoolAction**, not this profile |
 | Sealed `research-lanes/bch-shielded-pool-design/` | present on both refs | Read-only; do not rewrite sealed hashes |
 | Chipnet lands | `MILESTONE.md` (`23fd1b7d…`, `9362df54…`, …) | Product evidence; toorik branch has none of these txids |
@@ -208,7 +208,6 @@ Every row names a toorik path or commit SHA, the ABL envelope it hits, and
 | --- | --- | --- | --- |
 | Two-query batched FRI (q2) in one redeem | [`1b69a2b`](https://github.com/toorik2/ShieldKit-Circle-STARK/commit/1b69a2b), `bch-query-batch-kernel.mjs` | Same 64/16/1024/36 schedule: measured **174794 B > 100000**, input-9 density fail. ABL already fits 79525 B by keeping **1 query per fold**. STATUS: “2+ queries in one redeem exceed ~800× script-length.” | Copying q2 would *lose* the 100 KB relay path toorik could not close. Revisit only after a density model that beats that measurement. |
 | DEEP even-x FRI of \((E(x)-E(\zeta_x))/(x-\zeta_x)\) | `src/circle-fri/deep-pi-native.mjs`, [`74e4779`](https://github.com/toorik2/ShieldKit-Circle-STARK/commit/74e477951348b4e81e4a27cf0aac802d601e5f99) | STATUS: Full DEEP-ALI **not done**. Re/Im DEEP is **not** a Circle-FFT low-degree codeword (`src/circle-fri/deep.mjs` wall). Extra openings blow 10 KB. | Correct science; size-unfit for the product lock this round. |
-| Poseidon2-M31 as `InternalHash` table entry (prover-side) | `src/circle-fri/poseidon2-m31.mjs`, ePrint [2023/323](https://eprint.iacr.org/2023/323) | ABL table already allows a third digest; lock still `OP_SHA256`. Poseidon2-in-AIR even-x unlocking **>10 KB**. | Table swap is already designed. Do not put Poseidon2 in the redeem. |
 | TRACE vs LDE bind tests (garbage absorb still verifies) | [`1b6e6fa`](https://github.com/toorik2/ShieldKit-Circle-STARK/commit/1b6e6facf6572b83cf0035b99f532a0558414c38) | ABL FRI is of `onChainCells` interpolant, not a Poseidon2 TRACE table. Nested coset intersection on toorik’s CFFT family is **0/64**. | Steal the *falsifier* (TRACE garbage vs LDE Q) when DEEP/AIR lands. Not a silent copy of absorb-in-Q. |
 | Runtime topology table / unrolled FS in script | `src/circle-fri/topology-table.mjs` | Unrolled query derivation **23950 B > 10 KB**. ABL already recomputes FS index per slot in CashAssembly. | Keep slot-unrolled FS; do not unroll 36 queries into one redeem. |
 | Host-oracle split as STATUS text | `src/circle-fri/host-oracle-split.mjs` | ABL already keeps algebraicC / reserves / preimage off the packed interpolant. | Optional doc alignment. Not a kernel. |
@@ -243,5 +242,14 @@ The items that move the product:
 3. **Merkle multiproofs** (cut the 10-input / 252-opening Merkle tax without
    folding two FRI queries in one redeem).
 
-DEEP even-x and Poseidon2-as-`InternalHash` stay later. Fv1, `.mjs`, and
-Poseidon2-in-lock stay out.
+DEEP even-x stays later. Poseidon2-M31 as `InternalHash` is **shipped** in
+`workspaces/any-amount/src/backends/circle/poseidon2-m31.ts` (table id
+`poseidon2-m31`; lock still `OP_SHA256`). Fv1, `.mjs`, and Poseidon2-in-lock
+stay out.
+
+### Shipped from this list (after the memo)
+
+| Idea | Where |
+| --- | --- |
+| Unique first-fold FRI query orbits | `query-sample.ts`, `FRI_VERSION` 8 |
+| Poseidon2-M31 as InternalHash (prover-side) | `poseidon2-m31.ts` + `internal-hash.ts` id `poseidon2-m31`. Port of [`poseidon2-m31.mjs`](https://github.com/toorik2/ShieldKit-Circle-STARK/blob/%40toorik2/src/circle-fri/poseidon2-m31.mjs). Not [`poseidon2-air.mjs`](https://github.com/toorik2/ShieldKit-Circle-STARK/blob/%40toorik2/src/circle-fri/poseidon2-air.mjs) in the redeem. |

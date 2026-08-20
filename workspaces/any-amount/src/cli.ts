@@ -9,10 +9,19 @@ import { createLabWallet, loadLabWallet, saveLabWallet, type LabWallet } from ".
 import { IncrementalMerkle, NullifierSet, type Note } from "./pool/notes.ts";
 import {
   DEFAULT_INTERNAL_HASH_ID,
+  INTERNAL_HASH_IDS,
   isInternalHashId,
   internalHash,
   type InternalHashId,
 } from "./backends/circle/internal-hash.ts";
+import {
+  BATCH_EXIT_MAX_SECONDS_DEFAULT,
+  BATCH_EXIT_MIN_SECONDS_DEFAULT,
+  parseBatchWindow,
+  planBatchExit,
+  runBatchExitCountdown,
+} from "./pool/batch-exit.ts";
+import { LAB_PAYOUT_LOCKING } from "./chain/payout.ts";
 import { emptyState, encodeState, STATE_BASE_SATS, utxoValueFor } from "./pool/state.ts";
 import { applyDeposit, applyWithdraw, type PoolMachine } from "./pool/transition.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "./pool/mix-successor.ts";
@@ -50,8 +59,11 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   faucet                  try public Chipnet faucets
   balance                 electrum listunspent
   pool create             local genesis state (PAA1)
-  pool deposit --sats N [--hash sha256|blake2s] [--plugin circle-fri-m31|hash-lab-v0]
-  pool withdraw --sats N  partial withdraw (same hash/plugin as the machine)
+  pool deposit --sats N [--hash sha256|blake2s|poseidon2-m31] [--plugin circle-fri-m31|hash-lab-v0]
+  pool withdraw --sats N [--batch-exit] [--batch-min 30] [--batch-max 180]
+                          partial withdraw (same hash/plugin as the machine)
+                          --batch-exit is opt-in: CSPRNG wait, CLI countdown,
+                          CashFusion-shaped multi-output sketch (not FUSE protocol)
 
   pool chipnet-covenant   compile+sign+broadcast P2SH32 five-point genesis
   pool chipnet-mix        mix successor (deposit→withdraw) on Chipnet if funded
@@ -75,8 +87,12 @@ function arg(name: string, fallback?: string): string {
 
 function hashIdArg(fallback: InternalHashId = DEFAULT_INTERNAL_HASH_ID): InternalHashId {
   const v = arg("--hash", fallback);
-  if (!isInternalHashId(v)) throw new Error(`internal hash must be sha256 or blake2s, got ${v}`);
+  if (!isInternalHashId(v)) throw new Error(`internal hash must be ${INTERNAL_HASH_IDS.join("|")}, got ${v}`);
   return v;
+}
+
+function flag(name: string): boolean {
+  return process.argv.includes(name);
 }
 
 function pluginFamilyArg(fallback: string = DEFAULT_ZKP_FAMILY): string {
@@ -185,6 +201,13 @@ async function main(): Promise<void> {
           defaultZkp: DEFAULT_ZKP_FAMILY,
           zkpFamilies: ["circle-fri-m31", "hash-lab-v0"],
           internalHash: DEFAULT_INTERNAL_HASH_ID,
+          internalHashIds: INTERNAL_HASH_IDS,
+          batchExit: {
+            optIn: true,
+            minSeconds: BATCH_EXIT_MIN_SECONDS_DEFAULT,
+            maxSeconds: BATCH_EXIT_MAX_SECONDS_DEFAULT,
+            shape: "cashfusion-like-multi-p2pkh",
+          },
           vkId: circleFriPlugin.vkId,
           sound: circleFriPlugin.sound,
           proveVerify: "circle-fri-m31 AIR+FRI + 2026 VM kernel",
@@ -285,6 +308,20 @@ async function main(): Promise<void> {
     const plugin = zkpPluginByFamily(pluginFamilyArg(loaded.pluginFamily));
     const held = loaded.notes.find((n) => n.note.amountSats >= sats);
     if (!held) throw new Error("no note covers that amount");
+    let batchNote: string | undefined;
+    if (flag("--batch-exit")) {
+      const window = parseBatchWindow(
+        Number(arg("--batch-min", String(BATCH_EXIT_MIN_SECONDS_DEFAULT))),
+        Number(arg("--batch-max", String(BATCH_EXIT_MAX_SECONDS_DEFAULT))),
+      );
+      const plan = planBatchExit({ sats, lockingBytecode: LAB_PAYOUT_LOCKING, window });
+      console.error(
+        `batch-exit opt-in: waiting ${plan.waitSeconds}s (window ${window.minSeconds}-${window.maxSeconds}s, CSPRNG entropy)`,
+      );
+      await runBatchExitCountdown(plan.waitSeconds);
+      batchNote = `batch-exit wait=${plan.waitSeconds}s outputs=${plan.sketch.outputCount} shape=${plan.sketch.shape}`;
+      console.log(JSON.stringify(plan.sketch));
+    }
     const w = applyWithdraw(loaded.machine, held.note, held.index, new Uint8Array(32), sats);
     const witness = { ...wWithdraw(held.note, held.index, w.path, w.created), hash: hash.id };
     const proof = await plugin.prove(w.statement, witness);
@@ -293,7 +330,8 @@ async function main(): Promise<void> {
     const next = loaded.notes.filter((n) => n.index !== held.index);
     if (w.change && w.changeIndex !== undefined) next.push({ note: w.change, index: w.changeIndex });
     await saveMachine(w.machine, next, plugin.family);
-    console.log(`withdraw ${sats} reserve=${w.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} verify=ok`);
+    const extra = batchNote ? ` ${batchNote}` : "";
+    console.log(`withdraw ${sats} reserve=${w.machine.state.reserveSats} plugin=${plugin.family} hash=${hash.id} verify=ok${extra}`);
     return;
   }
   if (cmd === "lab" && process.argv[3] === "demo") {

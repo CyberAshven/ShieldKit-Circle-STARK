@@ -10,13 +10,15 @@
  *
  * Production default is CashVM-native SHA-256 so the on-chain OP_SHA256 /
  * OP_HASH256 walk still matches. BLAKE2s is a real alternate (Starknet OS is
- * moving some hashes to Blake2s on Circle/M31). Poseidon2 is not an option
- * here and is not the default.
+ * moving some hashes to Blake2s on Circle/M31). Poseidon2-M31 is a third
+ * prover-side table entry (toorik Grain t=16 RF=8 RP=14). It is not the
+ * default and not a lock opcode.
  */
 import { createHash } from "node:crypto";
 import { sha256 } from "../../pool/bytes.ts";
+import { digestPoseidon2M31Bytes } from "./poseidon2-m31.ts";
 
-export type InternalHashId = "sha256" | "blake2s";
+export type InternalHashId = "sha256" | "blake2s" | "poseidon2-m31";
 
 export type InternalHash = {
   readonly id: InternalHashId;
@@ -37,9 +39,17 @@ export const BLAKE2S_INTERNAL: InternalHash = {
   },
 };
 
+export const POSEIDON2_M31_INTERNAL: InternalHash = {
+  id: "poseidon2-m31",
+  digest(data: Uint8Array): Uint8Array {
+    return digestPoseidon2M31Bytes(data);
+  },
+};
+
 const TABLE: Record<InternalHashId, InternalHash> = {
   sha256: SHA256_INTERNAL,
   blake2s: BLAKE2S_INTERNAL,
+  "poseidon2-m31": POSEIDON2_M31_INTERNAL,
 };
 
 export const DEFAULT_INTERNAL_HASH_ID: InternalHashId = "sha256";

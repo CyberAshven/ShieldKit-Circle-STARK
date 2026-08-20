@@ -46,3 +46,16 @@ Tor + stealth + fusion + hidden amounts is the *stack*. Each layer is optional a
 NIP-EE can still be a later **invitation ciphertext** format. The bus we actually reuse is the CashFusion one: kinds + gift-wrap + throwaway keys.
 
 Chipnet 10-wallet rehearsal on one machine can stay local. The moment we need **cross-machine / P2P** discovery or a fusion pre-step, Nostr is the proven listener — not an optional curiosity.
+
+## Opt-in batch exit (any-amount lab)
+
+CashFusion remains **not** a ZKP plugin. Batch-exit is an opt-in *timing + output-shape* path for people who are not in a hurry:
+
+- CLI: `pool withdraw --sats N --batch-exit [--batch-min 30] [--batch-max 180]`
+- CSPRNG wait in the knob window, live countdown
+- Ready waiters sketch one shuffled multi-P2PKH list (`cashfusion-like-multi-p2pkh`)
+- We do **not** speak CashFusion: no `OP_RETURN FUSE`, no Pedersen, no blind Schnorr
+- The shipped pool redeem still HASH256-binds **one** payout at output 1. Grouping N exits into that one successor is a later lock (`sum(payouts) = abs-net`)
+- Dapp notes: `cli-ux.md` (Withdraw + Settings knobs + countdown)
+
+Fast single withdraw stays the default. Fv1 still has no user batching.

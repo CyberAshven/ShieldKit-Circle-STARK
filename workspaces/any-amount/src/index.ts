@@ -17,6 +17,19 @@ export {
   type InternalHash,
   type InternalHashId,
 } from "./backends/circle/internal-hash.ts";
+export {
+  POSEIDON2_M31_ID,
+  digestPoseidon2M31Bytes,
+  permutePoseidon2M31,
+} from "./backends/circle/poseidon2-m31.ts";
+export {
+  BATCH_EXIT_MAX_SECONDS_DEFAULT,
+  BATCH_EXIT_MIN_SECONDS_DEFAULT,
+  defaultBatchWindow,
+  planBatchExit,
+  sampleBatchWaitSeconds,
+  shapeFusionOutputs,
+} from "./pool/batch-exit.ts";
 export { soundnessWorksheet } from "./backends/circle/soundness.ts";
 export { evaluateProofOnVm } from "./chain/vm-verifier.ts";
 export { compileCovenantSpend, compileCovenantSuccessor } from "./chain/covenant-spend.ts";

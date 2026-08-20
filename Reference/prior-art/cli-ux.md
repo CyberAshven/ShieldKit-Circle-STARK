@@ -100,9 +100,12 @@ Recipient is the pool. **You type the amount.**
 1. Pick which notes / wallet (show each note’s amount).
 2. Amount (any, up to those notes; leftover becomes a change note).
 3. Fresh destination: paste or generate. Full address on review, never truncated.
-4. Review: amount out, full `to`, fee, change left shielded.
-5. `Back` · `Withdraw now`
-5. Same progress / success / fail states.
+4. Exit speed (two buttons, default is fast):
+   - **Withdraw now** — prove and broadcast as soon as the review is confirmed.
+   - **Batch exit** — opt-in. Stronger timing privacy for someone not in a hurry. The client samples a CSPRNG wait in `[min, max]` seconds (defaults **30–180**; Settings knobs), shows a live countdown, and groups ready waiters into one CashFusion-*shaped* multi-P2PKH output list (shuffled). Not CashFusion: no `OP_RETURN FUSE`, no Pedersen/blind Schnorr. Today the redeem still HASH256-binds a single payout at output 1; summing N payouts in one successor is a later lock.
+5. Review: amount out, full `to`, fee, change left shielded, and (if batch) remaining countdown.
+6. `Back` · `Withdraw now` · `Batch exit`
+6. Same progress / success / fail states. Batch path never silently skips the countdown.
 
 Private send-to-another-person is the same family but not on Home yet. Do not show Transfer until that action exists.
 
@@ -138,6 +141,7 @@ Status first, then amount, then wallet label. Detail: full txid, confirmations, 
 - Network — Chipnet (read-only in Fv1), Refresh connection
 - Wallets — import, remove from this PC
 - Advanced — home path, explorer URL
+- Batch exit — min seconds, max seconds (defaults 30 / 180). Changing the knobs retunes the CSPRNG window; it does not turn batch-exit on. Withdraw still offers it per action.
 - Developer — hidden until toggled; FRI knobs live here only
 
 Destructive items in their own block with explicit labels (`Remove w3 from this PC`), never `OK`.
@@ -172,6 +176,23 @@ Keep full precision on BCH amounts. No fiat required on Chipnet.
 - Reuse ShieldKit-SDK command names under the hood (`pool create`, `action deposit`) so a script can skip the menu.
 - Do not start this until Chipnet deposit → withdraw can actually move coins, except a dry-run menu shell if we want to feel the nav.
 
+## Dapp / later GUI (batch-exit)
+
+Steal the CLI knobs; do not invent a second window.
+
+| Surface | Behavior |
+| --- | --- |
+| Withdraw screen | Default **Withdraw now**. Second button **Batch exit** (opt-in, not on Home as the only action). |
+| Countdown | Full-screen remaining `Xm Ys` plus a word (`Waiting to join the batch`). Cancel returns to review; it does not spend. |
+| Settings | `batch-min` / `batch-max` integer seconds. Defaults 30 / 180. Floor 0, ceiling 86400. Same names as CLI `--batch-min` / `--batch-max`. |
+| Entropy | CSPRNG (`crypto.getRandomValues`), never `Math.random`. Sample once when the user confirms Batch exit. |
+| Chain picture | CashFusion-*shaped*: one tx, many shuffled P2PKH outputs. Do **not** emit `OP_RETURN FUSE` or CashFusion session hashes. Amounts stay any-amount (not equalized). |
+| Coordinator | Optional. Relays/Nostr (kind 12230-style gather) may list waiters; they must not hold keys or be required to withdraw. Today the lab is local CLI + a fusion sketch. |
+| Later lock | Sum of payout outputs = abs-net, instead of output 1 HASH256 taking the whole net. Until that lands, the GUI must not claim N users already share one successor. |
+| Hash | Settings → Advanced may show internal-hash id (`sha256` default, `blake2s`, `poseidon2-m31`). Poseidon2 is prover-side; the redeem stays `OP_SHA256`. |
+
+Code already exports `BATCH_EXIT_MIN_SECONDS_DEFAULT`, `BATCH_EXIT_MAX_SECONDS_DEFAULT`, `sampleBatchWaitSeconds`, `runBatchExitCountdown`, `shapeFusionOutputs` from `workspaces/any-amount/src/pool/batch-exit.ts`.
+
 ## Risks
 
 - A 10-wallet rehearsal looks like a real mixer. Label it **Chipnet rehearsal**.
@@ -182,7 +203,7 @@ Keep full precision on BCH amounts. No fiat required on Chipnet.
 
 ## Verification
 
-This note is planning only. No CLI was implemented. No OPTN source was changed.
+Interactive OPTN-shaped menu is still planning. CLI flags for opt-in batch-exit exist in `workspaces/any-amount` (`--batch-exit`, `--batch-min`, `--batch-max`, countdown). No OPTN source was changed.
 
 ## Remaining
 

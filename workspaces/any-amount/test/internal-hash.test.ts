@@ -33,22 +33,27 @@ function machine(hash = defaultInternalHash()) {
 }
 
 describe("internal hash knob", () => {
-  it("default is CashVM SHA-256; blake2s is a second real implementation", () => {
+  it("default is CashVM SHA-256; blake2s and poseidon2-m31 are real alternates", () => {
     assert.equal(DEFAULT_INTERNAL_HASH_ID, "sha256");
-    assert.deepEqual([...INTERNAL_HASH_IDS], ["sha256", "blake2s"]);
+    assert.deepEqual([...INTERNAL_HASH_IDS], ["sha256", "blake2s", "poseidon2-m31"]);
     const msg = new TextEncoder().encode("paa1-hash-knob");
     const sha = internalHash("sha256").digest(msg);
     const blake = internalHash("blake2s").digest(msg);
+    const poseidon = internalHash("poseidon2-m31").digest(msg);
     assert.deepEqual(sha, sha256(msg));
     assert.equal(sha.length, 32);
     assert.equal(blake.length, 32);
+    assert.equal(poseidon.length, 32);
     assert.notDeepEqual(sha, blake);
+    assert.notDeepEqual(sha, poseidon);
+    assert.notDeepEqual(blake, poseidon);
     assert.equal(defaultInternalHash().id, "sha256");
   });
 
   it("same-hash prove/verify accepts; mixed-hash rejects", () => {
     const note: Note = { amountSats: 12_000n, rho: rnd32(), ownerSecret: rnd32() };
-    for (const id of INTERNAL_HASH_IDS) {
+    const friIds = INTERNAL_HASH_IDS.filter((id) => id !== "poseidon2-m31");
+    for (const id of friIds) {
       const hash = internalHash(id);
       const d = applyDeposit(machine(hash), note);
       const proof = proveFri(d.statement, wDeposit(note, d.index, d.path), { hash });
@@ -62,10 +67,13 @@ describe("internal hash knob", () => {
 
     const hashA = internalHash("sha256");
     const hashB = internalHash("blake2s");
+    const hashC = internalHash("poseidon2-m31");
     const d = applyDeposit(machine(hashA), note);
     const proofA = proveFri(d.statement, wDeposit(note, d.index, d.path), { hash: hashA });
     const mixed = verifyFri(d.statement, proofA, wDeposit(note, d.index, d.path), { hash: hashB });
     assert.equal(mixed.ok, false, "sha256 proof must not verify under blake2s");
+    const mixedP = verifyFri(d.statement, proofA, wDeposit(note, d.index, d.path), { hash: hashC });
+    assert.equal(mixedP.ok, false, "sha256 proof must not verify under poseidon2-m31");
 
     const dB = applyDeposit(machine(hashB), note);
     const proofB = proveFri(dB.statement, wDeposit(note, dB.index, dB.path), { hash: hashB });
@@ -76,14 +84,21 @@ describe("internal hash knob", () => {
   it("selecting the hash changes merkle, note, nullifier, and amount commit together", () => {
     const sha = internalHash("sha256");
     const blake = internalHash("blake2s");
+    const poseidon = internalHash("poseidon2-m31");
     const note: Note = { amountSats: 9_000n, rho: rnd32(), ownerSecret: rnd32() };
     assert.notDeepEqual(commitNote(note, sha), commitNote(note, blake));
+    assert.notDeepEqual(commitNote(note, sha), commitNote(note, poseidon));
     assert.notDeepEqual(commitAmount(note.amountSats, note.rho, sha), commitAmount(note.amountSats, note.rho, blake));
+    assert.notDeepEqual(commitAmount(note.amountSats, note.rho, sha), commitAmount(note.amountSats, note.rho, poseidon));
     const treeSha = new MerkleTree([1n, 2n, 3n, 4n], sha);
     const treeBlake = new MerkleTree([1n, 2n, 3n, 4n], blake);
+    const treeP = new MerkleTree([1n, 2n, 3n, 4n], poseidon);
     assert.notDeepEqual(treeSha.root, treeBlake.root);
+    assert.notDeepEqual(treeSha.root, treeP.root);
     assert.equal(MerkleTree.verify(1n, 0, treeSha.path(0), treeSha.root, sha), true);
     assert.equal(MerkleTree.verify(1n, 0, treeSha.path(0), treeSha.root, blake), false);
+    assert.equal(MerkleTree.verify(1n, 0, treeP.path(0), treeP.root, poseidon), true);
+    assert.equal(MerkleTree.verify(1n, 0, treeP.path(0), treeP.root, sha), false);
   });
 
   it("a third digest object is a table pass-through, not a site rewrite", () => {
@@ -118,7 +133,7 @@ describe("internal hash knob", () => {
     assert.equal(MerkleTree.verify(1n, 0, treeThird.path(0), treeThird.root, sha), false);
   });
 
-  it("shipped src default is SHA-256; Poseidon2 is not an implementation", () => {
+  it("shipped src default is SHA-256; poseidon2-m31 is a table entry, not a lock opcode", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const src = join(here, "..", "src");
     const files = [
@@ -127,14 +142,17 @@ describe("internal hash knob", () => {
       readFileSync(join(src, "backends", "circle", "fri.ts"), "utf8"),
       readFileSync(join(src, "pool", "notes.ts"), "utf8"),
       readFileSync(join(src, "amounts", "hash-commit.ts"), "utf8"),
+      readFileSync(join(src, "chain", "covenant-p2s.ts"), "utf8"),
     ];
     const body = files.join("\n");
     assert.match(files[0]!, /DEFAULT_INTERNAL_HASH_ID: InternalHashId = "sha256"/);
     assert.match(files[0]!, /id: "blake2s"/);
+    assert.match(files[0]!, /id: "poseidon2-m31"/);
     assert.match(files[0]!, /createHash\("blake2s256"\)/);
-    assert.equal(/export type InternalHashId = "[^"]*poseidon/i.test(files[0]!), false);
-    assert.equal(/\bposeidon2\s*\(/i.test(body), false);
+    assert.match(files[0]!, /digestPoseidon2M31Bytes/);
     assert.equal(/groth16|pairing.?snark|bn254/i.test(body), false);
+    assert.match(files[5]!, /OP_HASH256/);
+    assert.equal(/OP_POSEIDON/i.test(files[5]!), false);
     assert.match(files[1]!, /InternalHash/);
     assert.match(files[2]!, /resolveInternalHash/);
     assert.match(files[3]!, /InternalHash/);
