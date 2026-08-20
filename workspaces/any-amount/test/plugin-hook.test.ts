@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import { circleFriPlugin } from "../src/backends/circle/plugin.ts";
 import { hashLabPlugin } from "../src/backends/hash-lab.ts";
@@ -36,10 +39,37 @@ describe("ZKP plugin hook on the pool statement", () => {
     assert.ok(families.includes("hash-lab-v0"));
     assert.equal(zkpPluginByFamily("circle-fri-m31").family, "circle-fri-m31");
     assert.equal(zkpPluginByFamily("hash-lab-v0").family, "hash-lab-v0");
-    assert.throws(() => zkpPluginByFamily("groth16"));
-    const d = describePlugins() as { defaultZkp: string; zkp: Array<{ family: string }> };
+    assert.throws(() => zkpPluginByFamily("groth16"), /reserved slot/);
+    assert.throws(() => zkpPluginByFamily("whir"), /reserved slot/);
+    assert.throws(() => zkpPluginByFamily("spartan"), /reserved slot/);
+    assert.throws(() => zkpPluginByFamily("goldilocks-fri"), /reserved slot/);
+    assert.throws(() => zkpPluginByFamily("air-whir"), /reserved slot/);
+    assert.throws(() => zkpPluginByFamily("spartan-whir"), /reserved slot/);
+    assert.throws(() => zkpPluginByFamily("not-a-family"), /unknown zkp family/);
+    const d = describePlugins() as {
+      defaultZkp: string;
+      zkp: Array<{ family: string }>;
+      zkpReserved: Array<{ family: string; status: string; role: string; pcs: string }>;
+    };
     assert.equal(d.defaultZkp, "circle-fri-m31");
     assert.ok(d.zkp.length >= 2);
+    assert.ok(!d.zkp.some((z) => z.family === "groth16"));
+    const byName = Object.fromEntries(d.zkpReserved.map((z) => [z.family, z]));
+    assert.equal(byName.whir?.role, "pcs");
+    assert.equal(byName.spartan?.role, "iop");
+    assert.equal(byName["air-whir"]?.pcs, "whir");
+    assert.equal(byName["spartan-whir"]?.pcs, "whir");
+    assert.equal(byName["goldilocks-fri"]?.role, "plugin");
+    assert.equal(byName.groth16?.role, "pairing-snark");
+  });
+
+  it("CLI exposes --hash and --plugin knobs; first ZKP plugin is circle-fri-m31", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const cli = readFileSync(join(here, "..", "src", "cli.ts"), "utf8");
+    assert.match(cli, /--hash sha256\|blake2s\|poseidon2-m31/);
+    assert.match(cli, /--plugin circle-fri-m31/);
+    assert.match(cli, /RESERVED_ZKP_FAMILIES|zkpReserved|goldilocks-fri\|spartan\|whir\|groth16/);
+    assert.match(cli, /DEFAULT_ZKP_FAMILY/);
   });
 
   it("same statement: each registered plugin prove/verify accepts; cross-family rejects", async () => {

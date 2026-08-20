@@ -51,7 +51,13 @@ import {
 import { mixChangedRootsAndReserve, runMixSuccessor } from "./pool/mix-successor.ts";
 import { announceEvent, newRoundKey } from "./nostr/bus.ts";
 import { torStatus } from "./nostr/tor.ts";
-import { DEFAULT_ZKP_FAMILY, describePlugins, zkpPluginByFamily } from "./plugins/registry.ts";
+import {
+  DEFAULT_ZKP_FAMILY,
+  describePlugins,
+  RESERVED_ZKP_FAMILIES,
+  zkpPluginByFamily,
+  zkpPlugins,
+} from "./plugins/registry.ts";
 import { sendMany } from "./chain/send.ts";
 
 import {
@@ -85,7 +91,15 @@ const help = `any-amount — Chipnet lab (ZKP-agnostic)
   balance                 electrum listunspent
   pool create             local genesis state (PAA1)
   pool deposit --sats N [--hash sha256|blake2s|poseidon2-m31] [--plugin circle-fri-m31|hash-lab-v0]
+                          Internal hash knob (default sha256 = CashVM OP_SHA256).
+                          poseidon2-m31 is toorik Grain (ePrint 2023/323), not a lock opcode.
+                          ZKP knob: first plugin is circle-fri-m31 (AIR + Circle FRI).
+                          Reserved sandwiches: goldilocks-fri (AIR+FRI), air-whir
+                          (AIR+WHIR), spartan-whir (Spartan+WHIR), groth16 (pairing).
+                          whir is a PCS (can back AIR or Spartan), not a STARK.
   pool withdraw --sats N [--to ADDR] [--envelope a|b|c] [--hops N]
+                          [--hash sha256|blake2s|poseidon2-m31]
+                          [--plugin circle-fri-m31|hash-lab-v0]
                           [--batch-exit] [--batch-min 30] [--batch-max 180] [--batch-window N]
                           Fast withdraw is the default (no wait). Public payouts
                           snap to buckets (1e8..1e3 sats); leftover stays a
@@ -294,7 +308,8 @@ async function main(): Promise<void> {
           profile: "any-amount-v0",
           pluginFamily: circleFriPlugin.family,
           defaultZkp: DEFAULT_ZKP_FAMILY,
-          zkpFamilies: ["circle-fri-m31", "hash-lab-v0"],
+          zkpFamilies: zkpPlugins.map((p) => p.family),
+          zkpReserved: RESERVED_ZKP_FAMILIES.map((p) => p.family),
           internalHash: DEFAULT_INTERNAL_HASH_ID,
           internalHashIds: INTERNAL_HASH_IDS,
           batchExit: {
@@ -417,6 +432,9 @@ async function main(): Promise<void> {
     const sats = BigInt(arg("--sats"));
     const loaded = await loadMachine();
     const hash = loaded.machine.notes.hash;
+    if (flag("--hash") && hashIdArg() !== hash.id) {
+      throw new Error(`machine hash is ${hash.id}; --hash ${hashIdArg()} would mix trees`);
+    }
     const plugin = zkpPluginByFamily(pluginFamilyArg(loaded.pluginFamily));
     const held = loaded.notes.find((n) => n.note.amountSats >= sats);
     if (!held) throw new Error("no note covers that amount");

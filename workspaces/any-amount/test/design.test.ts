@@ -46,5 +46,10 @@ describe("plugin split", () => {
     assert.ok(zkp.includes("hash-lab-v0"));
     assert.ok(zkp.length >= 2);
     assert.ok(!zkp.some((f) => /groth16|pairing|bn254/i.test(f)));
+    const reserved = (d as { zkpReserved?: Array<{ family: string; role?: string; pcs?: string }> }).zkpReserved ?? [];
+    assert.ok(reserved.some((z) => z.family === "groth16"));
+    assert.ok(reserved.some((z) => z.family === "whir" && z.role === "pcs"));
+    assert.ok(reserved.some((z) => z.family === "air-whir" && z.pcs === "whir"));
+    assert.ok(reserved.some((z) => z.family === "spartan-whir" && z.pcs === "whir"));
   });
 });
