@@ -62,12 +62,19 @@ import {
   STANDARD_HOP_TARGET_BYTES,
   type TxEnvelope,
 } from "./envelope.ts";
-import { cargoInputs, packCargoUnlockings, proofCargoLock, type CargoUtxo } from "./proof-cargo.ts";
+import {
+  cargoInputs,
+  packCargoUnlockings,
+  packedAirCarrierUnlocking,
+  proofCargoLock,
+  type CargoUtxo,
+} from "./proof-cargo.ts";
 import { friShardUnlockings } from "./fri-openings.ts";
 import {
   compileCqzLockP2sh32,
   compileSlotsLockP2sh32,
   cqzKernelUnlocking,
+  AIR_PACKED_SIZE,
   encodeAirPacked,
   SLOT_KERNEL_COUNT,
   SLOT_KERNEL_COUNT_CONSENSUS,
@@ -227,6 +234,12 @@ export function compileCovenantSuccessor(args: {
   packTo?: number;
   packHopIndex?: number;
   cargoUtxos?: CargoUtxo[];
+  /** When false, input 0 is an AIR carrier (tape hop), not the pool. */
+  includePool?: boolean;
+  /** First FRI query index for fold/slot kernels on this hop. */
+  queryStart?: number;
+  /** How many foldPair kernels to run (default from slotKernels). */
+  foldQueries?: number;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -275,11 +288,15 @@ export function compileCovenantSuccessor(args: {
   const oldState = decodeState(args.pool.commitment);
   const decoded = decodeFriProof(args.proof);
   const packed = args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots;
-  const foldN = foldKernelCount(slotKernels);
-  const unlocking =
-    lockKind === "p2s"
+  const includePool = args.includePool !== false;
+  const queryStart = args.queryStart ?? 0;
+  const foldN = args.foldQueries ?? foldKernelCount(slotKernels);
+  const slotN = args.foldQueries ?? slotKernels;
+  const unlocking = includePool
+    ? lockKind === "p2s"
       ? p2sUnlocking(undefined, packed)
-      : p2sh32Unlocking(undefined, packed, { slotKernels });
+      : p2sh32Unlocking(undefined, packed, { slotKernels })
+    : packedAirCarrierUnlocking(packed instanceof Uint8Array ? packed : encodeAirPacked(args.statement!, decoded));
   const shards = friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
   const dummy = "44".repeat(32);
   const kernels = args.kernelUtxos ??
@@ -292,26 +309,40 @@ export function compileCovenantSuccessor(args: {
   const extras = args.extraKernels ?? [
     { tx_hash: dummy, tx_pos: 10, value: 1000 },
     ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 11 + f, value: 1000 })),
-    ...Array.from({ length: slotKernels }, (_, i) => ({ tx_hash: dummy, tx_pos: 11 + foldN + i, value: 1000 })),
+    ...Array.from({ length: slotN }, (_, i) => ({ tx_hash: dummy, tx_pos: 11 + foldN + i, value: 1000 })),
   ];
-  if (extras.length !== 1 + foldN + slotKernels) {
-    throw new Error(`need ${1 + foldN + slotKernels} extra kernel UTXOs, got ${extras.length}`);
+  if (extras.length !== 1 + foldN + slotN) {
+    throw new Error(`need ${1 + foldN + slotN} extra kernel UTXOs, got ${extras.length}`);
   }
 
   const packTo =
     args.packTo !== undefined
       ? args.packTo
-      : args.envelope === "consensus"
+      : foldN >= SLOT_KERNEL_COUNT_CONSENSUS
         ? 0
         : STANDARD_HOP_TARGET_BYTES;
   const packHopIndex = args.packHopIndex ?? 0;
-  const baseInputs = [
-      {
+  const airPacked =
+    packed instanceof Uint8Array && packed.length === AIR_PACKED_SIZE
+      ? packed
+      : args.statement
+        ? encodeAirPacked(args.statement, decoded)
+        : undefined;
+  const in0 = includePool
+    ? {
         outpointIndex: args.pool.tx_pos,
         outpointTransactionHash: hexToBin(args.pool.tx_hash),
         sequenceNumber: 0xffffffff,
         unlockingBytecode: unlocking,
-      },
+      }
+    : {
+        outpointIndex: 0,
+        outpointTransactionHash: hexToBin("aa".repeat(32)),
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: packedAirCarrierUnlocking(airPacked ?? new Uint8Array(AIR_PACKED_SIZE)),
+      };
+  const baseInputs = [
+      in0,
       ...shards.map((friUnlock, i) => ({
         outpointIndex: kernels[i]!.tx_pos,
         outpointTransactionHash: hexToBin(kernels[i]!.tx_hash),
@@ -328,13 +359,13 @@ export function compileCovenantSuccessor(args: {
         outpointIndex: extras[1 + f]!.tx_pos,
         outpointTransactionHash: hexToBin(extras[1 + f]!.tx_hash),
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: foldKernelUnlocking(1, f),
+        unlockingBytecode: foldKernelUnlocking(1, queryStart + f),
       })),
-      ...Array.from({ length: slotKernels }, (_, i) => ({
+      ...Array.from({ length: slotN }, (_, i) => ({
         outpointIndex: extras[1 + foldN + i]!.tx_pos,
         outpointTransactionHash: hexToBin(extras[2 + i]!.tx_hash),
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: slotsKernelUnlocking(i * SLOTS_PER_KERNEL),
+        unlockingBytecode: slotsKernelUnlocking((queryStart + i) * SLOTS_PER_KERNEL),
       })),
       ...(userFee && args.feeUtxo && c && data
         ? [
@@ -367,7 +398,8 @@ export function compileCovenantSuccessor(args: {
           ]
         : []),
   ];
-  const outputs = [
+  const outputs = includePool
+    ? [
       {
         lockingBytecode: lockOf(lockKind, slotKernels),
         valueSatoshis: value,
@@ -386,7 +418,13 @@ export function compileCovenantSuccessor(args: {
             },
           ]
         : []),
-  ];
+    ]
+    : [
+        {
+          lockingBytecode: p2pkhLockingOf(args.wallet ?? createLabWallet()),
+          valueSatoshis: DUST_SATS * 2n,
+        },
+      ];
   const bare = generateTransaction({ version: 2, locktime: 0, inputs: baseInputs, outputs });
   if (!bare.success) {
     throw new Error(`covenant successor: ${JSON.stringify(bare.errors).slice(0, 500)}`);

@@ -15,6 +15,9 @@ import {
 } from "@bitauth/libauth";
 import { concatBytes } from "../pool/bytes.ts";
 import { compileCovenantSuccessor, type MeasuredTx } from "./covenant-spend.ts";
+import { FRI_QUERIES } from "../backends/circle/params.ts";
+import { SLOT_KERNEL_COUNT_CONSENSUS } from "./air-cqz.ts";
+
 import { broadcastSized, type BroadcastPath } from "./broadcast-tx.ts";
 import type { BchnRpcConfig } from "./bchn-rpc.ts";
 import {
@@ -265,35 +268,75 @@ export function compileChainedWithdraw(args: {
   const digest = args.digest.length === 32 ? args.digest : hash256(args.digest);
   const hops: ChainedHop[] = [];
   let utxo = args.tapeUtxo;
-  let cargoOff = 0;
   const tapeN = hopCount - 1;
+  const slice = Math.max(1, Math.floor(FRI_QUERIES / Math.max(1, hopCount)));
   for (let i = 0; i < tapeN; i += 1) {
-    const chunk = args.proof.subarray(0, Math.min(32, args.proof.length));
-    const chunkHash = hash256(concatBytes(digest, Uint8Array.of(i, hopCount), chunk));
-    const hop = compileTapeHop({
+    const q0 = i * slice;
+    let qn = Math.min(4, slice, FRI_QUERIES - q0);
+    let sliceTx = compileCovenantSuccessor({
       wallet: args.wallet,
-      utxo,
-      digest,
-      index: i,
-      hopCount,
-      chunkHash,
+      includePool: false,
+      queryStart: q0,
+      foldQueries: qn,
+      slotKernels: qn,
+      packTo: 0,
+      packHopIndex: i,
+      pool: args.pool,
+      newState: args.newState,
       proof: args.proof,
-      cargoUtxos: args.cargoUtxos?.slice(cargoOff),
+      statement: args.statement,
+      lockKind: "p2sh32",
+      envelope: "standard",
     });
-    cargoOff += hop.cargoCount;
-    if (hop.raw.length > RELAY_STANDARD_TX_BYTES) {
-      throw new Error(`tape hop ${i} ${hop.raw.length} > ${RELAY_STANDARD_TX_BYTES}`);
+    while (sliceTx.txBytes > RELAY_STANDARD_TX_BYTES && qn > 1) {
+      qn -= 1;
+      sliceTx = compileCovenantSuccessor({
+        wallet: args.wallet,
+        includePool: false,
+        queryStart: q0,
+        foldQueries: qn,
+        slotKernels: qn,
+        packTo: 0,
+        packHopIndex: i,
+        pool: args.pool,
+        newState: args.newState,
+        proof: args.proof,
+        statement: args.statement,
+        lockKind: "p2sh32",
+        envelope: "standard",
+      });
+    }
+    if (sliceTx.txBytes > RELAY_STANDARD_TX_BYTES) {
+      throw new Error(`tape verifier hop ${i} ${sliceTx.txBytes} > ${RELAY_STANDARD_TX_BYTES}`);
+    }
+    if (sliceTx.txBytes < STANDARD_HOP_TARGET_BYTES - 2_000) {
+      sliceTx = compileCovenantSuccessor({
+        wallet: args.wallet,
+        includePool: false,
+        queryStart: q0,
+        foldQueries: qn,
+        slotKernels: qn,
+        packTo: STANDARD_HOP_TARGET_BYTES,
+        packHopIndex: i,
+        cargoUtxos: args.cargoUtxos,
+        pool: args.pool,
+        newState: args.newState,
+        proof: args.proof,
+        statement: args.statement,
+        lockKind: "p2sh32",
+        envelope: "standard",
+      });
     }
     hops.push({
       role: "tape",
       index: i,
-      raw: hop.raw,
-      txid: hop.txid,
-      txBytes: hop.raw.length,
+      raw: sliceTx.raw,
+      txid: sliceTx.txid,
+      txBytes: sliceTx.txBytes,
       payoutCount: 0,
-      commitHex: Buffer.from(hop.commit).toString("hex"),
+      commitHex: Buffer.from(digest).toString("hex"),
     });
-    utxo = hop.nextUtxo;
+    utxo = { tx_hash: sliceTx.txid, tx_pos: 0, value: Number(DUST_SATS) * 2 };
   }
   const timeout = compileTapeTimeout({ wallet: args.wallet, tapeUtxo: utxo });
   const successor: MeasuredTx = compileCovenantSuccessor({
@@ -304,18 +347,17 @@ export function compileChainedWithdraw(args: {
     proof: args.proof,
     statement: args.statement,
     lockKind: "p2sh32",
-    envelope: "standard",
+    envelope: "consensus",
+    slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+    foldQueries: FRI_QUERIES,
+    queryStart: 0,
+    includePool: true,
+    packTo: 0,
     kernelUtxos: args.kernelUtxos,
     extraKernels: args.extraKernels,
     extraPayouts: args.extraPayouts,
     payoutLockingBytecode: args.payoutLockingBytecode,
-    packTo: STANDARD_HOP_TARGET_BYTES,
-    packHopIndex: tapeN,
-    cargoUtxos: args.cargoUtxos?.slice(cargoOff),
   });
-  if (successor.txBytes > RELAY_STANDARD_TX_BYTES) {
-    throw new Error(`pay hop ${successor.txBytes} > ${RELAY_STANDARD_TX_BYTES}`);
-  }
   const payoutCount =
     args.extraPayouts && args.extraPayouts.length > 0
       ? args.extraPayouts.length
@@ -374,6 +416,6 @@ export function chainedShape(chain: ChainedWithdraw): Record<string, unknown> {
     totalBytes: chain.totalBytes,
     timeoutCsv: chain.timeout.sequence,
     timeoutTxid: chain.timeout.txid,
-    note: "tape hops do not spend the pool; last hop pays; each standard hop packs toward 99 KB",
+    note: "tape hops run fold/C=QZ slices and never pay; last hop is the 36-query consensus verifier (same as envelope B)",
   };
 }

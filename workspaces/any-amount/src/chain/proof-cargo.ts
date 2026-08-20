@@ -33,6 +33,11 @@ export function proofCargoUnlocking(chunk: Uint8Array): Uint8Array {
   return concatBytes(pushData(chunk), pushData(proofCargoRedeem()));
 }
 
+/** Input-0 unlocking layout fold/slot kernels expect: packed AIR then a tiny redeem. */
+export function packedAirCarrierUnlocking(packed: Uint8Array): Uint8Array {
+  return concatBytes(pushData(packed), pushData(proofCargoRedeem()));
+}
+
 export function proofCargoChunk(proof: Uint8Array, hopIndex: number, cargoIndex: number, n: number): Uint8Array {
   const out = new Uint8Array(Math.max(1, n));
   out[0] = hopIndex & 0xff;

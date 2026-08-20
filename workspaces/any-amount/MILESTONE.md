@@ -14,7 +14,7 @@ Any-amount pool. Circle FRI is **plugin #1**, not the pool identity.
 | `--hash sha256` / `blake2s` / `poseidon2-m31` | default **sha256** (CashVM `OP_SHA256`) | Poseidon2-M31 is toorik Grain (ePrint 2023/323), not a lock opcode. |
 | `--plugin` | **circle-fri-m31** first; `hash-lab-v0` lab stub | Reserved sandwiches: `goldilocks-fri` (AIR+FRI), `air-whir` (AIR+WHIR), `spartan-whir` (Spartan+WHIR), `groth16` (pairing). `whir` is a PCS; `spartan` is an IOP. |
 
-Standard hops **pack toward 99 KB** with proof-cargo inputs (each unlocking still ≤ 10 KB). Consensus B is one tx, not packed to 1 MB.
+Standard hops **pack toward 99 KB**. Envelope **B** is one tx with **36** unique-orbit fold + C=QZ kernels. Envelope **C** tape hops run real fold/C=QZ **slices** (not `OP_DROP` cargo); the **pay hop is the same 36-query consensus verifier as B** (JSON-RPC, may exceed 100 KB). CashVM still does not run full `verifyFri` (`algebraicC` / grind stay off-chain).
 
 `pool measure-tx` (compile, not a new land):
 
