@@ -9,6 +9,7 @@ import { applyDeposit } from "../src/pool/transition.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "../src/pool/notes.ts";
 import { emptyState } from "../src/pool/state.ts";
 import { encodeFriProof, proveFri, wDeposit } from "../src/backends/circle/fri.ts";
+import { defaultInternalHash } from "../src/backends/circle/internal-hash.ts";
 import { airQuotientLde, publicCells } from "../src/backends/circle/air.ts";
 import { evaluateBch2026 } from "../src/chain/vm-verifier.ts";
 import { encodeFeltBlob } from "../src/chain/m31-asm.ts";
@@ -32,9 +33,11 @@ import {
   compileScalarMulFastLock,
   compileScalarMulLock,
   compileVanishingLock,
+  AIR_NEWTON_BYTES,
   AIR_OFF_CELLS,
   AIR_OFF_EVEN,
   AIR_OFF_IDX,
+  AIR_OFF_ODD,
   AIR_OFF_NTABLE,
   AIR_OFF_QTABLE,
   AIR_PACKED_SIZE,
@@ -189,7 +192,14 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     );
     const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
     const digest = sha256(encodeStatement(d.statement));
-    const qIdx = fiatShamirQueryIndices(digest, proof);
+    const packedFs = encodeAirPacked(d.statement, encodeFriProof(proof));
+    const qIdx = fiatShamirQueryIndices(
+      digest,
+      proof,
+      defaultInternalHash(),
+      packedFs.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES),
+      packedFs.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES),
+    );
     const i = qIdx[0]!;
     const { n, z, q } = nqzAt(d.statement, i);
     assert.equal(mul(q, z), n);
@@ -356,7 +366,13 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
     const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
     const digest = sha256(encodeStatement(d.statement));
-    const i0 = fiatShamirQueryIndices(digest, proof)[0]!;
+    const i0 = fiatShamirQueryIndices(
+      digest,
+      proof,
+      defaultInternalHash(),
+      packed.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES),
+      packed.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES),
+    )[0]!;
     const lock = cashAssemblyToBin(`${fsIndex0Asm()}\nOP_NIP\n<${i0}>\nOP_NUMEQUAL`);
     if (typeof lock === "string") throw new Error(lock);
     const ev = evalPadded(lock, pushData(packed));
@@ -376,7 +392,13 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
     const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
     const digest = sha256(encodeStatement(d.statement));
-    const i3 = fiatShamirQueryIndices(digest, proof)[3]!;
+    const i3 = fiatShamirQueryIndices(
+      digest,
+      proof,
+      defaultInternalHash(),
+      packed.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES),
+      packed.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES),
+    )[3]!;
     const lock = cashAssemblyToBin(
       `<3> OP_TOALTSTACK\n${fsIndexFromAltSlotAsm()}\nOP_NIP\n<${i3}>\nOP_NUMEQUAL`,
     );

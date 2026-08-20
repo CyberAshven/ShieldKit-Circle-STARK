@@ -9,9 +9,9 @@ import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
 import { evaluatePoolSuccessorVm } from "../src/chain/vm-verifier.ts";
 import { hashPayoutLocking, LAB_PAYOUT_DIGEST, LAB_PAYOUT_LOCKING } from "../src/chain/payout.ts";
-import { encodeAirPacked, AIR_OFF_CELLS, AIR_OFF_NET, AIR_OFF_PAYOUT } from "../src/chain/air-cqz.ts";
+import { encodeAirPacked, AIR_OFF_CELLS, recookNewtonFromPacked } from "../src/chain/air-cqz.ts";
 import { encodeLe } from "../src/backends/circle/m31.ts";
-import { encodeVmNumber } from "../src/pool/bytes.ts";
+
 
 const DEPOSIT_SATS = 10_000n;
 const WITHDRAW_SATS = 3_000n;
@@ -144,23 +144,18 @@ describe("pool UTXO reserve + withdraw payout", () => {
     const honestPacked = encodeAirPacked(w.statement, wdProof);
     const steal = WITHDRAW_SATS + 1_000n;
     const cooked = new Uint8Array(honestPacked);
-    const netVm = encodeVmNumber(-steal);
-    cooked[AIR_OFF_NET] = netVm.length;
-    cooked.set(netVm, AIR_OFF_NET + 1);
     cooked.set(encodeLe(steal), AIR_OFF_CELLS + 5 * 4);
-    const cookedPay = new Uint8Array(LAB_PAYOUT_DIGEST);
-    cookedPay[0] ^= 0x5a;
-    cooked.set(cookedPay, AIR_OFF_PAYOUT);
+    const recooked = recookNewtonFromPacked(cooked);
     const drain = evaluatePoolSuccessorVm({
       oldState: w.statement.oldState,
       newState: w.statement.newState,
       proof: wdProof,
       statement: w.statement,
-      airPacked: cooked,
+      airPacked: recooked,
       outputValueSats: utxoValueFor(w.statement.oldState) - steal,
       payoutValueSats: steal,
       payoutLockingBytecode: LAB_PAYOUT_LOCKING,
     });
-    assert.equal(drain.accepted, false, drain.error ?? "cooked net/payout matching a larger payout must fail");
+    assert.equal(drain.accepted, false, drain.error ?? "recooked cell5 Newton T with honest Q/N must fail");
   });
 });

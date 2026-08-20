@@ -25,13 +25,18 @@ import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
 import { add, encodeLe, M31, mul, sub, type M31El } from "../backends/circle/m31.ts";
-import { FRI_OPEN_MASK_TAG, VIEWING_TAG, openingMaskAt, openingMaskFelt } from "../backends/circle/witness-mask.ts";
+import {
+  FRI_OPEN_MASK_TAG,
+  VIEWING_TAG,
+  openingMaskAt,
+  openingMaskFelt,
+} from "../backends/circle/witness-mask.ts";
 import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 import { circleDomain } from "../backends/circle/fri.ts";
 import { COMMITTED_LAYERS, FRI_FINAL, FRI_N, FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
 import { uniqueQueryIndices } from "../backends/circle/query-sample.ts";
 import { densityPadUnlocking, KERNEL_UNLOCK_PAD_HIGH } from "./envelope.ts";
-import { encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
+import { decodeFeltBlob, encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
 
 export const AIR_PACKED_SIZE = 1608;
 export const AIR_OFF_ROOTS = 0;
@@ -267,8 +272,12 @@ export function fiatShamirQueryIndices(
   digest: Uint8Array,
   proof: FriProof,
   hash: InternalHash = defaultInternalHash(),
+  newtonEven?: Uint8Array,
+  newtonOdd?: Uint8Array,
 ): number[] {
-  const grindSeed = hash.digest(concatBytes(digest, proof.traceRoot, ...proof.layerRoots));
+  const even = newtonEven ?? new Uint8Array(AIR_NEWTON_BYTES);
+  const odd = newtonOdd ?? new Uint8Array(AIR_NEWTON_BYTES);
+  const grindSeed = hash.digest(concatBytes(digest, proof.traceRoot, ...proof.layerRoots, even, odd));
   const seed = hash.digest(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries")));
   return uniqueQueryIndices(hash, seed, FRI_N, FRI_QUERIES);
 }
@@ -296,8 +305,10 @@ export function encodeAirPacked(
     while (out.length < AIR_NEWTON_FELTS) out.push(0n);
     return out;
   };
-  packed.set(encodeFeltBlob(padNewton(newton.even)), AIR_OFF_EVEN);
-  packed.set(encodeFeltBlob(padNewton(newton.odd)), AIR_OFF_ODD);
+  const evenBlob = encodeFeltBlob(padNewton(newton.even));
+  const oddBlob = encodeFeltBlob(padNewton(newton.odd));
+  packed.set(evenBlob, AIR_OFF_EVEN);
+  packed.set(oddBlob, AIR_OFF_ODD);
   packed.set(digest, AIR_OFF_DIGEST);
   packed.set(encodePublicPaa1(statement.oldState), AIR_OFF_PUB_OLD);
   packed.set(encodePublicPaa1(statement.newState), AIR_OFF_PUB_NEW);
@@ -305,7 +316,7 @@ export function encodeAirPacked(
     statement.payoutLockingDigest.length === 32 ? statement.payoutLockingDigest : new Uint8Array(32),
     AIR_OFF_PAYOUT,
   );
-  const qIdx = fiatShamirQueryIndices(digest, p, hash);
+  const qIdx = fiatShamirQueryIndices(digest, p, hash, evenBlob, oddBlob);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     const i = qIdx[s]!;
     const r = openingMaskAt(commit, i, hash, zLde[i]!);
@@ -322,6 +333,28 @@ export function encodeAirPacked(
     packed.set(encodeLe(p.final[i] ?? 0n), AIR_OFF_FINAL + i * 4);
   }
   return packed;
+}
+
+/**
+ * Rewrite Newton even/odd so they interpolate the packed on-chain cells + the
+ * same viewing mask. qTable / nTable / payout digest are left untouched.
+ */
+export function recookNewtonFromPacked(
+  packed: Uint8Array,
+  hash: InternalHash = defaultInternalHash(),
+): Uint8Array {
+  if (packed.length < AIR_PACKED_SIZE) throw new Error("packed width");
+  const out = new Uint8Array(packed);
+  const commit = packed.subarray(AIR_OFF_OPEN_MASK, AIR_OFF_OPEN_MASK + 32);
+  const maskC = openingMaskFelt(commit, hash);
+  const cells = decodeFeltBlob(packed.subarray(AIR_OFF_CELLS, AIR_OFF_CELLS + TRACE_LEN * 4));
+  const interp = interpolateCircle(
+    smallDomain,
+    cells.map((v) => add(v, maskC)),
+  );
+  out.set(encodeFeltBlob(padNewton(interp.even)), AIR_OFF_EVEN);
+  out.set(encodeFeltBlob(padNewton(interp.odd)), AIR_OFF_ODD);
+  return out;
 }
 
 export function nqzAt(
@@ -640,6 +673,14 @@ OP_CAT
 OP_OVER
 <${AIR_OFF_ROOTS}> OP_SPLIT OP_NIP
 <224> OP_SPLIT OP_DROP
+OP_CAT
+OP_OVER
+<${AIR_OFF_EVEN}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_CAT
+OP_OVER
+<${AIR_OFF_ODD}> OP_SPLIT OP_NIP
+<${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
 OP_CAT
 OP_SHA256
 OP_OVER
@@ -1240,7 +1281,7 @@ function pushDataPad(data: Uint8Array): Uint8Array {
   return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
 }
 
-/** Bind packed net/payout cells to Newton T (interpolant of onChainCells + mask). */
+
 export const BIND_T_KERNEL = `
 ${defineNewtonFn()}
 ${defineMaskCFn(4)}

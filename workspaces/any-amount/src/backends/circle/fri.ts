@@ -23,6 +23,7 @@ import {
   viewingCommit,
   openingMaskAt,
   openingMaskCoeffs,
+  openingMaskFelt,
   evalMaskPoly,
   VIEWING_PAD_LEN,
 } from "./witness-mask.ts";
@@ -51,6 +52,7 @@ import {
   checkAuthRelation,
   checkPublicAuthRelation,
   checkPublicConservation,
+  onChainCells,
   openedNote,
   publicCells,
   publicEvals,
@@ -169,6 +171,34 @@ function queryIndices(hash: InternalHash, seed: Uint8Array, n: number, count: nu
   return uniqueQueryIndices(hash, seed, n, count);
 }
 
+function encodeNewtonBlob(vals: M31El[]): Uint8Array {
+  const out = new Uint8Array(33 * 4);
+  for (let i = 0; i < 33; i += 1) out.set(encodeLe(vals[i] ?? 0n), i * 4);
+  return out;
+}
+
+function newtonFsBlobs(
+  statement: PoolStatement,
+  commit: Uint8Array,
+  hash: InternalHash,
+): { even: Uint8Array; odd: Uint8Array } {
+  const maskC = openingMaskFelt(commit, hash);
+  const cells = onChainCells(statement, hash).map((v) => add(v, maskC));
+  const interp = interpolateCircle(circleDomain(TRACE_LEN), cells);
+  return { even: encodeNewtonBlob(interp.even), odd: encodeNewtonBlob(interp.odd) };
+}
+
+function queryGrindSeed(
+  hash: InternalHash,
+  digest: Uint8Array,
+  traceRoot: Uint8Array,
+  layerRoots: Uint8Array[],
+  even: Uint8Array,
+  odd: Uint8Array,
+): Uint8Array {
+  return hash.digest(concatBytes(digest, traceRoot, ...layerRoots, even, odd));
+}
+
 function grindOk(hash: InternalHash, digest: Uint8Array, nonce: number): boolean {
   const h = hash.digest(concatBytes(digest, writeU32BE(nonce), new TextEncoder().encode("grind")));
   let bits = 0;
@@ -227,7 +257,8 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
   }
 
   const layerRoots = trees.map((t) => t.root);
-  const grindSeed = hash.digest(concatBytes(digest, traceTree.root, ...layerRoots));
+  const newton = newtonFsBlobs(statement, vCommit, hash);
+  const grindSeed = queryGrindSeed(hash, digest, traceTree.root, layerRoots, newton.even, newton.odd);
   const grindNonce = findGrind(hash, grindSeed);
   const qIdx = queryIndices(
     hash,
@@ -305,7 +336,8 @@ export function proveFromTLde(
     domain = next.domain;
   }
   const layerRoots = trees.map((t) => t.root);
-  const grindSeed = hash.digest(concatBytes(digest, traceTree.root, ...layerRoots));
+  const newton = newtonFsBlobs(statement, vCommit, hash);
+  const grindSeed = queryGrindSeed(hash, digest, traceTree.root, layerRoots, newton.even, newton.odd);
   const grindNonce = findGrind(hash, grindSeed);
   const qIdx = queryIndices(
     hash,
@@ -415,7 +447,9 @@ export function verifyFri(
   const { nLde, zLde } = airQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain(FRI_N), hash);
 
   const digest = hash.digest(encodeStatement(statement, hash));
-  const grindSeed = hash.digest(concatBytes(digest, proof.traceRoot, ...proof.layerRoots));
+  const commit = proof.viewingCommit && proof.viewingCommit.length === 32 ? proof.viewingCommit : new Uint8Array(32);
+  const newton = newtonFsBlobs(statement, commit, hash);
+  const grindSeed = queryGrindSeed(hash, digest, proof.traceRoot, proof.layerRoots, newton.even, newton.odd);
   if (!grindOk(hash, grindSeed, proof.grindNonce)) return { ok: false, reason: "grind" };
   const expectedIdx = queryIndices(
     hash,

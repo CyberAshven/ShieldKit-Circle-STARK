@@ -21,7 +21,10 @@ import { encodeStatement } from "../src/pool/statement.ts";
 import { sha256 } from "../src/pool/bytes.ts";
 
 import {
+  AIR_NEWTON_BYTES,
+  AIR_OFF_EVEN,
   AIR_OFF_IDX,
+  AIR_OFF_ODD,
   encodeAirPacked,
   fiatShamirQueryIndices,
   fsIndex0Asm,
@@ -172,9 +175,11 @@ OP_NUMEQUAL
     assert.equal(new Set(depIdx).size, FRI_QUERIES);
     assert.equal(new Set(depIdx.map((i) => firstFoldOrbit(i, FRI_N))).size, FRI_QUERIES);
     const digest = sha256(encodeStatement(d.statement));
-    const fs = fiatShamirQueryIndices(digest, dep);
-    assert.deepEqual(fs, depIdx);
     const packed = encodeAirPacked(d.statement, encodeFriProof(dep));
+    const even = packed.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES);
+    const odd = packed.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES);
+    const fs = fiatShamirQueryIndices(digest, dep, defaultInternalHash(), even, odd);
+    assert.deepEqual(fs, depIdx);
     for (let s = 0; s < FRI_QUERIES; s += 1) {
       assert.equal(beIndex(packed, s), depIdx[s]);
     }
@@ -193,7 +198,9 @@ OP_NUMEQUAL
     const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
     const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
     const digest = sha256(encodeStatement(d.statement));
-    const fs = fiatShamirQueryIndices(digest, proof);
+    const even = packed.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES);
+    const odd = packed.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES);
+    const fs = fiatShamirQueryIndices(digest, proof, defaultInternalHash(), even, odd);
     for (const slot of [0, 3, 10]) {
       const want = fs[slot]!;
       const asm = slot === 0 ? fsIndex0Asm() : fsIndexSlotAsm(slot);
