@@ -18,7 +18,7 @@ import { compileCovenantSuccessor, type MeasuredTx } from "./covenant-spend.ts";
 import { compileCqzLockP2sh32, compileSlotsLockP2sh32 } from "./air-cqz.ts";
 import { compileFoldLockP2sh32 } from "./fold-kernel.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
-import { successorFeeCoinSats } from "./envelope.ts";
+import { successorFeeCoinSats, TAPE_HOP_OUT_SATS } from "./envelope.ts";
 import { FRI_QUERIES } from "../backends/circle/params.ts";
 import { SLOT_KERNEL_COUNT } from "./air-cqz.ts";
 
@@ -282,7 +282,7 @@ export function compileChainedWithdraw(args: {
       payoutCount: 0,
       commitHex: Buffer.from(digest).toString("hex"),
     });
-    utxo = { tx_hash: sliceTx.txid, tx_pos: 0, value: Number(DUST_SATS) * 2 };
+    utxo = { tx_hash: sliceTx.txid, tx_pos: 0, value: Number(TAPE_HOP_OUT_SATS) };
   }
   const timeout = compileTapeTimeout({ wallet: args.wallet, tapeUtxo: utxo });
   const successor: MeasuredTx = compileCovenantSuccessor({

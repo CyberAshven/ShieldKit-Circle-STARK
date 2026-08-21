@@ -59,6 +59,7 @@ import {
   DUST_SATS,
   successorFeeCoinSats,
   successorFeeSats,
+  TAPE_HOP_OUT_SATS,
   type TxEnvelope,
 } from "./envelope.ts";
 import { packedAirCarrierUnlocking } from "./proof-cargo.ts";
@@ -160,7 +161,9 @@ export function compileCovenantSpend(args: {
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const siblingCount = args.siblingNfts?.count ?? 0;
-  const siblingSats = args.siblingNfts?.satsEach ?? 1_000n;
+  // A token output with a 128-byte commitment is ~210 B, so BCH dust is
+  // ~3*(210+148) = ~1074 sats. 1000 drew "dust (code 64)" at genesis.
+  const siblingSats = args.siblingNfts?.satsEach ?? 3_000n;
   // A 128-byte-commitment token output is ~170 B; 1200 only covers the base tx.
   const fee = 1_200n + BigInt(siblingCount) * 200n;
   const value = utxoValueFor(args.state);
@@ -487,7 +490,7 @@ export function compileCovenantSuccessor(args: {
           // Input 0 is a mutable sibling NFT holding the OLD commitment, so mutating
           // it to NEW here is a legal CashTokens move (no minting capability needed).
           lockingBytecode: p2pkhLockingOf(args.wallet ?? createLabWallet()),
-          valueSatoshis: DUST_SATS * 2n,
+          valueSatoshis: TAPE_HOP_OUT_SATS,
           token: {
             amount: 0n,
             category: args.pool.category,

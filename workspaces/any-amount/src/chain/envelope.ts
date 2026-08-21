@@ -23,6 +23,8 @@ export const CHAINED_HOPS_MAX = 320;
 export const TAPE_TIMEOUT_CSV = 2;
 export const UNLOCKING_MAX_BYTES = 10_000;
 export const DUST_SATS = 546n;
+/** Tape hop output carries a 128-byte-commitment NFT (~210 B), so dust is ~1074. */
+export const TAPE_HOP_OUT_SATS = 3_000n;
 /** Public Chipnet relay is 1 sat/byte. 100k covers a packed ~99 KB standard hop. */
 export const STANDARD_SUCCESSOR_FEE_SATS = 100_000n;
 /**
