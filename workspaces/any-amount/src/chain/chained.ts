@@ -282,7 +282,8 @@ export function compileChainedWithdraw(args: {
       payoutCount: 0,
       commitHex: Buffer.from(digest).toString("hex"),
     });
-    utxo = { tx_hash: sliceTx.txid, tx_pos: 0, value: Number(TAPE_HOP_OUT_SATS) };
+    // tape tip is output 1; output 0 holds the NEW-commitment NFT for cqz
+    utxo = { tx_hash: sliceTx.txid, tx_pos: 1, value: Number(TAPE_HOP_OUT_SATS) };
   }
   const timeout = compileTapeTimeout({ wallet: args.wallet, tapeUtxo: utxo });
   const successor: MeasuredTx = compileCovenantSuccessor({

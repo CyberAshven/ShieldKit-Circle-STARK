@@ -484,11 +484,12 @@ export function compileCovenantSuccessor(args: {
     ]
     : [
         {
-          // Tape hop output 0 must carry the pool category with the NEW commitment:
-          // cqz's bindPackedStmtToPaa1Asm reads OP_OUTPUTTOKENCOMMITMENT <0>. A
-          // tokenless output makes that an empty item and OP_SPLIT <64> fails.
-          // Input 0 is a mutable sibling NFT holding the OLD commitment, so mutating
-          // it to NEW here is a legal CashTokens move (no minting capability needed).
+          // Output 0 carries the pool category with the NEW commitment: cqz's
+          // bindPackedStmtToPaa1Asm reads OP_OUTPUTTOKENCOMMITMENT <0>, and a
+          // tokenless output makes that an empty item so OP_SPLIT <64> fails.
+          // Input 0 is a mutable sibling holding OLD, so mutating it to NEW is a
+          // legal CashTokens move and needs no minting capability. Nothing spends
+          // this output again; each sibling is consumed once.
           lockingBytecode: p2pkhLockingOf(args.wallet ?? createLabWallet()),
           valueSatoshis: TAPE_HOP_OUT_SATS,
           token: {
@@ -496,6 +497,14 @@ export function compileCovenantSuccessor(args: {
             category: args.pool.category,
             nft: { capability: "mutable" as const, commitment },
           },
+        },
+        {
+          // Output 1 is the tape tip the next hop spends, deliberately tokenless.
+          // A token-carrying UTXO changes the sighash preimage, and the P2PKH
+          // signing path here does not declare one - spending it fails NULLFAIL
+          // ("Signature must be zero for failed CHECK(MULTI)SIG").
+          lockingBytecode: p2pkhLockingOf(args.wallet ?? createLabWallet()),
+          valueSatoshis: TAPE_HOP_OUT_SATS,
         },
       ];
   const generated = generateTransaction({ version: 2, locktime: 0, inputs: baseInputs, outputs });
