@@ -104,7 +104,10 @@ async function landAB(
   let step = "connect";
   try {
     step = "listunspent";
-    const need = envelope === "consensus" ? 800_000 : 400_000;
+    // Genesis change funds the kernels + fee coin: 695972 consensus (86 kernels
+    // + 600546 fee coin), 122532 standard (18 kernels + 100546). 800000 left
+    // consensus with only 58828 of margin once the fee coin went to 600000.
+    const need = envelope === "consensus" ? 1_200_000 : 400_000;
     const utxos = await listUnspent(client, wallet.address);
     let picked = pickFunded(utxos, need);
     if (!picked) {
@@ -140,14 +143,17 @@ async function landAB(
     });
     const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;
     await waitForTxid(client, genesisTxid);
-    if (genesis.changeValue === undefined || genesis.changeValue < 200_000) {
+    // Below this compileFundVerifierKernels throws at "kernels" instead of here,
+    // with prep + genesis already on chain.
+    const funderMin = envelope === "consensus" ? 695_972 : 122_532;
+    if (genesis.changeValue === undefined || genesis.changeValue < funderMin) {
       return {
         envelope,
         slots,
         ok: false,
         genesis: genesisTxid,
         prep: prepTxid ?? null,
-        error: `change too small ${genesis.changeValue}`,
+        error: `change too small ${genesis.changeValue} < ${funderMin}`,
       };
     }
     step = "kernels";

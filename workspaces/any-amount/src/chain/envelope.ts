@@ -25,8 +25,14 @@ export const UNLOCKING_MAX_BYTES = 10_000;
 export const DUST_SATS = 546n;
 /** Public Chipnet relay is 1 sat/byte. 100k covers a packed ~99 KB standard hop. */
 export const STANDARD_SUCCESSOR_FEE_SATS = 100_000n;
-/** Consensus (~270–480 KB) needs a matching fee or electrum/BCHN returns code 66. */
-export const CONSENSUS_SUCCESSOR_FEE_SATS = 400_000n;
+/**
+ * Consensus needs a matching fee or electrum/BCHN returns code 66.
+ * Relay floor is 1 sat/byte, so this must exceed the successor's byte count.
+ * FRI_VERSION 9 took the consensus successor to 498398 B; 400000 was sized for
+ * the older ~270-480 KB spends and BCHN rejected with "min relay fee not met".
+ * 600000 holds to a 600 KB successor; raise it again if the compile grows.
+ */
+export const CONSENSUS_SUCCESSOR_FEE_SATS = 600_000n;
 
 export function successorFeeSats(envelope: TxEnvelope = "standard"): bigint {
   return envelope === "consensus" ? CONSENSUS_SUCCESSOR_FEE_SATS : STANDARD_SUCCESSOR_FEE_SATS;
