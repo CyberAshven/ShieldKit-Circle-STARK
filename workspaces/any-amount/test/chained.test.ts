@@ -95,7 +95,16 @@ describe("envelope C chained tape + last-hop pay", () => {
       assert.ok(hop.txBytes > 20_000, `tape hop ${i} must carry real fold/R kernels, got ${hop.txBytes}`);
       const decoded = decodeTransaction(hop.raw);
       if (typeof decoded === "string") throw new Error(decoded);
-      assert.equal(decoded.outputs.every((o) => o.token === undefined), true, "tape must not spend the pool NFT");
+      // Tape hops now carry a sibling NFT of the pool category (cqz reads
+      // OP_UTXOTOKENCOMMITMENT <0>), so "no tokens at all" is no longer the test.
+      // The invariant is that a tape hop must not spend the POOL outpoint.
+      assert.equal(
+        decoded.inputs.some(
+          (inp) => Buffer.from(inp.outpointTransactionHash).toString("hex") === "11".repeat(32),
+        ),
+        false,
+        "tape must not spend the pool NFT",
+      );
       assert.equal(
         decoded.outputs.some((o) => o.lockingBytecode[0] === 0x76 && o.valueSatoshis === 7_777n),
         false,
@@ -111,7 +120,8 @@ describe("envelope C chained tape + last-hop pay", () => {
     if (typeof payTx === "string") throw new Error(payTx);
     const tapeTip = chain.hops[chain.payIndex - 1]!;
     const spentTape = payTx.inputs.some(
-      (inp) => Buffer.from(inp.outpointTransactionHash).toString("hex") === tapeTip.txid && inp.outpointIndex === 0,
+      // tape tip is output 1; output 0 holds the NEW-commitment NFT that cqz reads
+      (inp) => Buffer.from(inp.outpointTransactionHash).toString("hex") === tapeTip.txid && inp.outpointIndex === 1,
     );
     assert.equal(spentTape, true, "pay hop must spend the tape tip so a missing hop rejects the withdraw");
     assert.equal(payTx.inputs.some((inp) => Buffer.from(inp.outpointTransactionHash).toString("hex") === "11".repeat(32)), true);
@@ -123,7 +133,8 @@ describe("envelope C chained tape + last-hop pay", () => {
     assert.equal(chain.timeout.sequence, TAPE_TIMEOUT_CSV);
     assert.equal(timeoutTx.inputs[0]!.sequenceNumber, TAPE_TIMEOUT_CSV);
     assert.equal(Buffer.from(timeoutTx.inputs[0]!.outpointTransactionHash).toString("hex"), tapeTip.txid);
-    assert.equal(timeoutTx.inputs[0]!.outpointIndex, 0);
+    // tape tip moved to output 1 when output 0 took the NEW-commitment NFT
+    assert.equal(timeoutTx.inputs[0]!.outpointIndex, 1);
   });
 
   it("does not broadcast the pay hop if an earlier tape hop is rejected", async () => {
