@@ -274,6 +274,9 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       lockKind: "p2sh32",
       envelope: "standard",
       slotKernels: SLOT_KERNEL_COUNT,
+      // The pay hop carries a note-auth kernel at 4 slots, so the pool lock has to
+      // expect it. The lock is committed here, at genesis.
+      forceNoteAuth: true,
       siblingNfts: { count: tapeHops, lockingBytecode: proofCargoLock() },
     });
     const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;

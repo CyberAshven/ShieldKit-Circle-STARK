@@ -110,8 +110,10 @@ function compiler() {
   return walletTemplateToCompilerBCH(walletTemplateP2pkhNonHd);
 }
 
-function lockOf(kind: LockKind, slotKernels = SLOT_KERNEL_COUNT): Uint8Array {
-  return kind === "p2s" ? poolLockP2sFor({ slotKernels }) : poolLockP2sh32({ slotKernels });
+function lockOf(kind: LockKind, slotKernels = SLOT_KERNEL_COUNT, forceNoteAuth = false): Uint8Array {
+  return kind === "p2s"
+    ? poolLockP2sFor({ slotKernels, forceNoteAuth })
+    : poolLockP2sh32({ slotKernels, forceNoteAuth });
 }
 
 function measureOf(
@@ -153,6 +155,12 @@ export function compileCovenantSpend(args: {
    * its own output 0. They land at vout 2..2+count-1; change stays at vout 1.
    */
   siblingNfts?: { count: number; lockingBytecode: Uint8Array; satsEach?: bigint };
+  /**
+   * Envelope C's pay hop runs 4 slots but still carries a note-auth kernel, so its
+   * pool lock must expect one. Genesis commits the lock, so it has to be set here
+   * too or the successor cannot spend what genesis created.
+   */
+  forceNoteAuth?: boolean;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -191,7 +199,7 @@ export function compileCovenantSpend(args: {
     ],
     outputs: [
       {
-        lockingBytecode: lockOf(lockKind, slotKernels),
+        lockingBytecode: lockOf(lockKind, slotKernels, args.forceNoteAuth ?? false),
         valueSatoshis: value,
         token: {
           amount: 0n,
@@ -266,6 +274,8 @@ export function compileCovenantSuccessor(args: {
   note?: Note;
   /** Change note when the withdraw appends. */
   change?: Note;
+  /** Match a genesis locked with forceNoteAuth (envelope C pay hop). */
+  forceNoteAuth?: boolean;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -322,7 +332,7 @@ export function compileCovenantSuccessor(args: {
   const unlocking = includePool
     ? lockKind === "p2s"
       ? p2sUnlocking(undefined, packed)
-      : p2sh32Unlocking(undefined, packed, { slotKernels })
+      : p2sh32Unlocking(undefined, packed, { slotKernels, forceNoteAuth: args.forceNoteAuth ?? false })
     : packedAirCarrierUnlocking(packed instanceof Uint8Array ? packed : encodeAirPacked(args.statement!, decoded));
   const shards = friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
   const dummy = "44".repeat(32);
@@ -464,7 +474,7 @@ export function compileCovenantSuccessor(args: {
   const outputs = includePool
     ? [
       {
-        lockingBytecode: lockOf(lockKind, slotKernels),
+        lockingBytecode: lockOf(lockKind, slotKernels, args.forceNoteAuth ?? false),
         valueSatoshis: value,
         token: {
           amount: 0n,

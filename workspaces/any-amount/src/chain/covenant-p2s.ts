@@ -50,14 +50,21 @@ OP_0 OP_OUTPUTTOKENCOMMITMENT
 <0x50414131> OP_EQUALVERIFY
 `;
 
-function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
+/**
+ * `forceNoteAuth` is envelope C's pay hop: it runs 4 slots (so
+ * `includeNoteAuth(4)` is false) but still carries a note-auth kernel because an
+ * opened note is supplied. Without this the covenant checks index 14 for the fold
+ * lock, finds note-auth, and OP_EQUALVERIFY fails - every later index is shifted
+ * by one too. Default false keeps A and B byte-identical.
+ */
+function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT, forceNoteAuth = false): string {
   const lockHex = binToHex(compileFriQueryLockP2sh32());
   const cqzHex = binToHex(compileCqzLockP2sh32());
   const grindHex = binToHex(compileGrindLockP2sh32());
   const algHex = binToHex(compileAlgebraicCLockP2sh32());
   const foldN = foldKernelCount(slotKernels);
   const prefix = 1 + FRI_KERNEL_INPUTS;
-  const extraN = prefixExtraKernelCount(slotKernels);
+  const extraN = prefixExtraKernelCount(slotKernels, true, forceNoteAuth);
   const lines = [
     "OP_TXINPUTCOUNT",
     `<${prefix + extraN + foldN + slotKernels}>`,
@@ -70,7 +77,7 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT): string {
   lines.push(`<${prefix}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
   lines.push(`<${prefix + 1}>`, "OP_UTXOBYTECODE", `<0x${grindHex}>`, "OP_EQUALVERIFY");
   lines.push(`<${prefix + 2}>`, "OP_UTXOBYTECODE", `<0x${algHex}>`, "OP_EQUALVERIFY");
-  if (includeNoteAuth(slotKernels)) {
+  if (includeNoteAuth(slotKernels, forceNoteAuth)) {
     const noteHex = binToHex(compileNoteAuthLockP2sh32());
     lines.push(`<${prefix + 3}>`, "OP_UTXOBYTECODE", `<0x${noteHex}>`, "OP_EQUALVERIFY");
   }
@@ -261,10 +268,10 @@ OP_DROP
 OP_FROMALTSTACK
 `;
 
-export function compilePoolCovenant(opts?: { slotKernels?: number }): Uint8Array {
+export function compilePoolCovenant(opts?: { slotKernels?: number; forceNoteAuth?: boolean }): Uint8Array {
   const slots = opts?.slotKernels ?? SLOT_KERNEL_COUNT;
   const bin = cashAssemblyToBin(
-    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots)}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
+    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false)}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
   );
   if (typeof bin === "string") throw new Error(`covenant compile: ${bin}`);
   return bin;
@@ -274,11 +281,11 @@ export function poolLockP2s(): Uint8Array {
   return compilePoolCovenant();
 }
 
-export function poolLockP2sh32(opts?: { slotKernels?: number }): Uint8Array {
+export function poolLockP2sh32(opts?: { slotKernels?: number; forceNoteAuth?: boolean }): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compilePoolCovenant(opts)));
 }
 
-export function poolLockP2sFor(opts?: { slotKernels?: number }): Uint8Array {
+export function poolLockP2sFor(opts?: { slotKernels?: number; forceNoteAuth?: boolean }): Uint8Array {
   return compilePoolCovenant(opts);
 }
 
@@ -347,7 +354,7 @@ export function poolWitnessPushes(w: PoolUnlockWitness): Uint8Array {
 export function p2sh32Unlocking(
   w?: PoolUnlockWitness,
   layerRoots?: Uint8Array[] | Uint8Array,
-  opts?: { slotKernels?: number },
+  opts?: { slotKernels?: number; forceNoteAuth?: boolean },
 ): Uint8Array {
   const redeem = pushData(compilePoolCovenant(opts));
   const prefix =

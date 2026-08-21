@@ -296,6 +296,9 @@ export function compileChainedWithdraw(args: {
     lockKind: "p2sh32",
     envelope: "standard",
     slotKernels: SLOT_KERNEL_COUNT,
+    // 4 slots but a note-auth kernel is present, so the pool lock must expect it.
+    // Genesis commits the matching lock (landC passes the same flag).
+    forceNoteAuth: true,
     kernelUtxos: args.kernelUtxos,
     extraKernels: args.extraKernels,
     extraPayouts: args.extraPayouts,
