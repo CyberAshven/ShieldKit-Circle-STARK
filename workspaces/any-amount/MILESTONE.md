@@ -79,19 +79,54 @@ it appears publicly once the lab miner includes it. Prep/genesis/kernels are pub
 Needed `CONSENSUS_SUCCESSOR_FEE_SATS` 400000 → 600000: relay floor is 1 sat/byte
 and the FRI 9 successor is 498398 B, so 400000 drew `min relay fee not met (code 66)`.
 
-**C — 19 chunked standard txs, Electrum. Not landed on these kernels.** Compile: 18
-tape hops 82814–87572 B + pay hop 89338 B, total 1659128 B.
+**C — 19 chunked standard txs, all on public Electrum.** 18 tape hops + pay hop,
+total **1662714 B**, every hop under the 100000 relay gate. Genesis
+`8e3c5e0b7890ba355dabe1072b2cd060cf612effc6350f72e96f6ed5c04cc30b` (20 outputs:
+pool + change + 18 sibling NFTs), kernels
+`e05deaf7a5302bcf4c43da15902e9e012ddd965611989c03f7a2b95b649013e7`.
 
 | Hop | Role | Bytes | Txid |
 | --- | --- | --- | --- |
-| 0–17 | tape | 82814–87572 | *(pending)* |
-| 18 | pay | 89338 | *(pending)* |
+| 0 | tape | 83011 | `e470649f4fb6c2ec4b1ce1ed114423b808fbb65409b2d7b610133472fd2371cc` |
+| 1 | tape | 86021 | `5411ecf953bf357dacaf66f6748028a9067ae7aa0d0326095b44a61995960b96` |
+| 2 | tape | 87769 | `077205ef33a971d1722beb06cb60770fa0a4f77beec313ebb9e2f2f6fd5db0fc` |
+| 3 | tape | 87769 | `025698956db74611bd6dc39beb1b8c67359c28b6049cb150e828839a7a9616d1` |
+| 4 | tape | 87769 | `41cda645fc1fec376f5d6dd38e6942218831504b74adada3176baebc38426fdb` |
+| 5 | tape | 87769 | `03e082a3bd7a2f17f5c655d1031b7ced19f1255b7611bfbcb10aa52a603a2d5c` |
+| 6 | tape | 87769 | `284361c71dbbc6cdd5cd60ab793be383c4066e6fdfb114f84a6c3edb3d84bd4f` |
+| 7 | tape | 87769 | `028d3cd18ce1fc4c0b2a94303e197203dadd0b7a0ce3f1bb20352fe5c1426dcf` |
+| 8 | tape | 87769 | `96febf7002b242f3fd5b9ee6f595bd78dd050f608267f7164f735dfdd2652bc9` |
+| 9 | tape | 87769 | `fcee667086a5d121b8ec4592cb145f9a8f481c79810b50ff615b653410830f7c` |
+| 10 | tape | 87769 | `79b28506b0e7ba4abd8ff58b4e4edbc59503d5e5e749909fdcaaa072d7abc6c9` |
+| 11 | tape | 87769 | `3d6f0f2bf3dad75ea0912cf792f33218b6e1c3f978620b5a74c178153d030604` |
+| 12 | tape | 87769 | `4b4e35fe8fc4ad90d95857ec79325c717f05304461b197ad37a0e0254c9d19dd` |
+| 13 | tape | 87769 | `b378513f1ef848214523c0131eb525c17325000ce6502a58b2a88dd0fb437cad` |
+| 14 | tape | 87769 | `856f30f901be814b317575937d4e1dd2918feb2687ba21a87a9ebd6cff062af6` |
+| 15 | tape | 87769 | `51a28f2b72317150824f30d332a8f368994aa482ceebe79b49e69f39ba944c7c` |
+| 16 | tape | 87769 | `1f068e334504e4a8bca695e95318c277f34810a2dcc64cfe207984bf3e2954bd` |
+| 17 | tape | 87769 | `a0530c7f75c4b6e2cb3c73774fd4078051dbc5f7c67ed9375424f238ffa1a8bb` |
+| 18 | **pay** | 89378 | `00f81b99421ce2433603efee1b8dc94608d14182bec2f5121685d0ec71b9b0cc` |
 
-C is **blocked on funding, not on relay**: `compileChainedWithdraw` takes per-hop
-kernels via `tapeKernels`, and nothing supplies it, so every tape hop compiles
-against dummy prevouts (`44…`/`aa…`) and BCHN answers `Missing inputs`. Landing C
-needs 18 groups × 15 UTXOs (10 FRI + 1 prefix + 1 fold + 2 slots + 1 carrier) =
-270 outputs, ~270000 sats, then threaded in as `tapeKernels`.
+Three things this land required, none of which existed before:
+
+- **Per-hop kernels.** `compileChainedWithdraw` takes them via `tapeKernels`;
+  nothing supplied it, so every tape hop compiled against dummy prevouts and any
+  node answered `Missing inputs`. One funder tx now mints 15 UTXOs per hop, with
+  **absolute** fold/slot query indices (`queryStart + f`) - identical groups would
+  compile and be permanently unspendable.
+- **Sibling NFTs.** cqz's `bindPackedStmtToPaa1Asm` reads
+  `<0> OP_UTXOTOKENCOMMITMENT` and splits at 64; a tokenless carrier made that an
+  empty item (`Invalid OP_SPLIT range`). Genesis is the category genesis, so it
+  mints 18 mutable siblings holding the OLD PAA1. Each hop mutates one to NEW on
+  its output 0. The tape tip stays tokenless at output 1 - a token-carrying tip
+  breaks P2PKH signing (NULLFAIL).
+- **A pool lock that expects note-auth at 4 slots.** C's pay hop runs 4 slots, so
+  `includeNoteAuth(4)` is false, but it carries a note-auth kernel anyway. The
+  covenant compared input 14 against the fold lock, found note-auth, and failed
+  `OP_EQUALVERIFY`. `forceNoteAuth` is committed at genesis and matched by the
+  successor. A and B locks are byte-identical.
+
+Covered by `test/chained-vm.test.ts` on the real VM with full transaction context.
 
 ### On Chipnet, earlier sessions
 
@@ -151,7 +186,6 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
 ## What is still not claimed
 
-- A new Chipnet land of these kernels for **C** (A `614b7077…` and B `81bb2cef…` landed 2026-08-21; C is compile + VM only). Next C land is a **new txid**.
 - A **confirmed block** for B's successor (accepted at zero-conf in the lab BCHN; depth follows from the lab miner).
 - That C's 36 orbits are **same-tx** binds. C matches B on the completeness kernels — note-auth included — but 32 of the 36 orbits sit on tape hops; only 4 R-slots run on the pay tx.
 - Envelope A note/nullifier membership (A has no room; still `verifyFri`).
