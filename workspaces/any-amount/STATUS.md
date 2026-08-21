@@ -21,9 +21,10 @@ BCHN still takes one tx at a time (no Core 1p1c blob). CLI: `--envelope a|b|c`.
 
 **Milestones:** see [`MILESTONE.md`](MILESTONE.md). Compile size (not a land):
 A **87611 B**, B **498398 B**, headroom **501602 B** unused; C 19 hops, max
-**89338 B**, total **1659128 B**. On `FRI_VERSION` 9 the only land is **A**
-`614b7077…` (**87470 B**, Electrum, 2026-08-21); **B** and **C** are *not landed*
-on these kernels. Older-kernel lands stay as they are: **A** `05f17bf1…`
+**89338 B**, total **1659128 B**. On `FRI_VERSION` 9: **A** `614b7077…` (**87470 B**, Electrum) and **B**
+`81bb2cef…` (**498398 B**, JSON-RPC into the Start9 BCHN mempool; public
+Electrum does not carry it) both landed 2026-08-21. **C** is *not landed* — its
+tape hops compile against dummy prevouts because nothing supplies `tapeKernels`. Older-kernel lands stay as they are: **A** `05f17bf1…`
 (82365 B), **B** `b6818bd2…` (479356 B, JSON-RPC), **C** tape `6d242fee…`/
 `ec4cd5b3…` + pay `6f9fd1d0…`. Do not relabel `b6818bd2`. Standard `--envelope a`;
 consensus `--envelope b`; chained `--envelope c`.

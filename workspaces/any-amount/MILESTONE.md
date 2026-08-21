@@ -62,14 +62,21 @@ Compile size proof (not a land): A **87611 B** (unlock 2685), B **498398 B** (un
 
 https://chipnet.imaginary.cash/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024
 
-**B — consensus, JSON-RPC. Not landed on these kernels.** Compile 498398 B. Needs
-the Start9 BCHN mempool (`acceptnonstdtxn=1`); public relay rejects >100000 B.
+**B — consensus, 498398 B** (unlock 5405, 36 folds + 36 R-slots + note-auth).
+Accepted by the Start9 BCHN via JSON-RPC `sendrawtransaction` through `nsenter`
+into the bitcoind netns (`acceptnonstdtxn=1`). Public Electrum does **not**
+carry the successor — >100000 B does not relay — so it sits in the lab mempool
+until the lab miner includes it. Prep/genesis/kernels are public.
 
 | | |
 | --- | --- |
-| Successor | *(pending)* |
-| Kernels | *(pending)* |
-| Genesis | *(pending)* |
+| Successor | `81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83` |
+| Kernels | `008eb3f70c16b1a1b350f75ee92caef585c657c2c64c9992d14496a1819cacf1` |
+| Genesis | `8a0349efca9560fe50ef8bef1573deb270ffddc4cb1e06f51f2201d3f99b5aac` |
+| Prep | `0e9c3de9dabe6ada2b382a953c5f7210e4054601af98827c5c8e235b1358385d` |
+
+Needed `CONSENSUS_SUCCESSOR_FEE_SATS` 400000 → 600000: relay floor is 1 sat/byte
+and the FRI 9 successor is 498398 B, so 400000 drew `min relay fee not met (code 66)`.
 
 **C — 19 chunked standard txs, Electrum. Not landed on these kernels.** Compile: 18
 tape hops 82814–87572 B + pay hop 89338 B, total 1659128 B.
@@ -78,6 +85,12 @@ tape hops 82814–87572 B + pay hop 89338 B, total 1659128 B.
 | --- | --- | --- | --- |
 | 0–17 | tape | 82814–87572 | *(pending)* |
 | 18 | pay | 89338 | *(pending)* |
+
+C is **blocked on funding, not on relay**: `compileChainedWithdraw` takes per-hop
+kernels via `tapeKernels`, and nothing supplies it, so every tape hop compiles
+against dummy prevouts (`44…`/`aa…`) and BCHN answers `Missing inputs`. Landing C
+needs 18 groups × 15 UTXOs (10 FRI + 1 prefix + 1 fold + 2 slots + 1 carrier) =
+270 outputs, ~270000 sats, then threaded in as `tapeKernels`.
 
 ### On Chipnet, earlier sessions
 
@@ -132,7 +145,8 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
 ## What is still not claimed
 
-- A new Chipnet land of these kernels for **B and C** (A landed 2026-08-21 as `614b7077…`; B and C are compile + VM only). Next B/C land is a **new txid**.
+- A new Chipnet land of these kernels for **C** (A `614b7077…` and B `81bb2cef…` landed 2026-08-21; C is compile + VM only). Next C land is a **new txid**.
+- A **confirmed block** for B's successor. It is accepted in the lab BCHN mempool; public relay will not carry 498398 B.
 - That C's 36 orbits are **same-tx** binds. C matches B on the completeness kernels — note-auth included — but 32 of the 36 orbits sit on tape hops; only 4 R-slots run on the pay tx.
 - Envelope A note/nullifier membership (A has no room; still `verifyFri`).
 - Batch-exit extra notes (one-auth FRI + this kernel still walk the first spent note).
