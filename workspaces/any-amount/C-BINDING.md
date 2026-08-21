@@ -77,21 +77,46 @@ on Chipnet on 2026-08-21.
 ## What would close it
 
 The pay hop can introspect **its own** inputs even though it cannot read ancestors.
-So bind the tape tip's *locking bytecode* to the digest:
+That is enough, if the tape tip's *locking bytecode* is made a function of the
+statement and each hop is forced to propagate it.
 
-1. Lock each tape hop's **output 1** (the tape tip; output 0 now holds the sibling
-   NFT) to a P2SH32 script parameterised by `digest` instead of a bare P2PKH, so
-   the tip's locking bytecode is a function of the statement. Note the tip must
-   stay tokenless — a token-carrying tip broke P2PKH signing with NULLFAIL, and a
-   covenant tip will need its own spend path anyway.
-2. In the pay hop's covenant, assert `OP_UTXOBYTECODE` of the tape input equals the
-   lock derived from the statement the pay hop is verifying.
-3. Have each tape hop's lock require the next hop to carry the same `digest`, so the
-   parameter propagates instead of being re-chosen per hop.
+**1. A digest-parameterised, self-propagating tip covenant.** Replace the tape
+tip's bare P2PKH (output 1) with a P2SH32 whose redeem embeds `digest` and requires
+its own successor to carry the identical lock:
 
-That makes "the tip I am spending descends from hops committed to *my* statement" a
-consensus fact rather than a convention. It is a covenant change to the tape, not a
-proof-format change, and does not touch `FRI_VERSION`.
+```
+<digest> OP_DROP                       // the parameter, committed in the lock hash
+OP_INPUTINDEX OP_UTXOBYTECODE          // this input's locking bytecode
+<1> OP_OUTPUTBYTECODE                  // output 1 of the spending tx
+OP_EQUALVERIFY                         // ... must be the same lock
+OP_1
+```
 
-Until then the honest claim is the one already in `MILESTONE.md`: C matches B on the
-completeness kernels, and C's 36 orbits are **not** same-tx binds.
+Because `digest` is inside the redeem, it is inside the P2SH32 hash, so the lock
+*is* a commitment to the statement. Because the covenant forces output 1 to repeat
+it, hop g cannot change it, and the parameter propagates from the tape funder all
+the way to the tip.
+
+**2. The pay hop asserts it.** In the pool covenant, check the tape input:
+
+```
+<tapeInputIndex> OP_UTXOBYTECODE
+<0x…expected P2SH32 for digest…> OP_EQUALVERIFY
+```
+
+where the expected lock is derived from the statement the pay hop is verifying.
+Now "the tip I am spending descends from hops committed to *my* digest" is a
+consensus fact, not a convention.
+
+**Notes for whoever builds it**
+
+- The tip must **stay tokenless**. A token-carrying tip broke P2PKH signing with
+  NULLFAIL; output 0 already holds the sibling NFT, and these are different jobs.
+- The covenant makes the tip anyone-can-spend (no signature in the redeem above).
+  For a lab that is fine — it is dust and the covenant is the point — but a
+  production version should also require the wallet's signature, or a griefer can
+  spend a tip and strand the chain.
+- Verify with the full-transaction harness in `test/chained-vm.test.ts` before
+  landing. Every C defect so far was invisible to isolated script evaluation.
+- This is a covenant change only. It does not touch `FRI_VERSION`, the kernels, or
+  the proof format.
