@@ -175,6 +175,8 @@ export function evaluateFriQueryOpening(args: {
   parentPath: Uint8Array[];
   parentIndex: number;
   layerIndex?: number;
+  /** Forwarded to encodeFriQueryUnlocking, which binds the L0 felt to qTable[slot]. */
+  slot?: number;
   packed?: Uint8Array;
 }): VmEval {
   const vm = createVirtualMachineBch2026(true);

@@ -113,7 +113,12 @@ export async function listUnspent(
 }
 
 export async function broadcast(client: ElectrumClient, rawHex: string): Promise<string> {
-  const timeoutMs = rawHex.length > 200_000 ? 120_000 : 30_000;
+  // rawHex.length is twice the tx byte size, so the old `> 200_000` cutoff meant
+  // "over 100 KB". Envelope C tape hops are 82-89 KB (165-179 K hex): under that
+  // cutoff, so they got 30 s, which public chipnet Electrum does not reliably meet
+  // for an 80 KB push. Scale on bytes instead.
+  const bytes = rawHex.length / 2;
+  const timeoutMs = bytes > 100_000 ? 120_000 : bytes > 20_000 ? 90_000 : 30_000;
   return (await client.request("blockchain.transaction.broadcast", [rawHex], timeoutMs)) as string;
 }
 

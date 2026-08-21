@@ -4,7 +4,7 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { binToHex, hexToBin } from "@bitauth/libauth";
+import { binToHex, hashTransaction, hexToBin } from "@bitauth/libauth";
 import { loadLabWallet } from "./wallet.ts";
 import { broadcast, connectChipnet, getTx, listUnspent } from "./electrum.ts";
 import { rpcConfigFromEnv } from "./bchn-rpc.ts";
@@ -221,7 +221,11 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
   let step = "connect";
   try {
     step = "listunspent";
-    const need = 400_000;
+    // Genesis change has to clear tape (300000) + fee (2000) + the kernel funder
+    // (19 kernels x 1000 + 100546 miner pad + 3520 fee + dust = 123612), on top of
+    // the 44000 pool output. 400000 left the funder at 52800 and threw at "kernels"
+    // with prep + genesis + split already on chain.
+    const need = 700_000;
     const utxos = await listUnspent(client, wallet.address);
     let picked = pickFunded(utxos, need);
     if (!picked) {
@@ -256,7 +260,9 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
     });
     const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;
     await waitForTxid(client, genesisTxid);
-    if (genesis.changeValue === undefined || genesis.changeValue < 200_000) {
+    // 300000 tape + 2000 fee + 123612 kernel funder. Below this the run dies at
+    // "kernels" instead of here, after the tape split is already broadcast.
+    if (genesis.changeValue === undefined || genesis.changeValue < 425_612) {
       return { envelope: "chained", ok: false, genesis: genesisTxid, error: `change too small ${genesis.changeValue}` };
     }
     step = "tape-funder";
@@ -307,6 +313,10 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
     const sent = await broadcastChained({
       hops: chain.hops,
       electrum: async (hex) => {
+        // Same shape as broadcastRetry, including its getTx fallback: a timed-out
+        // broadcast is not proof of rejection, and aborting here costs the whole
+        // 19-hop chain.
+        const expectedTxid = hashTransaction(hexToBin(hex));
         let last: Error | undefined;
         for (let i = 0; i < 3; i += 1) {
           try {
@@ -325,7 +335,12 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
             await sleep(1200 * (i + 1));
           }
         }
-        throw last ?? new Error("electrum broadcast failed");
+        try {
+          await getTx(client, expectedTxid);
+          return expectedTxid;
+        } catch {
+          throw last ?? new Error("electrum broadcast failed");
+        }
       },
       rpc: chain.hops.some((h) => h.raw.length > 100_000) ? rpcConfigFromEnv() : undefined,
     });
