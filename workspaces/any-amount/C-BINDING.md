@@ -1,5 +1,21 @@
 # Envelope C: what the tape chain does and does not bind
 
+> **CLOSED 2026-08-21.** The counted tip covenant described under "What would
+> close it" is implemented and landed: pay hop
+> `06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0` plus 18 tape
+> hops. Every hop is pinned to `hash256(proof)` by consensus. The analysis below
+> is kept because it is why the covenant exists, and because the two design traps
+> it did **not** anticipate are worth remembering:
+>
+> - a self-propagating lock cannot terminate — the pay hop's output 1 is the
+>   payout — and recognising the pay hop by its pool lock is circular, because the
+>   pool covenant must assert the tip lock;
+> - one identical lock for every hop would let the pay hop spend the funder's
+>   initial tip and skip the whole tape, silently breaking skip-tape rejection.
+>
+> A counter fixes both: `L(d,i)` requires output 1 to be `L(d,i+1)`, `L(d,N)` is
+> terminal, and the pool covenant pins `L(d,N)`.
+
 **Question.** B checks 36 unique-orbit queries in one transaction. C checks the same
 36 across 19 transactions. Is C's chain equivalent, or is B strictly stronger?
 

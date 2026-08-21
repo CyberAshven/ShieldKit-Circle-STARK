@@ -79,54 +79,49 @@ it appears publicly once the lab miner includes it. Prep/genesis/kernels are pub
 Needed `CONSENSUS_SUCCESSOR_FEE_SATS` 400000 → 600000: relay floor is 1 sat/byte
 and the FRI 9 successor is 498398 B, so 400000 drew `min relay fee not met (code 66)`.
 
-**C — 19 chunked standard txs, all on public Electrum.** 18 tape hops + pay hop,
-total **1662714 B**, every hop under the 100000 relay gate. Genesis
-`8e3c5e0b7890ba355dabe1072b2cd060cf612effc6350f72e96f6ed5c04cc30b` (20 outputs:
-pool + change + 18 sibling NFTs), kernels
-`e05deaf7a5302bcf4c43da15902e9e012ddd965611989c03f7a2b95b649013e7`.
+**C — 19 chunked standard txs, all on public Electrum, with the binding covenant.**
+18 tape hops + pay hop, total **1662420 B**, every hop under the 100000 relay
+gate. Genesis `a8b3b679d8185911ede709ab24c18fa7d24d01fcd30c54b25055b33a6616359d`
+(pool + change + 18 sibling NFTs).
 
 | Hop | Role | Bytes | Txid |
 | --- | --- | --- | --- |
-| 0 | tape | 83011 | `e470649f4fb6c2ec4b1ce1ed114423b808fbb65409b2d7b610133472fd2371cc` |
-| 1 | tape | 86021 | `5411ecf953bf357dacaf66f6748028a9067ae7aa0d0326095b44a61995960b96` |
-| 2 | tape | 87769 | `077205ef33a971d1722beb06cb60770fa0a4f77beec313ebb9e2f2f6fd5db0fc` |
-| 3 | tape | 87769 | `025698956db74611bd6dc39beb1b8c67359c28b6049cb150e828839a7a9616d1` |
-| 4 | tape | 87769 | `41cda645fc1fec376f5d6dd38e6942218831504b74adada3176baebc38426fdb` |
-| 5 | tape | 87769 | `03e082a3bd7a2f17f5c655d1031b7ced19f1255b7611bfbcb10aa52a603a2d5c` |
-| 6 | tape | 87769 | `284361c71dbbc6cdd5cd60ab793be383c4066e6fdfb114f84a6c3edb3d84bd4f` |
-| 7 | tape | 87769 | `028d3cd18ce1fc4c0b2a94303e197203dadd0b7a0ce3f1bb20352fe5c1426dcf` |
-| 8 | tape | 87769 | `96febf7002b242f3fd5b9ee6f595bd78dd050f608267f7164f735dfdd2652bc9` |
-| 9 | tape | 87769 | `fcee667086a5d121b8ec4592cb145f9a8f481c79810b50ff615b653410830f7c` |
-| 10 | tape | 87769 | `79b28506b0e7ba4abd8ff58b4e4edbc59503d5e5e749909fdcaaa072d7abc6c9` |
-| 11 | tape | 87769 | `3d6f0f2bf3dad75ea0912cf792f33218b6e1c3f978620b5a74c178153d030604` |
-| 12 | tape | 87769 | `4b4e35fe8fc4ad90d95857ec79325c717f05304461b197ad37a0e0254c9d19dd` |
-| 13 | tape | 87769 | `b378513f1ef848214523c0131eb525c17325000ce6502a58b2a88dd0fb437cad` |
-| 14 | tape | 87769 | `856f30f901be814b317575937d4e1dd2918feb2687ba21a87a9ebd6cff062af6` |
-| 15 | tape | 87769 | `51a28f2b72317150824f30d332a8f368994aa482ceebe79b49e69f39ba944c7c` |
-| 16 | tape | 87769 | `1f068e334504e4a8bca695e95318c277f34810a2dcc64cfe207984bf3e2954bd` |
-| 17 | tape | 87769 | `a0530c7f75c4b6e2cb3c73774fd4078051dbc5f7c67ed9375424f238ffa1a8bb` |
-| 18 | **pay** | 89378 | `00f81b99421ce2433603efee1b8dc94608d14182bec2f5121685d0ec71b9b0cc` |
+| 0 | tape | 82996 | `c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d` |
+| 1 | tape | 86006 | `6051141ca2fc73fcf3ec05f06545e19586262a575c8a9f944a75be559b8da114` |
+| 2 | tape | 87754 | `89cbc6db3b2d1ee94944db9bbb6f94579a29e680c469ab6914debfc12488841f` |
+| 3 | tape | 87754 | `ac74990535afdaf32dcabeaaa1a4e3015289f09111b56faf8938587a5a43cbf4` |
+| 4 | tape | 87754 | `a042ac38ef3ec87ad5f8c0517efb089f5dd9089297f726597d25188620ec5e57` |
+| 5 | tape | 87754 | `1eb3e61354b5ccb27944fe0a5242433ac7ffe99c21addfd6c0289b6353d571d3` |
+| 6 | tape | 87754 | `5ef54bd9ee92c8f2afcb4824c7fa15b3b91cb8cc29d15a80feceb6e8914d3e12` |
+| 7 | tape | 87754 | `09f8b80d2705fe2e49c4802bb09eee118bb19fcdae45b5723a782299766bfdc6` |
+| 8 | tape | 87754 | `7510b501d95b1694dc1613fcc7fc7e1788c9f27a830cb09a33295713c68948f8` |
+| 9 | tape | 87754 | `aa05dc7d3f29c1f6375fed0130fe6e3a923598f7a2770d4706d82297984a8c5b` |
+| 10 | tape | 87754 | `edcf357644934a95603d2e5b20af98216430bdf5a5fa4c2e244cc1c258ba404d` |
+| 11 | tape | 87754 | `5abc066b16ff3b315ad9a3a879e5d79a09327567e6f69d242a4fe579fcbac937` |
+| 12 | tape | 87754 | `c5c3bcb3c26eeff3f579543a71c20993be03a7f08f72270af75256a98e29dee2` |
+| 13 | tape | 87754 | `033ec00308bf12a55bfe2377fbd09d73aa6324a3ffdd8e10291abe381ca48c7c` |
+| 14 | tape | 87754 | `50c9a328d37b50a1ff1e56ea5da0307280cf3fa967c6aa3bcc83f4a0ced23e7b` |
+| 15 | tape | 87754 | `56efb46ac132db40ee8651c57b66b1ba8b8c8937d37edf56702b9b4670721638` |
+| 16 | tape | 87754 | `9e2dd016adca9844c718ac135575082a5a85ab3b1a527a9bb9af69e0a974364b` |
+| 17 | tape | 87754 | `1ef3edbacc5dc9ee8cdd39317e6717465f00c6ac75d480f1d2e17f0e2e4c41ef` |
+| 18 | **pay** | 89354 | `06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0` |
 
-Three things this land required, none of which existed before:
+**The tape is bound by consensus, not by convention.** Each hop's tip is
+`L(d, i)` — a P2SH32 whose redeem embeds `d = hash256(proof)` and requires output
+1 to be exactly `L(d, i+1)`; `L(d, tapeN)` is terminal, and the pool covenant
+asserts `OP_TXINPUTCOUNT OP_1SUB OP_UTXOBYTECODE == L(d, tapeN)`. So every hop is
+pinned to one statement, and hops cannot be skipped because `L(d,0) != L(d,tapeN)`
+— the pay hop cannot reach past the tape to the funder's tip. Before this the tape
+was held together only by a signature and an OP_RETURN no script reads.
 
-- **Per-hop kernels.** `compileChainedWithdraw` takes them via `tapeKernels`;
-  nothing supplied it, so every tape hop compiled against dummy prevouts and any
-  node answered `Missing inputs`. One funder tx now mints 15 UTXOs per hop, with
-  **absolute** fold/slot query indices (`queryStart + f`) - identical groups would
-  compile and be permanently unspendable.
-- **Sibling NFTs.** cqz's `bindPackedStmtToPaa1Asm` reads
-  `<0> OP_UTXOTOKENCOMMITMENT` and splits at 64; a tokenless carrier made that an
-  empty item (`Invalid OP_SPLIT range`). Genesis is the category genesis, so it
-  mints 18 mutable siblings holding the OLD PAA1. Each hop mutates one to NEW on
-  its output 0. The tape tip stays tokenless at output 1 - a token-carrying tip
-  breaks P2PKH signing (NULLFAIL).
-- **A pool lock that expects note-auth at 4 slots.** C's pay hop runs 4 slots, so
-  `includeNoteAuth(4)` is false, but it carries a note-auth kernel anyway. The
-  covenant compared input 14 against the fold lock, found note-auth, and failed
-  `OP_EQUALVERIFY`. `forceNoteAuth` is committed at genesis and matched by the
-  successor. A and B locks are byte-identical.
+What the land also required, none of which had executed before: per-hop kernels
+via `tapeKernels` with **absolute** fold/slot query indices; sibling NFTs of the
+pool category so cqz's `<0> OP_UTXOTOKENCOMMITMENT` has a commitment to read; a
+pool lock built with `forceNoteAuth` because the pay hop runs 4 slots yet carries
+a note-auth kernel; dust-safe 3000-sat token outputs; and a tokenless tape tip.
 
-Covered by `test/chained-vm.test.ts` on the real VM with full transaction context.
+Covered by `test/chained-vm.test.ts` (7/7) against the real VM with full
+transaction context.
 
 ### On Chipnet, earlier sessions
 
