@@ -1,4 +1,5 @@
 import { circleFriPlugin } from "../backends/circle/plugin.ts";
+import { circleFriBatchPlugin } from "../backends/circle-batch/plugin.ts";
 import { hashLabPlugin } from "../backends/hash-lab.ts";
 import type { ZkpPlugin } from "../pool/plugin.ts";
 
@@ -47,7 +48,7 @@ export const nostrBusPlugin: SidePlugin = {
   status: "lab",
 };
 
-export const zkpPlugins: ZkpPlugin[] = [circleFriPlugin, hashLabPlugin];
+export const zkpPlugins: ZkpPlugin[] = [circleFriPlugin, circleFriBatchPlugin, hashLabPlugin];
 
 /** Production default. Circle FRI is the first backend, not the pool identity. */
 export const DEFAULT_ZKP_FAMILY = circleFriPlugin.family;

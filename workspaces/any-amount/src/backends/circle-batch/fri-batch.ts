@@ -28,7 +28,8 @@ import {
   type InternalHash,
   type InternalHashId,
 } from "../circle/internal-hash.ts";
-import { commitNote } from "../../pool/notes.ts";
+import { commitNote, nullifierOf } from "../../pool/notes.ts";
+import { isZero32 } from "../../pool/bytes.ts";
 import {
   freshViewingKey,
   maskAuth,
@@ -40,6 +41,7 @@ import {
   evalMaskPoly,
   VIEWING_PAD_LEN,
 } from "../circle/witness-mask.ts";
+import { maskAuths, unmaskAuths } from "./auth-pad.ts";
 import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
 import { foldPair } from "../circle/fold.ts";
 import { addPoints, CIRCLE_GEN, scalarMul, type CirclePoint } from "../circle/group.ts";
@@ -58,14 +60,15 @@ import {
 } from "../circle/params.ts";
 import { uniqueQueryIndices } from "../circle/query-sample.ts";
 import {
-  algebraicCQuotientLde,
   algebraicC,
+  algebraicCQuotientLde,
   assertSatisfied,
   buildTrace,
   checkAuthRelation,
   checkBatchSpends,
   checkPublicAuthRelation,
   checkPublicConservation,
+  nativeWalk,
   onChainCells,
   openedNote,
   publicCells,
@@ -99,7 +102,13 @@ export type FriProof = {
   traceRoot: Uint8Array;
   final: M31El[];
   queries: FriQuery[];
-  auth: FriAuth;
+  /**
+   * All spent notes. auths[0] is the primary spend (what FRI9 calls `auth`);
+   * auths[1..] are the batch-exit extras that FRI9 left in verifyFri. Masked with
+   * PER-AUTH pads - see auth-pad.ts. Masking them all under one key would be a
+   * two-time pad.
+   */
+  auths: FriAuth[];
   /** In-memory only. Never written by encodeFriProof. */
   viewingKey?: Uint8Array;
   viewingCommit?: Uint8Array;
@@ -311,7 +320,12 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
     traceRoot: traceTree.root,
     final: evals,
     queries,
-    auth: trace.auth,
+    auths: [
+      trace.auth,
+      ...(witness.batch ?? [])
+        .filter((m) => !eq32(commitNote(m.note, hash), trace.auth.leaf))
+        .map((m) => authFromMembership(statement, m, hash)),
+    ],
     viewingKey,
     viewingCommit: vCommit,
     authMasked: false,
@@ -388,7 +402,7 @@ export function proveFromTLde(
     traceRoot: traceTree.root,
     final: evals,
     queries,
-    auth,
+    auths: [auth],
     viewingKey,
     viewingCommit: vCommit,
     authMasked: false,
@@ -420,18 +434,30 @@ function resolveAuthForVerify(
   opts: VerifyFriOpts,
   hash: InternalHash,
 ): { ok: true } | { ok: false; reason: string } {
+  // A batch proof publishes every spent note, so the batch relation can be
+  // satisfied without a witness. Merge the published auths in, or
+  // checkAuthRelation takes the single-note branch and rejects an honest batch
+  // with "withdraw exceeds note" (air.ts:144) - auths[0] only covers its own
+  // amount, not the whole public net.
+  const effective: FriWitness =
+    !proof.authMasked && proof.auths.length > 1 && !witness.batch
+      ? {
+          ...witness,
+          batch: proof.auths.map((a) => ({ note: openedNote(a), index: a.index, path: a.path })),
+        }
+      : witness;
   const key = opts.viewingKey ?? (proof.authMasked ? undefined : proof.viewingKey);
   if (key) {
     if (key.length !== VIEWING_PAD_LEN) return { ok: false, reason: "viewing key" };
     const commit = proof.viewingCommit ?? viewingCommit(key, hash);
     if (!eq32(viewingCommit(key, hash), commit)) return { ok: false, reason: "viewing key" };
-    const opened = proof.authMasked ? unmaskAuth(proof.auth, key) : proof.auth;
-    return checkAuthRelation(statement, opened, witness, hash);
+    const opened = proof.authMasked ? unmaskAuths(proof.auths, key)[0]! : proof.auths[0]!;
+    return checkAuthRelation(statement, opened, effective, hash);
   }
-  if (authPreimageOpen(proof.auth, hash)) {
-    return checkAuthRelation(statement, proof.auth, witness, hash);
+  if (authPreimageOpen(proof.auths[0]!, hash)) {
+    return checkAuthRelation(statement, proof.auths[0]!, effective, hash);
   }
-  return checkPublicAuthRelation(statement, proof.auth, hash);
+  return checkPublicAuthRelation(statement, proof.auths[0]!, hash);
 }
 
 /**
@@ -448,13 +474,43 @@ export function verifyFri(
   if (proof.version !== FRI_VERSION) return { ok: false, reason: "version" };
   if (proof.queries.length !== FRI_QUERIES) return { ok: false, reason: "query count" };
   if (proof.final.length !== FRI_FINAL) return { ok: false, reason: "final width" };
-  if (!proof.auth) return { ok: false, reason: "missing auth" };
+  if (!proof.auths || proof.auths.length === 0) return { ok: false, reason: "missing auth" };
+  // INVARIANT 3: N is pinned by withdrawalCount, which lives in PAA1 (state.ts:74)
+  // and is bound on chain by the covenant. Truncating or padding the list fails.
+  const declared = declaredAuthCount(statement);
+  if (proof.auths.length !== declared) {
+    return { ok: false, reason: `auth count ${proof.auths.length} != declared ${declared}` };
+  }
 
   const hash = friHash(opts);
   const cons = checkPublicConservation(statement);
   if (!cons.ok) return cons;
   const auth = resolveAuthForVerify(statement, proof, witness, opts, hash);
   if (!auth.ok) return auth;
+  // INVARIANT 2: every auth is checked, from the PUBLISHED proof.
+  //
+  // FRI9 already validates N notes correctly (checkBatchSpends: no duplicate
+  // index, positive amounts, membership, non-zero nullifier, sum == public net) -
+  // but only when the WITNESS carries them (air.ts:141). Without a witness it
+  // falls through to the single-note check and rejects an honest batch with
+  // "withdraw exceeds note". So synthesise the batch from the auths the proof
+  // publishes and run FRI9's own audited path over it, rather than a parallel
+  // reimplementation that could drift from it.
+  if (!proof.authMasked && proof.auths.length > 0) {
+    const fromProof: FriWitness = {
+      spent: {
+        note: openedNote(proof.auths[0]!),
+        index: proof.auths[0]!.index,
+        path: proof.auths[0]!.path,
+      },
+      batch: proof.auths.map((a) => ({ note: openedNote(a), index: a.index, path: a.path })),
+    };
+    const all = checkBatchSpends(statement, fromProof.batch!, hash);
+    if (!all.ok) return all;
+    // and the stricter published-proof checks: leaf opens, nullifier matches
+    const strict = checkAuthsAgainstStatement(statement, proof.auths, hash);
+    if (!strict.ok) return strict;
+  }
   if (witness.batch && witness.batch.length > 0) {
     const batch = checkBatchSpends(statement, witness.batch, hash);
     if (!batch.ok) return batch;
@@ -603,15 +659,87 @@ function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; viewingC
   };
 }
 
+/**
+ * INVARIANT 2: validate EVERY auth against the statement, not just auths[0].
+ * Mirrors checkBatchSpends, but reads the auths carried in the PUBLISHED proof
+ * rather than needing the witness - that is the whole point of FRI10. Returns on
+ * the first failure, but only after every auth has been reached in turn: the loop
+ * never short-circuits on success.
+ */
+export function checkAuthsAgainstStatement(
+  statement: PoolStatement,
+  auths: readonly FriAuth[],
+  hash: InternalHash,
+): { ok: true } | { ok: false; reason: string } {
+  if (auths.length === 0) return { ok: false, reason: "no auths" };
+  const root = statement.oldState.noteRoot;
+  const absNet = statement.publicAmountSats < 0n ? -statement.publicAmountSats : 0n;
+  const seen = new Set<number>();
+  let sum = 0n;
+  for (const [i, a] of auths.entries()) {
+    if (seen.has(a.index)) return { ok: false, reason: `duplicate note index at auth ${i}` };
+    seen.add(a.index);
+    if (a.amountSats <= 0n) return { ok: false, reason: `auth ${i} amount` };
+    // leaf must open to the preimage carried in the auth
+    if (!eq32(a.leaf, commitNote(openedNote(a), hash))) {
+      return { ok: false, reason: `auth ${i} leaf preimage` };
+    }
+    if (!nativeWalk(a.leaf, a.index, a.path, root, hash)) {
+      return { ok: false, reason: `auth ${i} membership` };
+    }
+    const nf = nullifierOf(openedNote(a), statement.oldState.poolInstanceId, hash);
+    if (isZero32(nf)) return { ok: false, reason: `auth ${i} nullifier` };
+    if (!eq32(nf, a.nullifier)) return { ok: false, reason: `auth ${i} nullifier mismatch` };
+    sum += a.amountSats;
+  }
+  if (absNet > 0n && sum !== absNet) {
+    return { ok: false, reason: `auth sum ${sum} != public net ${absNet}` };
+  }
+  return { ok: true };
+}
+
+/** A batch entry as a FriAuth. Mirrors authFromWitness's withdraw branch. */
+export function authFromMembership(
+  statement: PoolStatement,
+  m: { note: { rho: Uint8Array; ownerSecret: Uint8Array; amountSats: bigint }; index: number; path: Uint8Array[] },
+  hash: InternalHash,
+): FriAuth {
+  return {
+    leaf: commitNote(m.note as never, hash),
+    index: m.index,
+    path: m.path,
+    root: statement.oldState.noteRoot,
+    nullifier: nullifierOf(m.note as never, statement.oldState.poolInstanceId, hash),
+    rho: m.note.rho,
+    owner: m.note.ownerSecret,
+    amountSats: m.note.amountSats,
+    publicDeltaSats:
+      statement.publicAmountSats < 0n ? -statement.publicAmountSats : statement.publicAmountSats,
+    amountCommit: statement.amountCommitIn,
+    createdLeaf: new Uint8Array(32),
+    createdIndex: 0,
+    createdPath: [],
+  } as FriAuth;
+}
+
+/** Spent-note count the statement commits to: withdrawalCount delta, inside PAA1. */
+export function declaredAuthCount(statement: PoolStatement): number {
+  const d = statement.newState.withdrawalCount - statement.oldState.withdrawalCount;
+  return d > 0n ? Number(d) : 1;
+}
+
 export function encodeFriProof(p: FriProof): Uint8Array {
   const key = p.viewingKey && p.viewingKey.length === VIEWING_PAD_LEN ? p.viewingKey : freshViewingKey();
   const commit = p.viewingCommit && p.viewingCommit.length === 32 ? p.viewingCommit : viewingCommit(key);
-  const published = p.authMasked ? p.auth : maskAuth(p.auth, key);
+  const published = p.authMasked ? p.auths : maskAuths(p.auths, key);
   const parts: Uint8Array[] = [
     Uint8Array.of(p.version, p.layerRoots.length, p.final.length, p.queries.length),
     writeU32BE(p.grindNonce),
     p.traceRoot,
-    encodeAuth(published, commit),
+    // auth count then each auth. The count is checked against withdrawalCount at
+    // verify, so this length prefix is a framing aid, not the binding.
+    Uint8Array.of(published.length & 0xff),
+    ...published.map((a) => encodeAuth(a, commit)),
   ];
   for (const r of p.layerRoots) parts.push(r);
   for (const f of p.final) parts.push(encodeLe(f));
@@ -642,10 +770,16 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
   o += 4;
   const traceRoot = bytes.slice(o, o + 32);
   o += 32;
-  const decodedAuth = decodeAuth(bytes, o);
-  const auth = decodedAuth.auth;
-  const commit = decodedAuth.viewingCommit;
-  o = decodedAuth.next;
+  const nAuths = bytes[o++]!;
+  if (nAuths === 0) throw new Error("proof carries no auth");
+  const auths: FriAuth[] = [];
+  let commit = new Uint8Array(32);
+  for (let i = 0; i < nAuths; i += 1) {
+    const d = decodeAuth(bytes, o);
+    auths.push(d.auth);
+    commit = d.viewingCommit;
+    o = d.next;
+  }
   const layerRoots: Uint8Array[] = [];
   for (let i = 0; i < nRoots; i += 1) {
     layerRoots.push(bytes.slice(o, o + 32));
@@ -698,7 +832,7 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
     traceRoot,
     final,
     queries,
-    auth,
+    auths,
     viewingCommit: commit,
     authMasked: true,
   };
@@ -715,7 +849,7 @@ export function unmaskFriProof(
   }
   return {
     ...proof,
-    auth: proof.authMasked ? unmaskAuth(proof.auth, key) : proof.auth,
+    auths: proof.authMasked ? unmaskAuths(proof.auths, key, hash) : proof.auths,
     viewingKey: key,
     authMasked: false,
   };
@@ -751,3 +885,12 @@ export {
 export type { FriWitness, FriAuth };
 export { airQuotientLde, algebraicC, algebraicCQuotientLde, buildTrace, nativeWalk, publicCells, publicEvals, quotientAtDomain, wBatchExit, wDeposit, wWithdraw } from "../circle/air.ts";
 export { interpolateCircle, evalCirclePoly } from "../circle/interpolate.ts";
+
+/**
+ * Named exports for the batch family, so callers cannot accidentally reach for
+ * FRI9's verifyFri and get single-auth semantics.
+ */
+export const proveFriBatch = proveFri;
+export const verifyFriBatch = verifyFri;
+export const encodeFriBatchProof = encodeFriProof;
+export const decodeFriBatchProof = decodeFriProof;
