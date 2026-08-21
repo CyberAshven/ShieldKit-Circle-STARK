@@ -33,7 +33,7 @@ import {
   STANDARD_SUCCESSOR_FEE_SATS,
   TAPE_TIMEOUT_CSV,
 } from "./envelope.ts";
-import type { CargoUtxo } from "./proof-cargo.ts";
+import { proofCargoLock, type CargoUtxo } from "./proof-cargo.ts";
 import { p2pkhLockingOf, privateKeyOf, type LabWallet } from "./wallet.ts";
 import type { AnyAmountState } from "../pool/state.ts";
 import type { PoolStatement } from "../pool/statement.ts";
@@ -330,9 +330,6 @@ export function compileChainedWithdraw(args: {
   };
 }
 
-/** OP_DROP OP_1 — the AIR carrier lock a tape hop's input 0 spends. */
-const TAPE_CARRIER_LOCK = Uint8Array.of(0x75, 0x51);
-
 /**
  * Fund every tape hop's kernels in one tx.
  *
@@ -380,7 +377,9 @@ export function compileTapeKernelGroups(args: {
     for (let i = 0; i < QUERIES_PER_TAPE_HOP; i += 1) {
       outputs.push({ lockingBytecode: compileSlotsLockP2sh32(q0 + i), valueSatoshis: kernelSats });
     }
-    outputs.push({ lockingBytecode: TAPE_CARRIER_LOCK, valueSatoshis: kernelSats });
+    // P2SH32 of OP_DROP OP_1. packedAirCarrierUnlocking pushes [packed, redeem],
+    // so a bare OP_DROP OP_1 lock leaves an item on the stack (CLEANSTACK, code 64).
+    outputs.push({ lockingBytecode: proofCargoLock(), valueSatoshis: kernelSats });
   }
 
   const spend = outputs.reduce((n, o) => n + o.valueSatoshis, 0n);
