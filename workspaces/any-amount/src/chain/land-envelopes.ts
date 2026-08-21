@@ -22,6 +22,7 @@ import {
   compileTapeKernelGroups,
   QUERIES_PER_TAPE_HOP,
 } from "./chained.ts";
+import { tapeTipLockChain } from "./tape-tip.ts";
 import { circleFriPlugin } from "../backends/circle/plugin.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "../pool/mix-successor.ts";
 import { encodePublicPaa1, utxoValueFor } from "../pool/state.ts";
@@ -266,6 +267,11 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
     // Genesis is the CashToken category genesis, so it can mint the tape sibling
     // NFTs directly - no minting-capability token needed. They hold the OLD PAA1.
     const tapeHops = Math.ceil(FRI_QUERIES / QUERIES_PER_TAPE_HOP);
+    // The pool covenant pins the terminal tip lock, and genesis commits the pool
+    // covenant, so the digest has to be known here - before genesis, not at the
+    // tape-funder step.
+    const tapeDigest = mix.proof.slice(0, 32);
+    const tipChain = tapeTipLockChain(tapeDigest, tapeHops);
     const genesis = compileCovenantSpend({
       wallet,
       utxo: picked,
@@ -277,6 +283,7 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       // The pay hop carries a note-auth kernel at 4 slots, so the pool lock has to
       // expect it. The lock is committed here, at genesis.
       forceNoteAuth: true,
+      tapeTipLock: tipChain[tapeHops],
       siblingNfts: { count: tapeHops, lockingBytecode: proofCargoLock() },
     });
     const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;
@@ -292,10 +299,12 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       return { envelope: "chained", ok: false, genesis: genesisTxid, error: `change too small ${genesis.changeValue}` };
     }
     step = "tape-funder";
+    // The tape head must be L(digest, 0) or hop 0 cannot spend it.
     const split = compileTapeFunder({
       wallet,
       utxo: { tx_hash: genesisTxid, tx_pos: 1, value: genesis.changeValue },
       tapeSats: 300_000n,
+      tapeLockingBytecode: tipChain[0],
     });
     const splitTxid = (await broadcastRetry(client, split.raw, split.txid)).txid;
     await waitForTxid(client, split.txid);
@@ -339,7 +348,7 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       tapeKernels: tapeGroups.groups,
       tapeUtxo: split.tapeUtxo,
       hops,
-      digest: mix.proof.slice(0, 32),
+      digest: tapeDigest,
       proof: mix.proof,
       pool: {
         tx_hash: genesisTxid,

@@ -28,6 +28,7 @@ import { compileAlgebraicCLockP2sh32 } from "../src/chain/algebraic-c-kernel.ts"
 import { compileNoteAuthLockP2sh32 } from "../src/chain/note-auth-kernel.ts";
 import { proofCargoLock } from "../src/chain/proof-cargo.ts";
 import { poolLockP2sh32 } from "../src/chain/covenant-p2s.ts";
+import { tapeTipLockChain, tapeTipRedeemChain } from "../src/chain/tape-tip.ts";
 import { TAPE_HOP_OUT_SATS } from "../src/chain/envelope.ts";
 
 const CAT = new Uint8Array(32).fill(0x33);
@@ -66,7 +67,7 @@ function buildChain() {
     note: mix.spent.note,
     change: mix.witness.created?.note,
   });
-  return { chain, mix, wallet, old, tapeHops };
+  return { chain, mix, wallet, old, tapeHops, tips: tapeTipLockChain(mix.proof.slice(0, 32), tapeHops) };
 }
 
 /** Source outputs for a tape hop: sibling NFT, 10 FRI, cqz, 2 fold, 2 slot, tape tip. */
@@ -76,6 +77,7 @@ function tapeSourceOutputs(args: {
   wallet: ReturnType<typeof createLabWallet>;
   prevTape: bigint;
   carrierToken?: boolean;
+  tipLock?: Uint8Array;
 }) {
   const carrier = {
     lockingBytecode: proofCargoLock(),
@@ -92,13 +94,13 @@ function tapeSourceOutputs(args: {
     { lockingBytecode: compileFoldLockP2sh32(1, args.q0 + 1), valueSatoshis: KERNEL_SATS },
     { lockingBytecode: compileSlotsLockP2sh32(args.q0), valueSatoshis: KERNEL_SATS },
     { lockingBytecode: compileSlotsLockP2sh32(args.q0 + 1), valueSatoshis: KERNEL_SATS },
-    { lockingBytecode: p2pkhLockingOf(args.wallet), valueSatoshis: args.prevTape },
+    { lockingBytecode: args.tipLock ?? p2pkhLockingOf(args.wallet), valueSatoshis: args.prevTape },
   ];
 }
 
 describe("envelope C on the 2026 VM (full transaction context)", () => {
   it("every tape hop verifies with its sibling NFT and absolute-index fold/slot locks", () => {
-    const { chain, wallet, old } = buildChain();
+    const { chain, wallet, old, tips } = buildChain();
     const vm = createVirtualMachineBch2026(true);
     let checked = 0;
     for (const hop of chain.hops) {
@@ -110,6 +112,7 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
         old,
         wallet,
         prevTape: hop.index === 0 ? BigInt(TAPE_VALUE) : TAPE_HOP_OUT_SATS,
+        tipLock: tips[hop.index],
       });
       assert.equal(tx.inputs.length, sourceOutputs.length, `hop ${hop.index} input count`);
       assert.equal(vm.verify({ transaction: tx, sourceOutputs }), true, `tape hop ${hop.index} must verify`);
@@ -125,19 +128,20 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
     if (typeof tx === "string") throw new Error(tx);
     // Same hop, but input 0 carries no token — the shape that shipped before the
     // sibling NFTs and drew "Invalid OP_SPLIT range (code 16)" from BCHN.
-    const sourceOutputs = tapeSourceOutputs({ q0: 0, old, wallet, prevTape: BigInt(TAPE_VALUE), carrierToken: false });
+    const { tips: t2 } = buildChain();
+    const sourceOutputs = tapeSourceOutputs({ q0: 0, old, wallet, prevTape: BigInt(TAPE_VALUE), carrierToken: false, tipLock: t2[0] });
     const r = createVirtualMachineBch2026(true).verify({ transaction: tx, sourceOutputs });
     assert.notEqual(r, true, "cqz must reject a carrier with no token commitment");
   });
 
   it("the pay hop verifies against a pool lock that expects note-auth at 4 slots", () => {
-    const { chain, mix, wallet, old } = buildChain();
+    const { chain, mix, wallet, old, tips, tapeHops } = buildChain();
     const pay = chain.hops[chain.payIndex]!;
     const tx = decodeTransaction(pay.raw);
     if (typeof tx === "string") throw new Error(tx);
     const sourceOutputs = [
       {
-        lockingBytecode: poolLockP2sh32({ slotKernels: SLOT_KERNEL_COUNT, forceNoteAuth: true }),
+        lockingBytecode: poolLockP2sh32({ slotKernels: SLOT_KERNEL_COUNT, forceNoteAuth: true, tapeTipLock: tips[tapeHops] }),
         valueSatoshis: BigInt(utxoValueFor(mix.oldState)),
         token: { amount: 0n, category: CAT, nft: { capability: "mutable" as const, commitment: old } },
       },
@@ -151,7 +155,7 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
         lockingBytecode: compileSlotsLockP2sh32(i),
         valueSatoshis: KERNEL_SATS,
       })),
-      { lockingBytecode: p2pkhLockingOf(wallet), valueSatoshis: TAPE_HOP_OUT_SATS },
+      { lockingBytecode: tips[tapeHops]!, valueSatoshis: TAPE_HOP_OUT_SATS },
     ];
     assert.equal(tx.inputs.length, sourceOutputs.length, "pay hop input count");
     assert.equal(createVirtualMachineBch2026(true).verify({ transaction: tx, sourceOutputs }), true);
@@ -165,5 +169,49 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
     // compilePoolCovenant did not declare the option and TS allowed the extra
     // property through a variable. A typecheck cannot catch that; this can.
     assert.deepEqual(poolLockP2sh32({ slotKernels: SLOT_KERNEL_COUNT, forceNoteAuth: false }), plain);
+  });
+
+  it("the tip lock chain is counted, so hops cannot be skipped or re-digested", () => {
+    const d1 = new Uint8Array(32).fill(0xaa);
+    const d2 = new Uint8Array(32).fill(0xbb);
+    const N = 18;
+    const c1 = tapeTipLockChain(d1, N);
+    const c2 = tapeTipLockChain(d2, N);
+    assert.equal(c1.length, N + 1);
+    // every link distinct: the pay hop demands L(d,N), so it cannot reach back to
+    // the funder's L(d,0) and skip the tape
+    const seen = new Set(c1.map((l) => Buffer.from(l).toString("hex")));
+    assert.equal(seen.size, c1.length, "each hop must have its own tip lock");
+    assert.notDeepEqual(c1[0], c1[N], "funder tip must differ from the terminal tip");
+    assert.notDeepEqual(c1[0], c2[0], "a different digest must give a different chain");
+    // terminal link carries no propagation clause, so it is the shorter redeem
+    const r1 = tapeTipRedeemChain(d1, N);
+    assert.ok(r1[N]!.length < r1[0]!.length, "terminal redeem has no output-1 obligation");
+  });
+
+  it("the pool covenant pins the terminal tip lock", () => {
+    const d = new Uint8Array(32).fill(0xaa);
+    const tip = tapeTipLockChain(d, 18)[18]!;
+    const other = tapeTipLockChain(new Uint8Array(32).fill(0xbb), 18)[18]!;
+    const base = poolLockP2sh32({ slotKernels: SLOT_KERNEL_COUNT, forceNoteAuth: true });
+    const pinned = poolLockP2sh32({ slotKernels: SLOT_KERNEL_COUNT, forceNoteAuth: true, tapeTipLock: tip });
+    const pinnedOther = poolLockP2sh32({ slotKernels: SLOT_KERNEL_COUNT, forceNoteAuth: true, tapeTipLock: other });
+    assert.notDeepEqual(base, pinned, "pinning must change the covenant");
+    assert.notDeepEqual(pinned, pinnedOther, "a different digest must give a different pool lock");
+  });
+
+  it("a tape hop that does not recreate the next tip lock is rejected", () => {
+    const { chain, wallet, old } = buildChain();
+    const hop = chain.hops.find((h) => h.role === "tape" && h.index === 0)!;
+    const tx = decodeTransaction(hop.raw);
+    if (typeof tx === "string") throw new Error(tx);
+    // Model the tip as some other link in the chain. The covenant compares output 1
+    // against the successor of whatever lock is actually being spent, so this must
+    // fail - that is what stops the digest being swapped mid-tape.
+    const wrong = tapeTipLockChain(new Uint8Array(32).fill(0x77), 18)[0]!;
+    const sourceOutputs = tapeSourceOutputs({ q0: 0, old, wallet, prevTape: BigInt(TAPE_VALUE), tipLock: wrong });
+    sourceOutputs[sourceOutputs.length - 1] = { lockingBytecode: wrong, valueSatoshis: BigInt(TAPE_VALUE) };
+    const r = createVirtualMachineBch2026(true).verify({ transaction: tx, sourceOutputs });
+    assert.notEqual(r, true, "spending a foreign tip lock must not verify");
   });
 });

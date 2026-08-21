@@ -63,6 +63,7 @@ import {
   type TxEnvelope,
 } from "./envelope.ts";
 import { packedAirCarrierUnlocking } from "./proof-cargo.ts";
+import { tapeTipUnlocking } from "./tape-tip.ts";
 import { friShardUnlockings } from "./fri-openings.ts";
 import {
   compileCqzLockP2sh32,
@@ -110,10 +111,15 @@ function compiler() {
   return walletTemplateToCompilerBCH(walletTemplateP2pkhNonHd);
 }
 
-function lockOf(kind: LockKind, slotKernels = SLOT_KERNEL_COUNT, forceNoteAuth = false): Uint8Array {
+function lockOf(
+  kind: LockKind,
+  slotKernels = SLOT_KERNEL_COUNT,
+  forceNoteAuth = false,
+  tapeTipLock?: Uint8Array,
+): Uint8Array {
   return kind === "p2s"
-    ? poolLockP2sFor({ slotKernels, forceNoteAuth })
-    : poolLockP2sh32({ slotKernels, forceNoteAuth });
+    ? poolLockP2sFor({ slotKernels, forceNoteAuth, tapeTipLock })
+    : poolLockP2sh32({ slotKernels, forceNoteAuth, tapeTipLock });
 }
 
 function measureOf(
@@ -161,6 +167,9 @@ export function compileCovenantSpend(args: {
    * too or the successor cannot spend what genesis created.
    */
   forceNoteAuth?: boolean;
+  /** Envelope C: pin the terminal tape tip lock into the pool covenant here, at
+   * genesis, so the pay hop cannot spend a tip committed to another digest. */
+  tapeTipLock?: Uint8Array;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -199,7 +208,7 @@ export function compileCovenantSpend(args: {
     ],
     outputs: [
       {
-        lockingBytecode: lockOf(lockKind, slotKernels, args.forceNoteAuth ?? false),
+        lockingBytecode: lockOf(lockKind, slotKernels, args.forceNoteAuth ?? false, args.tapeTipLock),
         valueSatoshis: value,
         token: {
           amount: 0n,
@@ -276,6 +285,16 @@ export function compileCovenantSuccessor(args: {
   change?: Note;
   /** Match a genesis locked with forceNoteAuth (envelope C pay hop). */
   forceNoteAuth?: boolean;
+  /**
+   * Tape tip lock chain (C-BINDING). When present the tape tip is a P2SH32
+   * covenant rather than a P2PKH: spend it with `tapeTipRedeem`, and a tape hop
+   * must recreate `tapeTipNextLock` at output 1. The chain is counted, so hops
+   * cannot be skipped and the digest cannot be swapped.
+   */
+  tapeTipRedeem?: Uint8Array;
+  tapeTipNextLock?: Uint8Array;
+  /** Terminal tip lock the pool covenant pins (pay hop only). */
+  tapeTipLock?: Uint8Array;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -293,8 +312,10 @@ export function compileCovenantSuccessor(args: {
     throw new Error("deposit successor needs a funder utxo for the net");
   }
   if (userFee && !args.wallet) throw new Error("fee utxo needs a wallet to sign");
-  if (tape && !args.wallet) throw new Error("tape utxo needs a wallet to sign");
-  const signP2pkh = userFee || tape;
+  if (tape && !args.tapeTipRedeem && !args.wallet) {
+    throw new Error("tape utxo needs a wallet to sign (or a tapeTipRedeem covenant)");
+  }
+  const signP2pkh = userFee || (tape && !args.tapeTipRedeem);
   const c = signP2pkh ? compiler() : undefined;
   const data = signP2pkh ? { keys: { privateKeys: { key: privateKeyOf(args.wallet!) } } } : undefined;
   const change =
@@ -332,7 +353,11 @@ export function compileCovenantSuccessor(args: {
   const unlocking = includePool
     ? lockKind === "p2s"
       ? p2sUnlocking(undefined, packed)
-      : p2sh32Unlocking(undefined, packed, { slotKernels, forceNoteAuth: args.forceNoteAuth ?? false })
+      : p2sh32Unlocking(undefined, packed, {
+          slotKernels,
+          forceNoteAuth: args.forceNoteAuth ?? false,
+          tapeTipLock: args.tapeTipLock,
+        })
     : packedAirCarrierUnlocking(packed instanceof Uint8Array ? packed : encodeAirPacked(args.statement!, decoded));
   const shards = friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
   const dummy = "44".repeat(32);
@@ -455,7 +480,19 @@ export function compileCovenantSuccessor(args: {
             },
           ]
         : []),
-      ...(tape && args.tapeUtxo && c && data
+      ...(tape && args.tapeUtxo && args.tapeTipRedeem
+        ? [
+            {
+              outpointIndex: args.tapeUtxo.tx_pos,
+              outpointTransactionHash: hexToBin(args.tapeUtxo.tx_hash),
+              sequenceNumber: 0xffffffff,
+              // P2SH32 covenant spend: the redeem is the whole unlocking. No
+              // signature, so the tip must stay tokenless (a token-carrying tip
+              // changes the sighash and broke P2PKH signing with NULLFAIL).
+              unlockingBytecode: tapeTipUnlocking(args.tapeTipRedeem),
+            },
+          ]
+        : tape && args.tapeUtxo && c && data
         ? [
             {
               outpointIndex: args.tapeUtxo.tx_pos,
@@ -474,7 +511,7 @@ export function compileCovenantSuccessor(args: {
   const outputs = includePool
     ? [
       {
-        lockingBytecode: lockOf(lockKind, slotKernels, args.forceNoteAuth ?? false),
+        lockingBytecode: lockOf(lockKind, slotKernels, args.forceNoteAuth ?? false, args.tapeTipLock),
         valueSatoshis: value,
         token: {
           amount: 0n,
@@ -510,10 +547,11 @@ export function compileCovenantSuccessor(args: {
         },
         {
           // Output 1 is the tape tip the next hop spends, deliberately tokenless.
-          // A token-carrying UTXO changes the sighash preimage, and the P2PKH
-          // signing path here does not declare one - spending it fails NULLFAIL
-          // ("Signature must be zero for failed CHECK(MULTI)SIG").
-          lockingBytecode: p2pkhLockingOf(args.wallet ?? createLabWallet()),
+          // A token-carrying UTXO changes the sighash preimage and breaks the
+          // P2PKH path with NULLFAIL. With the binding covenant in use this is
+          // the next lock in the counted chain, so the digest propagates.
+          lockingBytecode:
+            args.tapeTipNextLock ?? p2pkhLockingOf(args.wallet ?? createLabWallet()),
           valueSatoshis: TAPE_HOP_OUT_SATS,
         },
       ];

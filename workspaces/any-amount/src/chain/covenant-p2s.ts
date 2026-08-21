@@ -268,10 +268,25 @@ OP_DROP
 OP_FROMALTSTACK
 `;
 
-export function compilePoolCovenant(opts?: { slotKernels?: number; forceNoteAuth?: boolean }): Uint8Array {
+export function compilePoolCovenant(opts?: {
+  slotKernels?: number;
+  forceNoteAuth?: boolean;
+  /**
+   * Envelope C: require the last input (the tape tip) to carry exactly this
+   * locking bytecode - the terminal link L(digest, tapeN). Without it the pay hop
+   * could spend a tip committed to another digest and the tape would bind nothing
+   * to this statement. Depends only on the digest, so no cycle with the tip
+   * covenant. See C-BINDING.md.
+   */
+  tapeTipLock?: Uint8Array;
+}): Uint8Array {
   const slots = opts?.slotKernels ?? SLOT_KERNEL_COUNT;
+  const requireTape = opts?.tapeTipLock
+    ? `
+OP_TXINPUTCOUNT OP_1SUB OP_UTXOBYTECODE <0x${binToHex(opts.tapeTipLock)}> OP_EQUALVERIFY`
+    : "";
   const bin = cashAssemblyToBin(
-    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false)}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
+    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false)}${requireTape}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
   );
   if (typeof bin === "string") throw new Error(`covenant compile: ${bin}`);
   return bin;
@@ -281,11 +296,19 @@ export function poolLockP2s(): Uint8Array {
   return compilePoolCovenant();
 }
 
-export function poolLockP2sh32(opts?: { slotKernels?: number; forceNoteAuth?: boolean }): Uint8Array {
+export function poolLockP2sh32(opts?: {
+  slotKernels?: number;
+  forceNoteAuth?: boolean;
+  tapeTipLock?: Uint8Array;
+}): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compilePoolCovenant(opts)));
 }
 
-export function poolLockP2sFor(opts?: { slotKernels?: number; forceNoteAuth?: boolean }): Uint8Array {
+export function poolLockP2sFor(opts?: {
+  slotKernels?: number;
+  forceNoteAuth?: boolean;
+  tapeTipLock?: Uint8Array;
+}): Uint8Array {
   return compilePoolCovenant(opts);
 }
 
@@ -354,7 +377,7 @@ export function poolWitnessPushes(w: PoolUnlockWitness): Uint8Array {
 export function p2sh32Unlocking(
   w?: PoolUnlockWitness,
   layerRoots?: Uint8Array[] | Uint8Array,
-  opts?: { slotKernels?: number; forceNoteAuth?: boolean },
+  opts?: { slotKernels?: number; forceNoteAuth?: boolean; tapeTipLock?: Uint8Array },
 ): Uint8Array {
   const redeem = pushData(compilePoolCovenant(opts));
   const prefix =

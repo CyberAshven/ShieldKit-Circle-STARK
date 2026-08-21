@@ -1,3 +1,8 @@
+import {
+  tapeTipLockChain,
+  tapeTipRedeemChain,
+  tapeTipUnlocking,
+} from "./tape-tip.ts";
 /**
  * Envelope C: pre-signed unconfirmed chain. Tape hops commit digest+i+N
  * and never pay. The last hop spends the pool and the tape tip.
@@ -5,6 +10,9 @@
  * makes the pay hop invalid (missing inputs). Notes stay unspent until pay lands.
  */
 import {
+  binToHex,
+  cashAssemblyToBin,
+  encodeLockingBytecodeP2sh32,
   encodeTransaction,
   generateTransaction,
   hash256,
@@ -169,6 +177,8 @@ export function compileTapeFunder(args: {
   utxo: ChainUtxo;
   tapeSats?: bigint;
   feeSats?: bigint;
+  /** C-BINDING: lock the tape output to L(digest, 0) instead of a bare P2PKH. */
+  tapeLockingBytecode?: Uint8Array;
 }): { raw: Uint8Array; txid: string; tapeUtxo: ChainUtxo; funderUtxo: ChainUtxo; cargo: CargoUtxo[] } {
   const tapeSats = args.tapeSats ?? 300_000n;
   const fee = args.feeSats ?? 2_000n;
@@ -177,6 +187,7 @@ export function compileTapeFunder(args: {
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const lock = p2pkhLockingOf(args.wallet);
+  const tapeLock = args.tapeLockingBytecode ?? lock;
   const generated = generateTransaction({
     version: 2,
     locktime: 0,
@@ -194,7 +205,8 @@ export function compileTapeFunder(args: {
       },
     ],
     outputs: [
-      { lockingBytecode: lock, valueSatoshis: tapeSats },
+      // output 0 is the tape head: L(digest, 0) when the binding covenant is used
+      { lockingBytecode: tapeLock, valueSatoshis: tapeSats },
       { lockingBytecode: lock, valueSatoshis: rest },
     ],
   });
@@ -246,6 +258,11 @@ export function compileChainedWithdraw(args: {
   const qn = QUERIES_PER_TAPE_HOP;
   const tapeN = Math.ceil(FRI_QUERIES / qn);
   const hopCount = parseChainedHops(args.hops ?? tapeN + 1);
+  // Counted tip lock chain: L(d,i) requires output 1 to be L(d,i+1); L(d,tapeN)
+  // is terminal and is what the pay hop spends. Binds every hop to one digest and
+  // makes skipping impossible - see C-BINDING.md.
+  const tipRedeems = tapeTipRedeemChain(digest, tapeN);
+  const tipLocks = tapeTipLockChain(digest, tapeN);
   if (hopCount < tapeN + 1) {
     throw new Error(`chained needs ${tapeN + 1} hops for ${FRI_QUERIES} unique-orbit slices (got ${hopCount})`);
   }
@@ -261,6 +278,8 @@ export function compileChainedWithdraw(args: {
       queryStart: q0,
       foldQueries: thisN,
       slotKernels: thisN,
+      tapeTipRedeem: tipRedeems[i],
+      tapeTipNextLock: tipLocks[i + 1],
       kernelUtxos: group?.fri,
       extraKernels: group?.extra,
       pool: args.pool,
@@ -299,6 +318,10 @@ export function compileChainedWithdraw(args: {
     // 4 slots but a note-auth kernel is present, so the pool lock must expect it.
     // Genesis commits the matching lock (landC passes the same flag).
     forceNoteAuth: true,
+    // Terminal link: only L(digest, tapeN) can be spent here, so the pay hop
+    // cannot reach past the tape to the funder's tip.
+    tapeTipRedeem: tipRedeems[tapeN],
+    tapeTipLock: tipLocks[tapeN],
     kernelUtxos: args.kernelUtxos,
     extraKernels: args.extraKernels,
     extraPayouts: args.extraPayouts,
