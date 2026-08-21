@@ -14,7 +14,7 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { createVirtualMachineBch2026, decodeTransaction } from "@bitauth/libauth";
+import { createVirtualMachineBch2026, decodeTransaction, hash256 } from "@bitauth/libauth";
 import { compileChainedWithdraw, QUERIES_PER_TAPE_HOP } from "../src/chain/chained.ts";
 import { runMixSuccessor } from "../src/pool/mix-successor.ts";
 import { createLabWallet, p2pkhLockingOf } from "../src/chain/wallet.ts";
@@ -57,7 +57,7 @@ function buildChain() {
     tapeKernels: groups,
     tapeUtxo: { tx_hash: "11".repeat(32), tx_pos: 0, value: TAPE_VALUE },
     hops: tapeHops + 1,
-    digest: mix.proof.slice(0, 32),
+    digest: hash256(mix.proof),
     proof: mix.proof,
     pool: { tx_hash: POOL, tx_pos: 0, value: utxoValueFor(mix.oldState), category: CAT, commitment: old },
     newState: mix.newState,
@@ -67,7 +67,7 @@ function buildChain() {
     note: mix.spent.note,
     change: mix.witness.created?.note,
   });
-  return { chain, mix, wallet, old, tapeHops, tips: tapeTipLockChain(mix.proof.slice(0, 32), tapeHops) };
+  return { chain, mix, wallet, old, tapeHops, tips: tapeTipLockChain(hash256(mix.proof), tapeHops) };
 }
 
 /** Source outputs for a tape hop: sibling NFT, 10 FRI, cqz, 2 fold, 2 slot, tape tip. */

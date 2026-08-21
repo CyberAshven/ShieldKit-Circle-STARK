@@ -4,7 +4,7 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { binToHex, hashTransaction, hexToBin } from "@bitauth/libauth";
+import { binToHex, hash256, hashTransaction, hexToBin } from "@bitauth/libauth";
 import { loadLabWallet } from "./wallet.ts";
 import { broadcast, connectChipnet, getTx, listUnspent } from "./electrum.ts";
 import { rpcConfigFromEnv } from "./bchn-rpc.ts";
@@ -270,7 +270,11 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
     // The pool covenant pins the terminal tip lock, and genesis commits the pool
     // covenant, so the digest has to be known here - before genesis, not at the
     // tape-funder step.
-    const tapeDigest = mix.proof.slice(0, 32);
+    //
+    // hash256 of the WHOLE proof, not proof.slice(0, 32). The prefix is 4 constant
+    // bytes + grindNonce + the first 24 bytes of traceRoot: statement-binding, but
+    // truncated to ~2^96. Hashing commits to every layer root, query and auth.
+    const tapeDigest = hash256(mix.proof);
     const tipChain = tapeTipLockChain(tapeDigest, tapeHops);
     const genesis = compileCovenantSpend({
       wallet,
@@ -375,11 +379,17 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
         // Same shape as broadcastRetry, including its getTx fallback: a timed-out
         // broadcast is not proof of rejection, and aborting here costs the whole
         // 19-hop chain.
+        //
+        // One FRESH connection per hop. The shared `client` has been open for
+        // minutes doing proving and small broadcasts by the time the chain starts,
+        // and an 83 KB frame on it times out every time - while the identical tx
+        // goes through instantly on a new socket. That cost three full runs.
         const expectedTxid = hashTransaction(hexToBin(hex));
         let last: Error | undefined;
         for (let i = 0; i < 3; i += 1) {
+          const hopClient = await connectChipnet();
           try {
-            return await broadcast(client, hex);
+            return await broadcast(hopClient, hex);
           } catch (e) {
             last = e instanceof Error ? e : new Error(String(e));
             const msg = last.message.toLowerCase();
@@ -392,13 +402,18 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
               break;
             }
             await sleep(1200 * (i + 1));
+          } finally {
+            hopClient.close();
           }
         }
+        const check = await connectChipnet();
         try {
-          await getTx(client, expectedTxid);
+          await getTx(check, expectedTxid);
           return expectedTxid;
         } catch {
           throw last ?? new Error("electrum broadcast failed");
+        } finally {
+          check.close();
         }
       },
       rpc: chain.hops.some((h) => h.raw.length > 100_000) ? rpcConfigFromEnv() : undefined,
