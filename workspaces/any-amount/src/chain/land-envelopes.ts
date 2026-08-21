@@ -28,6 +28,7 @@ import { encodePublicPaa1, utxoValueFor } from "../pool/state.ts";
 import { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "./air-cqz.ts";
 import { FRI_QUERIES } from "../backends/circle/params.ts";
 import { successorFeeCoinSats, type TxEnvelope } from "./envelope.ts";
+import { proofCargoLock } from "./proof-cargo.ts";
 
 export type LandWhich = "standard" | "consensus" | "chained" | "all";
 
@@ -262,6 +263,9 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       picked = { tx_hash: split.txid, tx_pos: 0, value: need, height: 0 };
     }
     step = "genesis";
+    // Genesis is the CashToken category genesis, so it can mint the tape sibling
+    // NFTs directly - no minting-capability token needed. They hold the OLD PAA1.
+    const tapeHops = Math.ceil(FRI_QUERIES / QUERIES_PER_TAPE_HOP);
     const genesis = compileCovenantSpend({
       wallet,
       utxo: picked,
@@ -270,9 +274,15 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       lockKind: "p2sh32",
       envelope: "standard",
       slotKernels: SLOT_KERNEL_COUNT,
+      siblingNfts: { count: tapeHops, lockingBytecode: proofCargoLock() },
     });
     const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;
     await waitForTxid(client, genesisTxid);
+    const tapeCarriers = Array.from({ length: tapeHops }, (_, g) => ({
+      tx_hash: genesisTxid,
+      tx_pos: 2 + g,
+      value: 1_000,
+    }));
     // 300000 tape + 2000 fee + 123612 kernel funder. Below this the run dies at
     // "kernels" instead of here, after the tape split is already broadcast.
     if (genesis.changeValue === undefined || genesis.changeValue < 425_612) {
@@ -300,7 +310,6 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
     // Every tape hop needs its own kernels. Without these compileChainedWithdraw
     // falls back to dummy prevouts (44../aa..) and the chain is unbroadcastable.
     step = "tape-kernels";
-    const tapeHops = Math.ceil(FRI_QUERIES / QUERIES_PER_TAPE_HOP);
     const tapeNeed = 2_400_000;
     const tapePick = pickFunded(await listUnspent(client, wallet.address), tapeNeed);
     if (!tapePick) {
@@ -312,7 +321,12 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
         address: wallet.address,
       };
     }
-    const tapeGroups = compileTapeKernelGroups({ wallet, utxo: tapePick, tapeHops });
+    const tapeGroups = compileTapeKernelGroups({
+      wallet,
+      utxo: tapePick,
+      tapeHops,
+      carriers: tapeCarriers,
+    });
     const tapeKernelsTxid = (await broadcastRetry(client, tapeGroups.raw, tapeGroups.txid)).txid;
     await waitForTxid(client, tapeGroups.txid);
 

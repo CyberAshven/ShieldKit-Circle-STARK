@@ -145,6 +145,13 @@ export function compileCovenantSpend(args: {
   lockKind?: LockKind;
   slotKernels?: number;
   envelope?: TxEnvelope;
+  /**
+   * Envelope C: mint N sibling NFTs in the same (genesis) category, each holding
+   * the OLD PAA1. Each tape hop spends one as input 0 so cqz's
+   * bindPackedStmtToPaa1Asm finds a commitment there, and mutates it to NEW on
+   * its own output 0. They land at vout 2..2+count-1; change stays at vout 1.
+   */
+  siblingNfts?: { count: number; lockingBytecode: Uint8Array; satsEach?: bigint };
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -152,9 +159,12 @@ export function compileCovenantSpend(args: {
     (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
-  const fee = 1_200n;
+  const siblingCount = args.siblingNfts?.count ?? 0;
+  const siblingSats = args.siblingNfts?.satsEach ?? 1_000n;
+  // A 128-byte-commitment token output is ~170 B; 1200 only covers the base tx.
+  const fee = 1_200n + BigInt(siblingCount) * 200n;
   const value = utxoValueFor(args.state);
-  const change = BigInt(args.utxo.value) - value - fee;
+  const change = BigInt(args.utxo.value) - value - fee - BigInt(siblingCount) * siblingSats;
   if (change < 546n) throw new Error("utxo too small for covenant spend");
 
   const commitment = encodePublicPaa1(args.state);
@@ -190,6 +200,15 @@ export function compileCovenantSpend(args: {
         lockingBytecode: { compiler: c, script: "lock", data },
         valueSatoshis: change,
       },
+      ...Array.from({ length: siblingCount }, () => ({
+        lockingBytecode: args.siblingNfts!.lockingBytecode,
+        valueSatoshis: siblingSats,
+        token: {
+          amount: 0n,
+          category: hexToBin(args.utxo.tx_hash),
+          nft: { capability: "mutable" as const, commitment },
+        },
+      })),
     ],
   });
   if (!generated.success) {
@@ -462,8 +481,18 @@ export function compileCovenantSuccessor(args: {
     ]
     : [
         {
+          // Tape hop output 0 must carry the pool category with the NEW commitment:
+          // cqz's bindPackedStmtToPaa1Asm reads OP_OUTPUTTOKENCOMMITMENT <0>. A
+          // tokenless output makes that an empty item and OP_SPLIT <64> fails.
+          // Input 0 is a mutable sibling NFT holding the OLD commitment, so mutating
+          // it to NEW here is a legal CashTokens move (no minting capability needed).
           lockingBytecode: p2pkhLockingOf(args.wallet ?? createLabWallet()),
           valueSatoshis: DUST_SATS * 2n,
+          token: {
+            amount: 0n,
+            category: args.pool.category,
+            nft: { capability: "mutable" as const, commitment },
+          },
         },
       ];
   const generated = generateTransaction({ version: 2, locktime: 0, inputs: baseInputs, outputs });

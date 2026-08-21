@@ -348,15 +348,20 @@ export function compileTapeKernelGroups(args: {
   tapeHops: number;
   kernelSats?: number;
   feeSats?: bigint;
+  /** Genesis sibling NFTs (vout 2+g), one per hop, each holding the OLD PAA1. */
+  carriers: ChainUtxo[];
 }): {
   raw: Uint8Array;
   txid: string;
   groups: Array<{ carrier: ChainUtxo; fri: ChainUtxo[]; extra: ChainUtxo[] }>;
   changeValue: number;
 } {
+  if (args.carriers.length !== args.tapeHops) {
+    throw new Error(`need ${args.tapeHops} sibling carriers, got ${args.carriers.length}`);
+  }
   const kernelSats = BigInt(args.kernelSats ?? 1_000);
   const feeCoin = successorFeeCoinSats("standard");
-  const perGroup = FRI_KERNEL_INPUTS + 5 + 1;
+  const perGroup = FRI_KERNEL_INPUTS + 5; // carriers are genesis sibling NFTs
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const friLock = compileFriQueryLockP2sh32();
@@ -377,9 +382,6 @@ export function compileTapeKernelGroups(args: {
     for (let i = 0; i < QUERIES_PER_TAPE_HOP; i += 1) {
       outputs.push({ lockingBytecode: compileSlotsLockP2sh32(q0 + i), valueSatoshis: kernelSats });
     }
-    // P2SH32 of OP_DROP OP_1. packedAirCarrierUnlocking pushes [packed, redeem],
-    // so a bare OP_DROP OP_1 lock leaves an item on the stack (CLEANSTACK, code 64).
-    outputs.push({ lockingBytecode: proofCargoLock(), valueSatoshis: kernelSats });
   }
 
   const spend = outputs.reduce((n, o) => n + o.valueSatoshis, 0n);
@@ -420,7 +422,7 @@ export function compileTapeKernelGroups(args: {
         ...Array.from({ length: FRI_KERNEL_INPUTS - 1 }, (_, i) => at(i + 1, kernelSats)),
       ],
       extra: Array.from({ length: 5 }, (_, i) => at(FRI_KERNEL_INPUTS + i, kernelSats)),
-      carrier: at(perGroup - 1, kernelSats),
+      carrier: args.carriers[g]!,
     };
   });
   return { raw, txid, groups, changeValue: Number(change) };
