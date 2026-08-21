@@ -79,9 +79,11 @@ on Chipnet on 2026-08-21.
 The pay hop can introspect **its own** inputs even though it cannot read ancestors.
 So bind the tape tip's *locking bytecode* to the digest:
 
-1. Lock each tape hop's output 0 to a P2SH32 script parameterised by `digest`
-   instead of a bare P2PKH, so the tip's locking bytecode is a function of the
-   statement.
+1. Lock each tape hop's **output 1** (the tape tip; output 0 now holds the sibling
+   NFT) to a P2SH32 script parameterised by `digest` instead of a bare P2PKH, so
+   the tip's locking bytecode is a function of the statement. Note the tip must
+   stay tokenless — a token-carrying tip broke P2PKH signing with NULLFAIL, and a
+   covenant tip will need its own spend path anyway.
 2. In the pay hop's covenant, assert `OP_UTXOBYTECODE` of the tape input equals the
    lock derived from the statement the pay hop is verifying.
 3. Have each tape hop's lock require the next hop to carry the same `digest`, so the
