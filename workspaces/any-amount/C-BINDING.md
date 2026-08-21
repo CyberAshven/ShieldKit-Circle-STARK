@@ -52,6 +52,28 @@ statement, 36 checks, atomically. That is the difference, and it is real.
 note-auth kernel on C's pay hop exactly as on B — one transaction, one statement,
 nothing deferred to `verifyFri`. The gap here is about the *tape*, not the note.
 
+## What shipped since this was written (2026-08-21)
+
+Tape hops now spend a **sibling NFT of the pool category** at input 0, minted by
+C's genesis (which is the category genesis, so no minting token is needed). This
+was forced by cqz — `bindPackedStmtToPaa1Asm` reads `<0> OP_UTXOTOKENCOMMITMENT`
+and a tokenless carrier made that an empty item — but it also moves the binding
+question, so record what it does and does not achieve.
+
+**It binds the noteRoot.** cqz compares commitment bytes `[64..96]`, and
+`state.ts` puts the **noteRoot** there. Every tape hop must therefore present the
+same old noteRoot (the sibling it spends) and the same new noteRoot (its own
+output 0). The category is derived from the genesis outpoint and cannot be forged.
+So all 18 hops are pinned to one note-tree transition, where before they were
+pinned to nothing.
+
+**It does not bind the rest.** `poolInstanceId` (bytes 32..64), `nullifierRoot`
+(96..128), and the remainder of the packed AIR are still unchecked across hops. A
+prover can still vary those hop to hop.
+
+So the gap below is narrowed, not closed. 18 tape hops carrying this design landed
+on Chipnet on 2026-08-21.
+
 ## What would close it
 
 The pay hop can introspect **its own** inputs even though it cannot read ancestors.

@@ -54,16 +54,38 @@ proof format and the one-time-pad masking.
 
 A note-auth input is **1725 B** (1684 unlocking + ~41 overhead); the lock is 35 B.
 
-| envelope | headroom | extra notes that fit |
+| envelope | headroom | extra notes in one tx |
 | --- | --- | --- |
 | **B** (498398 B of 1 MB) | 501602 B | **290** |
 | **C pay hop** (89338 B of 100000) | 10662 B | **6** |
 
-So B is effectively unbounded for realistic batch sizes. **C is not** — a batch
-larger than ~6 waiters does not fit the pay hop, and note-auth kernels cannot move
-to a tape hop because they read `<0> OP_UTXOTOKENCOMMITMENT` and only the pay hop
-spends the pool NFT. Either document a max batch size for C, or accept that large
-batches are a B-only feature.
+**Those are per-transaction figures, and only B is actually bounded by them.**
+
+An earlier draft of this document claimed note-auth "cannot move to a tape hop
+because it reads `<0> OP_UTXOTOKENCOMMITMENT` and only the pay hop spends the pool
+NFT". That is **no longer true**. Tape hops now carry a sibling NFT of the pool
+category at input 0 (see the cqz binding work), so `OP_UTXOTOKENCOMMITMENT`,
+`OP_OUTPUTTOKENCOMMITMENT` and `OP_INPUTBYTECODE` — everything the note-auth kernel
+reads — are all available on a tape hop. Nothing in the kernel needs the pool
+specifically.
+
+So batch-exit on C scales by **hop count, not envelope size**: 320 hops against a
+32 MB budget (`CHAINED_HOPS_MAX`, `CHAINED_TX_BYTES`), spreading note-auth kernels
+across hops. B is capped at ~290 by its 1 MB envelope; C is not capped by size at
+all. For large batches **C is the more scalable envelope, not the more limited one.**
+
+Two constraints that are real, and are not about size:
+
+1. **The batch must be known at genesis.** Note-auth asserts one insertion per
+   kernel (`SHA256(oldNfRoot ‖ nf) == newNfRoot`), so N waiters need N distinct
+   transitions, which means the siblings must be minted as a chain of intermediate
+   nfRoots rather than all holding OLD. Genesis mints them, so the round is fixed
+   there. cqz is unaffected: it compares the noteRoot slice (bytes 64..96), and a
+   withdraw with no change note leaves noteRoot equal (`note-auth-kernel.ts:47`).
+2. **It changes the binding claim.** `C-BINDING.md` argues the siblings pin every
+   hop to one statement. A chained-nfRoot design has hops attesting a *sequence*
+   instead. That may be equally sound, but it is a different claim and has not been
+   verified. Do not assert it without doing that work.
 
 ## Test gaps to close at the same time
 
