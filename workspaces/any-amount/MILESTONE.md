@@ -64,9 +64,10 @@ https://chipnet.imaginary.cash/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5
 
 **B — consensus, 498398 B** (unlock 5405, 36 folds + 36 R-slots + note-auth).
 Accepted by the Start9 BCHN via JSON-RPC `sendrawtransaction` through `nsenter`
-into the bitcoind netns (`acceptnonstdtxn=1`). Public Electrum does **not**
-carry the successor — >100000 B does not relay — so it sits in the lab mempool
-until the lab miner includes it. Prep/genesis/kernels are public.
+into the bitcoind netns (`acceptnonstdtxn=1`). Accepted at zero-conf by the lab
+node, which is the bar for a consensus-size land here — same as `b6818bd2…`.
+Public Electrum does **not** carry the successor (>100000 B does not relay);
+it appears publicly once the lab miner includes it. Prep/genesis/kernels are public.
 
 | | |
 | --- | --- |
@@ -146,7 +147,7 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 ## What is still not claimed
 
 - A new Chipnet land of these kernels for **C** (A `614b7077…` and B `81bb2cef…` landed 2026-08-21; C is compile + VM only). Next C land is a **new txid**.
-- A **confirmed block** for B's successor. It is accepted in the lab BCHN mempool; public relay will not carry 498398 B.
+- A **confirmed block** for B's successor (accepted at zero-conf in the lab BCHN; depth follows from the lab miner).
 - That C's 36 orbits are **same-tx** binds. C matches B on the completeness kernels — note-auth included — but 32 of the 36 orbits sit on tape hops; only 4 R-slots run on the pay tx.
 - Envelope A note/nullifier membership (A has no room; still `verifyFri`).
 - Batch-exit extra notes (one-auth FRI + this kernel still walk the first spent note).

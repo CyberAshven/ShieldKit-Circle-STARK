@@ -15,11 +15,18 @@ import {
   compileCovenantSuccessor,
   compileFundVerifierKernels,
 } from "./covenant-spend.ts";
-import { broadcastChained, compileChainedWithdraw, compileTapeFunder } from "./chained.ts";
+import {
+  broadcastChained,
+  compileChainedWithdraw,
+  compileTapeFunder,
+  compileTapeKernelGroups,
+  QUERIES_PER_TAPE_HOP,
+} from "./chained.ts";
 import { circleFriPlugin } from "../backends/circle/plugin.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor } from "../pool/mix-successor.ts";
 import { encodePublicPaa1, utxoValueFor } from "../pool/state.ts";
 import { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "./air-cqz.ts";
+import { FRI_QUERIES } from "../backends/circle/params.ts";
 import { successorFeeCoinSats, type TxEnvelope } from "./envelope.ts";
 
 export type LandWhich = "standard" | "consensus" | "chained" | "all";
@@ -290,9 +297,29 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
     );
     const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);
+    // Every tape hop needs its own kernels. Without these compileChainedWithdraw
+    // falls back to dummy prevouts (44../aa..) and the chain is unbroadcastable.
+    step = "tape-kernels";
+    const tapeHops = Math.ceil(FRI_QUERIES / QUERIES_PER_TAPE_HOP);
+    const tapeNeed = 2_400_000;
+    const tapePick = pickFunded(await listUnspent(client, wallet.address), tapeNeed);
+    if (!tapePick) {
+      return {
+        envelope: "chained",
+        ok: false,
+        genesis: genesisTxid,
+        error: `no funded utxo >= ${tapeNeed} for ${tapeHops} tape kernel groups`,
+        address: wallet.address,
+      };
+    }
+    const tapeGroups = compileTapeKernelGroups({ wallet, utxo: tapePick, tapeHops });
+    const tapeKernelsTxid = (await broadcastRetry(client, tapeGroups.raw, tapeGroups.txid)).txid;
+    await waitForTxid(client, tapeGroups.txid);
+
     step = "compile-chain";
     const chain = compileChainedWithdraw({
       wallet,
+      tapeKernels: tapeGroups.groups,
       tapeUtxo: split.tapeUtxo,
       hops,
       digest: mix.proof.slice(0, 32),
@@ -358,6 +385,7 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       prep: prepTxid ?? null,
       genesis: genesisTxid,
       tapeFunder: splitTxid,
+      tapeKernels: tapeKernelsTxid,
       kernels: kernelTxid,
       hops: sent,
       shape: {
