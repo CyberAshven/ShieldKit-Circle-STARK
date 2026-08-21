@@ -68,6 +68,10 @@ inside 10 KB / 100 KB / 1 MB is already (or now) done:
 - ZKP plugin hook: `zkpPlugins` = `circle-fri-m31` (default, sound) + `hash-lab-v0` (lab digest). Plugin switch is off-chain + registry. `hash-lab-v0` is not private and not sound. Same `PoolStatement` for both; cross-family verify rejects. CLI `pool deposit` / `pool withdraw` call the selected plugin. Notes/nullifiers/reserve do not change with family id. On-chain redeem is still Circle fold/C=QZ — not a pairing SNARK, not family-agnostic bytecode in this increment.
 - Comparison table in `COMPARISON.md` (checkable axes only).
 
+Batch-exit note walks: see [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md). It is a
+second zkp plugin family alongside FRI9, **not** a `FRI_VERSION` bump, so these
+FRI9 claims and the 2026-08-21 lands stay valid whatever happens to that work.
+
 ## Not done (honest)
 
 - Full DEEP-ALI / 128-bit algebraic note-tree hash inside the AIR (note tree uses the internal-hash knob, default SHA-256; Poseidon2-M31 is a prover-side table id). Poseidon2 four-predicate AIR **in the lock** is not shipped (TRACE-64 / ~5112 S-box wall; LDE-only bind on `@toorik2`). Monolith is not shipped.

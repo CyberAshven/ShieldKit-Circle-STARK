@@ -144,6 +144,11 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 - Consensus 36-fold spend via JSON-RPC + Chipnet miner (`b6818bd2…` is that land, **not** the hole-free kernel).
 - Envelope C: tape hops do not pay; last hop pays; missing tape hop rejects the pay tx.
 
+> Batch-exit note walks are specified in [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md)
+> as a **second plugin family beside FRI9**, not a `FRI_VERSION` bump. That file
+> also fixes the copy-don't-mutate convention: FRI10 docs are `*-FRI10.md` copies,
+> and these FRI9 documents are left alone.
+
 ## What is still not claimed
 
 - A new Chipnet land of these kernels for **C** (A `614b7077…` and B `81bb2cef…` landed 2026-08-21; C is compile + VM only). Next C land is a **new txid**.
