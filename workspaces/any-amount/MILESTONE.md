@@ -174,10 +174,12 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 - Consensus 36-fold spend via JSON-RPC + Chipnet miner (`b6818bd2…` is that land, **not** the hole-free kernel).
 - Envelope C: tape hops do not pay; last hop pays; missing tape hop rejects the pay tx.
 
-> Batch-exit note walks are specified in [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md)
-> as a **second plugin family beside FRI9**, not a `FRI_VERSION` bump. That file
-> also fixes the copy-don't-mutate convention: FRI10 docs are `*-FRI10.md` copies,
-> and these FRI9 documents are left alone.
+> Batch-exit: the **off-chain half is built**. `circle-fri-m31-batch` is registered
+> beside `circle-fri-m31` (`FRI_VERSION` stays 9), publishes every spent note's
+> auth, and passes six soundness invariants. The **on-chain half is not**: a
+> transaction can make only one nullifier insertion, so N note-auth kernels cannot
+> share one tx. See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md). Batch-exit extra
+> notes therefore remain off-chain, and the claim below stands.
 
 ## What is still not claimed
 

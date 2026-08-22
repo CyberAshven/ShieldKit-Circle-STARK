@@ -11,7 +11,11 @@
 > - Related: [`C-BINDING.md`](C-BINDING.md) (what the tape does and does not bind),
 >   [`MILESTONE.md`](MILESTONE.md), [`STATUS.md`](STATUS.md).
 
-**Status: specified, not implemented.** Written to be executed cold.
+**Status: off-chain half BUILT and passing (commit `7289d13`); on-chain half open.**
+`circle-fri-m31-batch` is registered beside `circle-fri-m31` and runs today via
+`--plugin circle-fri-m31-batch`. `FRI_VERSION` is still 9 and was never bumped.
+Six soundness invariants pass (`test/fri10-invariants.test.ts`), full suite 183/0,
+and FRI9's compile sizes are byte-identical (A 87611, B 498398).
 
 ## Documentation convention
 
@@ -84,17 +88,59 @@ only where it cannot change FRI9 behaviour; when in doubt, copy.
 
 ## Work items
 
-| # | Where | What |
-| --- | --- | --- |
-| 1 | new backend | `FriProof.auths: FriAuth[]` (length-prefixed) in the copied encode/decode. |
-| 2 | new backend | Per-auth OTP masking — `maskAuth` / `unmaskAuth` are per-auth today (~`fri.ts:596`, `:705`). |
-| 3 | new backend | `authPreimageOpen` (`:395`) and `verifyFri` loop over all auths. |
-| 4 | `covenant-spend.ts` | N note-auth kernels: `prefixExtraKernelCount` counts N, the successor adds N inputs, `compileFundVerifierKernels` mints N. Must stay behind a flag so the FRI9 path is byte-identical. |
-| 5 | `registry.ts` | One row. No `FRI_VERSION` change anywhere. |
+**Items 1, 2, 3 and 5 are DONE** (commit `7289d13`). Item 4 is the only one left,
+and it is not what this document originally said it was — see below.
 
-Item 4 is the only one touching shared code — gate it so FRI9 output does not
-change by a single byte, and check that by re-running `pool measure-tx` and
-comparing against A 87611 / B 498398 / C pay 89338.
+| # | Where | What | Status |
+| --- | --- | --- | --- |
+| 1 | new backend | `FriProof.auths: FriAuth[]`, length-prefixed in the encoding | **done** |
+| 2 | new backend | per-auth OTP pads (`auth-pad.ts`) | **done** |
+| 3 | new backend | verify checks every auth, count pinned to `withdrawalCount` | **done** |
+| 4 | `covenant-spend.ts` | N note-auth kernels **on chain** | **open — redesign needed** |
+| 5 | `registry.ts` | `circle-fri-m31-batch` beside `circle-fri-m31` | **done** |
+
+What 1-3 turned out to mean, which was less than expected: FRI9 **already**
+validates N notes correctly (`checkBatchSpends` — no duplicate index, positive
+amounts, membership, non-zero nullifier, `sum == public net`), but only when the
+**witness** carries them (`air.ts:141`). Without a witness it falls through to the
+single-note check and rejects an honest batch with `"withdraw exceeds note"`
+(`air.ts:144`), because `auths[0]` covers only its own amount. So FRI10 publishes
+the auths and feeds them to FRI9's own audited path. `buildTrace`, the AIR and the
+FRI layers are untouched and shared.
+
+## Item 4: one nullifier insertion per transaction
+
+The note-auth kernel asserts
+
+```
+SHA256(oldNfRoot || nf) == newNfRoot
+```
+
+reading `<0> OP_UTXOTOKENCOMMITMENT` for the old root and
+`<0> OP_OUTPUTTOKENCOMMITMENT` for the new one (`note-auth-kernel.ts:106-122`).
+Both come from **one** transaction, so a transaction has exactly one
+`(oldNfRoot, newNfRoot)` pair.
+
+N independent note-auth kernels in that transaction would each require
+`SHA256(oldNfRoot || nf_i) == newNfRoot`. Distinct notes give distinct `nf`, so
+that is **N distinct required values for a single output commitment —
+unsatisfiable for N > 1.** Adding kernels to one transaction cannot work no matter
+how many bytes are free.
+
+Two ways out, both design decisions rather than mechanical work:
+
+**A. One kernel per transaction, N transactions.** Envelope C only. Each tape hop
+carries one note-auth kernel and advances the nfRoot by one step, with the genesis
+siblings minted as a **chain of intermediate nfRoots** rather than all holding OLD.
+Needs the batch known at genesis. No kernel change.
+
+**B. Fold a list inside one kernel.** Change the note-auth kernel to walk N
+nullifiers and assert the folded root in a single transaction. Works on B as well
+as C, but it is a kernel change, and the kernels are the part the project has been
+most careful about.
+
+Whichever is chosen, gate it so the FRI9 path stays byte-identical and check that
+with `pool measure-tx` against A 87611 / B 498398 / C pay 89354.
 
 ## Size budget (measured)
 
@@ -105,7 +151,10 @@ A note-auth input is **1725 B** (1684 unlocking + ~41 overhead); the lock is 35 
 | **B** (498398 B of 1 MB) | 501602 B | **290** |
 | **C pay hop** (89338 B of 100000) | 10662 B | **6** |
 
-**Those are per-transaction figures, and only B is bounded by them.** An earlier
+**Those byte figures are not the real constraint.** Item 4 above shows a
+transaction can only make **one** nullifier insertion, so B — one transaction — can
+walk **one** note on chain regardless of its 501602 free bytes. The 290 figure is
+what the bytes would allow, not what the nfRoot chaining allows. An earlier
 draft claimed note-auth "cannot move to a tape hop because it reads
 `<0> OP_UTXOTOKENCOMMITMENT` and only the pay hop spends the pool NFT". That is
 **no longer true**: tape hops now carry a sibling NFT of the pool category at input
@@ -113,8 +162,10 @@ draft claimed note-auth "cannot move to a tape hop because it reads
 are all available there. Nothing in the kernel needs the pool specifically.
 
 So batch-exit on C scales by **hop count**: 320 hops against 32 MB
-(`CHAINED_HOPS_MAX`, `CHAINED_TX_BYTES`). B is capped at ~290 by its envelope; C is
-not capped by size. **For large batches C is the more scalable envelope.**
+(`CHAINED_HOPS_MAX`, `CHAINED_TX_BYTES`), one nullifier insertion per hop. Under
+option A, **C is not merely the more scalable envelope for on-chain batch-exit — it
+is the only one that works at all**, because B has a single transaction and
+therefore a single nfRoot step.
 
 Two real constraints, neither about size:
 
