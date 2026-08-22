@@ -88,15 +88,16 @@ only where it cannot change FRI9 behaviour; when in doubt, copy.
 
 ## Work items
 
-**Items 1, 2, 3 and 5 are DONE** (commit `7289d13`). Item 4 is the only one left,
-and it is not what this document originally said it was — see below.
+**Items 1, 2, 3 and 5 are DONE** (commit `7289d13`). Item 4 turned out not to be
+what this document originally said it was; its on-chain half is now built as
+**option A’** (see below), with only the landing wiring and the switchover left.
 
 | # | Where | What | Status |
 | --- | --- | --- | --- |
 | 1 | new backend | `FriProof.auths: FriAuth[]`, length-prefixed in the encoding | **done** |
 | 2 | new backend | per-auth OTP pads (`auth-pad.ts`) | **done** |
 | 3 | new backend | verify checks every auth, count pinned to `withdrawalCount` | **done** |
-| 4 | `covenant-spend.ts` | N note-auth kernels **on chain** | **open — redesign needed** |
+| 4 | `covenant-spend.ts`, `tape-tip.ts`, `covenant-p2s.ts` | N note-auth kernels on chain, via **option A’** (one per tape hop + root binding) | **built & tested; landing wiring open** |
 | 5 | `registry.ts` | `circle-fri-m31-batch` beside `circle-fri-m31` | **done** |
 
 What 1-3 turned out to mean, which was less than expected: FRI9 **already**
@@ -171,7 +172,7 @@ not something a later change broke.
 The claim stands: **N distinct required values for a single output commitment,
 unsatisfiable for N > 1.**
 
-Two ways out, both design decisions rather than mechanical work:
+Two ways out were considered:
 
 **A. One kernel per transaction, N transactions.** Envelope C only. Each tape hop
 carries one note-auth kernel and advances the nfRoot by one step, with the genesis
@@ -183,12 +184,89 @@ nullifiers and assert the folded root in a single transaction. Works on B as wel
 as C, but it is a kernel change, and the kernels are the part the project has been
 most careful about.
 
-Whichever is chosen, gate it so the FRI9 path stays byte-identical and check that
-with `pool measure-tx` against A 87611 / B 498398 / C pay 89354.
+**A was chosen.** B is neither small nor superior, measured:
+
+| | bytes |
+| --- | --- |
+| compiled note-auth kernel (redeem) | **467** |
+| per-note payload (2 x 512 B merkle paths + fields) | **684** |
+| one note-auth input, total | **1154** |
+
+Script has no loops, so B must unroll the kernel N times, and under P2SH32 the
+redeem is pushed *inside* the unlocking. So B costs `N*467` on top of `N*684` -
+the same total bytes as N separate inputs, but crammed into **one** input's 10 KB
+budget instead of N budgets. **B caps at 8 notes** (N=8 -> 9211 B; N=9 -> 10362 B,
+over the cap); A has no ceiling. B also changes the kernel's P2SH32 address, since
+the lock is `hash256(kernel)`, making N part of the pool's on-chain identity.
+
+If B is ever wanted (it would take envelope B's single consensus transaction from
+1 note to 8), it must be a **new, differently-named kernel beside the audited one**,
+never an edit to it. Deciding to switch envelopes over to it is an audit call.
+
+## Option A' - the soundness gap in plain A, and what closes it
+
+Plain A does not work. Each hop's kernel verifies in the real VM on its own, but
+the kernels are **unobserved**:
+
+- nothing on a tape hop *requires* a note-auth kernel to be present - the pool
+  covenant's `requireFriInputsAsm` guards input 0 of the *pool* transaction, and
+  tape hops spend a sibling under its own lock instead;
+- the hop output NFTs are dead ends - *"Nothing spends this output again"*
+  (covenant-spend.ts);
+- the tip chain carries only the digest and the count - `L(d,i)` asserts output
+  **1** and says nothing about output 0 (tape-tip.ts); and
+- nothing else constrains the root: `checkBatchSpends` (air.ts:148) checks
+  membership, duplicate indices, amounts, non-zero nullifiers and
+  `sum == public net`, but **never** that `newState.nullifierRoot` is the correct
+  fold. AIR cells 21/22 hold the two roots and appear in **no constraint** - they
+  are committed, not constrained.
+
+So a prover could skip every hop kernel and the pool would not notice. Since the
+nullifier accumulator is the double-spend defence, that must not be possible. The
+enforcement lives entirely in the on-chain kernel, exactly as covenant-p2s.ts:28
+says: `nullifierRoot (equal or SHA-256(old||nf))`.
+
+**This is a gap in the unbuilt N>1 feature, not in anything landed.** With one note
+a single kernel enforces exactly one step, which is correct. FRI9 as shipped is fine.
+
+A' closes it by making the running root reach the pool. Three additions, all
+**opt-in**, none touching the audited kernel:
+
+| # | where | what |
+| --- | --- | --- |
+| 1 | `covenant-spend.ts` | `siblingNfts.commitments?` - mint sibling *i* carrying R_i instead of the shared OLD PAA1 |
+| 2 | `tape-tip.ts` | `tapeTipRedeemChainWithRoots` / `tapeTipLockChainWithRoots` - tip *i* asserts its hop's own output-0 nfRoot == R_{i+1} |
+| 3 | `covenant-p2s.ts` | `finalNfRoot?` - the pool covenant asserts its output-0 nfRoot == R_N |
+
+Consensus then verifies the whole chain: R_N is reachable from R_0 by N honest
+nullifier insertions, each for a note that walks to the committed noteRoot. Piece 2
+is what makes the per-hop kernels observable - a hop cannot write a root its kernel
+did not produce, and a hop carrying **no** kernel cannot forge one either.
+
+Why this is legal at all: cqz's `bindPackedStmtToPaa1Asm` binds only **noteRoot**
+(PAA1 bytes 64..96) and **seq** (bytes 8..16). **nullifierRoot (bytes 96..128) is
+unbound by cqz**, so a hop may legally carry its own intermediate. And a full-note
+batch exit leaves `noteRoot` unchanged (`transition.ts`: `noteRoot: oldState.noteRoot`),
+so the constant-noteRoot binding holds at every hop. Chaining hops by *spending*
+would break the seq bind instead - hop i+1's input would carry NEW.seq where cqz
+demands OLD.seq - which is why the chain lives in the **values** (pre-minted
+siblings), not the UTXO topology.
+
+Verified in `test/batch-root-binding.test.ts` (12 tests), including the decisive
+one: *"the tip pins the root even when the hop carries NO note-auth kernel."*
+FRI9 stays byte-identical - measured A 87611 / B 498398 / C pay 89354 /
+C total 1662420, unchanged.
+
+**Still open, and deliberately not done here:** wiring A' into `land-envelopes.ts`
+so a real N-note batch lands on Chipnet, and the FRI10 switchover itself. Those are
+audit calls, not mechanical work.
 
 ## Size budget (measured)
 
-A note-auth input is **1725 B** (1684 unlocking + ~41 overhead); the lock is 35 B.
+A note-auth input is **1725 B** when it carries a change note (1684 unlocking + ~41
+overhead); the lock is 35 B. Batch exit is **full-note only**, so it mints no change
+and its unlocking is **1154 B** measured - 467 B redeem + 684 B payload + push
+overhead. Both figures are right, for their own case.
 
 | envelope | headroom in one tx | extra notes in one tx |
 | --- | --- | --- |

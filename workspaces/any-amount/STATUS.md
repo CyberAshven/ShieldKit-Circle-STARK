@@ -72,9 +72,13 @@ inside 10 KB / 100 KB / 1 MB is already (or now) done:
 Batch-exit note walks: `circle-fri-m31-batch` is registered alongside FRI9
 (**not** a `FRI_VERSION` bump, so these claims and the 2026-08-21 lands stay
 valid). Its published proof carries every spent note's auth, so a verifier without
-the witness can run the membership/nullifier/sum checks. **On-chain batch note
-walks are still not shipped**: one transaction can make one nullifier insertion, so
-N note-auth kernels cannot share a tx. See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
+the witness can run the membership/nullifier/sum checks. On-chain batch note walks
+are **built and tested, not shipped**: one transaction can make one nullifier
+insertion, so **option A'** spreads N kernels across envelope C's tape hops and
+binds the running root into the pool (pre-minted sibling roots, root-pinned tip
+chain, `finalNfRoot` covenant pin; 12 tests; FRI9 byte-identical). Not wired into
+landing, and no N-note batch has been broadcast.
+See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
 
 ## Not done (honest)
 

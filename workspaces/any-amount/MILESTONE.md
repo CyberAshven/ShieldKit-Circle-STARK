@@ -176,10 +176,14 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
 > Batch-exit: the **off-chain half is built**. `circle-fri-m31-batch` is registered
 > beside `circle-fri-m31` (`FRI_VERSION` stays 9), publishes every spent note's
-> auth, and passes six soundness invariants. The **on-chain half is not**: a
-> transaction can make only one nullifier insertion, so N note-auth kernels cannot
-> share one tx. See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md). Batch-exit extra
-> notes therefore remain off-chain, and the claim below stands.
+> auth, and passes six soundness invariants. The on-chain half is **built and
+> tested, not landed**: N note-auth kernels cannot share one transaction, so
+> **option A'** puts one per envelope-C tape hop and binds the running nullifier
+> root end to end - pre-minted sibling roots, a root-pinned tip chain, and a
+> `finalNfRoot` pin on the pool covenant (12 tests; FRI9 byte-identical at
+> A 87611 / B 498398 / C pay 89354). Nothing is wired into landing and no N-note
+> batch has been broadcast, so batch-exit extra notes remain off-chain in practice
+> and the claim below stands. See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
 
 ## What is still not claimed
 

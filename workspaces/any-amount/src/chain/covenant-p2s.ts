@@ -279,14 +279,35 @@ export function compilePoolCovenant(opts?: {
    * covenant. See C-BINDING.md.
    */
   tapeTipLock?: Uint8Array;
+  /**
+   * Option A' (FRI10-BATCH-EXIT.md): require output-0's nullifierRoot to be
+   * exactly this. Closes the batch chain — the tape hops each prove one honest
+   * step R_i -> R_{i+1} under their own root-pinned tip
+   * (`tapeTipRedeemChainWithRoots`), and this pins the pool's landing point R_N.
+   *
+   * Needed because the note-auth kernel advances the root by exactly one step, so
+   * a single kernel cannot express an N-note batch, and nothing else constrains
+   * the root: `checkBatchSpends` (air.ts:148) does not check the fold, and AIR
+   * cells 21/22 are assigned but appear in no constraint.
+   *
+   * nullifierRoot is bytes 96..128 of the 128-byte PAA1 (state.ts:77).
+   */
+  finalNfRoot?: Uint8Array;
 }): Uint8Array {
   const slots = opts?.slotKernels ?? SLOT_KERNEL_COUNT;
   const requireTape = opts?.tapeTipLock
     ? `
 OP_TXINPUTCOUNT OP_1SUB OP_UTXOBYTECODE <0x${binToHex(opts.tapeTipLock)}> OP_EQUALVERIFY`
     : "";
+  if (opts?.finalNfRoot && opts.finalNfRoot.length !== 32) {
+    throw new Error(`finalNfRoot must be 32 bytes, got ${opts.finalNfRoot.length}`);
+  }
+  const requireFinalRoot = opts?.finalNfRoot
+    ? `
+<0> OP_OUTPUTTOKENCOMMITMENT <96> OP_SPLIT OP_NIP <0x${binToHex(opts.finalNfRoot)}> OP_EQUALVERIFY`
+    : "";
   const bin = cashAssemblyToBin(
-    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false)}${requireTape}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
+    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false)}${requireTape}${requireFinalRoot}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
   );
   if (typeof bin === "string") throw new Error(`covenant compile: ${bin}`);
   return bin;
@@ -300,6 +321,8 @@ export function poolLockP2sh32(opts?: {
   slotKernels?: number;
   forceNoteAuth?: boolean;
   tapeTipLock?: Uint8Array;
+  /** Option A': pin output-0 nullifierRoot. See compilePoolCovenant. */
+  finalNfRoot?: Uint8Array;
 }): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compilePoolCovenant(opts)));
 }
@@ -308,6 +331,8 @@ export function poolLockP2sFor(opts?: {
   slotKernels?: number;
   forceNoteAuth?: boolean;
   tapeTipLock?: Uint8Array;
+  /** Option A': pin output-0 nullifierRoot. See compilePoolCovenant. */
+  finalNfRoot?: Uint8Array;
 }): Uint8Array {
   return compilePoolCovenant(opts);
 }

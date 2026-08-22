@@ -160,7 +160,18 @@ export function compileCovenantSpend(args: {
    * bindPackedStmtToPaa1Asm finds a commitment there, and mutates it to NEW on
    * its own output 0. They land at vout 2..2+count-1; change stays at vout 1.
    */
-  siblingNfts?: { count: number; lockingBytecode: Uint8Array; satsEach?: bigint };
+  siblingNfts?: {
+    count: number;
+    lockingBytecode: Uint8Array;
+    satsEach?: bigint;
+    /**
+     * Option A' (FRI10-BATCH-EXIT.md): mint sibling i carrying the intermediate
+     * nullifier root R_i instead of the shared OLD PAA1, so hop i can advance
+     * R_i -> R_{i+1} with its own note-auth kernel. Omit for FRI9, where every
+     * sibling carries the same commitment and the tape moves no root.
+     */
+    commitments?: readonly Uint8Array[];
+  };
   /**
    * Envelope C's pay hop runs 4 slots but still carries a note-auth kernel, so its
    * pool lock must expect one. Genesis commits the lock, so it has to be set here
@@ -181,6 +192,17 @@ export function compileCovenantSpend(args: {
   // A token output with a 128-byte commitment is ~210 B, so BCH dust is
   // ~3*(210+148) = ~1074 sats. 1000 drew "dust (code 64)" at genesis.
   const siblingSats = args.siblingNfts?.satsEach ?? 3_000n;
+  const siblingCommitments = args.siblingNfts?.commitments;
+  if (siblingCommitments) {
+    if (siblingCommitments.length !== siblingCount) {
+      throw new Error(
+        `sibling commitments ${siblingCommitments.length} != count ${siblingCount}`,
+      );
+    }
+    for (const [i, sc] of siblingCommitments.entries()) {
+      if (sc.length !== 128) throw new Error(`sibling commitment ${i} must be 128 bytes`);
+    }
+  }
   // A 128-byte-commitment token output is ~170 B; 1200 only covers the base tx.
   const fee = 1_200n + BigInt(siblingCount) * 200n;
   const value = utxoValueFor(args.state);
@@ -220,13 +242,16 @@ export function compileCovenantSpend(args: {
         lockingBytecode: { compiler: c, script: "lock", data },
         valueSatoshis: change,
       },
-      ...Array.from({ length: siblingCount }, () => ({
+      ...Array.from({ length: siblingCount }, (_, i) => ({
         lockingBytecode: args.siblingNfts!.lockingBytecode,
         valueSatoshis: siblingSats,
         token: {
           amount: 0n,
           category: hexToBin(args.utxo.tx_hash),
-          nft: { capability: "mutable" as const, commitment },
+          nft: {
+            capability: "mutable" as const,
+            commitment: args.siblingNfts!.commitments?.[i] ?? commitment,
+          },
         },
       })),
     ],
