@@ -127,6 +127,50 @@ that is **N distinct required values for a single output commitment —
 unsatisfiable for N > 1.** Adding kernels to one transaction cannot work no matter
 how many bytes are free.
 
+### Verified five independent ways (2026-08-22)
+
+This was double-checked before acting on it, because the whole item hinges on it
+and an earlier claim in this work ("FRI10's exposure is closed") turned out to be
+false when tested. Each check below is independent of the others.
+
+1. **The assembly itself.** The withdraw branch after `OP_ELSE`
+   (`note-auth-kernel.ts:126-175`) is literally
+   `<0> OP_UTXOTOKENCOMMITMENT / EXTRACT_NF_ROOT / OP_SWAP / OP_CAT / OP_SHA256 /
+   <0> OP_OUTPUTTOKENCOMMITMENT / EXTRACT_NF_ROOT / OP_EQUALVERIFY`. The indices are
+   absolute `0`, so every kernel in a transaction reads the **same** input 0 and the
+   **same** output 0 regardless of which input slot it occupies.
+2. **There is only one kernel variant.** `compileNoteAuthLockP2sh32()` takes **no
+   parameter**, unlike `compileSlotsLockP2sh32(slot = 0)` (`air-cqz.ts:1325`) and
+   `compileFoldLockP2sh32(nFold = 1, queryIndex = 0)` (`fold-kernel.ts:162`). Kernel
+   *i* cannot be made to differ from kernel *j*.
+3. **Arithmetic.** For two real notes, the required new roots are distinct
+   (`af276d46…` vs `d60501d3…`). One 128-byte commitment holds one value.
+4. **No multi-note support exists anywhere.** Every call site of
+   `compileNoteAuthLockP2sh32` / `noteAuthKernelUnlocking` emits at most one per
+   transaction, and no covenant path counts note-auth inputs above one.
+5. **Empirically, in the real BCH 2026 VM.** Building the transactions and running
+   `vm.verify`:
+
+   | scenario | result |
+   | --- | --- |
+   | state advanced by 1 note, kernel for that note | **accepted** |
+   | same state, kernel for a *different* note | rejected, `OP_VERIFY` at its input |
+   | both kernels in one transaction | rejected at the second kernel's input |
+   | genuine 2-note batch exit, either kernel alone | **rejected** |
+   | genuine 2-note batch exit, both kernels | **rejected** |
+
+   The last two rows are the important ones. A real batch moves the root by two
+   steps, `SHA256(SHA256(old ‖ nf₀) ‖ nf₁)`, which equals neither single-step value,
+   so on a genuine batch **neither** kernel is satisfiable — not just "not both".
+
+**Provenance.** The kernel came from commit `5f47e04` *"On-chain note Merkle,
+nullifier, and amount/auth on B"*, written before this line of work. There is no
+batch or N-note intent anywhere in the file. The one-note shape is original design,
+not something a later change broke.
+
+The claim stands: **N distinct required values for a single output commitment,
+unsatisfiable for N > 1.**
+
 Two ways out, both design decisions rather than mechanical work:
 
 **A. One kernel per transaction, N transactions.** Envelope C only. Each tape hop
