@@ -1,0 +1,3101 @@
+General protocol spaces banking on
+
+freedom all
+
+right let's get started so episode 10 of
+
+n of General bull let's see what's going
+
+on in the Bitcoin cash ecosystem with uh
+
+definitely with with no exaggeration one
+
+of the most prolific uh developers and
+
+builders uh not only
+
+of uh you know infrastructure and
+
+internal things but you know apps and
+
+things that actual users can use you
+
+know from bottom to top uh Matthew so
+
+welcome to General bull thank you for
+
+joining us uh hello thank you for that
+
+introduction it was very kind of you uh
+
+yeah I'm glad to be here glad to be hear
+
+him as
+
+guest yeah I know we uh We've we've
+
+worked with you Matthew uh I'm not
+
+probably maybe a lot of people aren't
+
+don't know that but we've worked
+
+together and it's always been a pleasure
+
+to work with you uh very easy to work
+
+with and talented developer despite your
+
+uh your young age already quite
+
+accomplished uh and and education as
+
+well right your uh your focus is not
+
+only development maybe do you want to
+
+quickly give a little background for
+
+yourself that that people may not know
+
+oh yeah so I come from an economic
+
+background it was my studies here at
+
+University uh and then when I graduated
+
+from University at the master of
+
+Economics then I could uh join you guys
+
+at General protocols for I think two
+
+months so I I was like a a junior
+
+developer in the sense that programming
+
+was more of a a side thing that was
+
+selftaught and I feel like I I learned a
+
+lot by just being in in a team and I
+
+could work like semi-independently but
+
+still uh just with the with the existing
+
+tooling that you guys had set up it was
+
+my first time like working on a a big
+
+types script project alone and then yeah
+
+so I feel like I learned a lot there
+
+after University and then my timing was
+
+kind of perfect because I was um like
+
+for a long time watching the Bitcoin
+
+cash upgrade and the native
+
+introspection upgrade happened and there
+
+was a bunch more possibility for smart
+
+contract developers but then when I
+
+really
+
+started to get involved on my own was
+
+right before the cash tokens upgrade so
+
+one year ago actually when the chipet
+
+got upgraded for cash tokens so then I
+
+could already play around with the cash
+
+token stuff actually I I used the
+
+tooling built by pot so the main JS
+
+Library which made it really easy to get
+
+started so po built that or like
+
+upgraded the library for cash tokens and
+
+then I saw that nobody had taken the
+
+opportunity to build something with it
+
+so I started playing around with it uh
+
+by making a web wallet and that is what
+
+has become or grown into cashion I today
+
+so I I feel like my timing was kind of
+
+Lucky in that
+
+regard because
+
+noway just saying that there so much
+
+opportunity but it's a in the reverse
+
+also right Bitcoin cash ecosystem is so
+
+lucky that the timing worked out that
+
+this
+
+Economist finished their studies and
+
+it's like I'm gonna use this perfect fit
+
+of economics and desire to build and
+
+Technical capability to build this thing
+
+that evolved into like a major piece of
+
+bch technology and bch infrastructure
+
+that was amazing timing for bch itself
+
+so I think everybody really appreciates
+
+uh that timing from the other direction
+
+as
+
+well yeah I think with with cash eyes uh
+
+the the main thing I got to do was
+
+like show like advertise to all other
+
+builders well this is interesting and
+
+this is how I'm doing it because now
+
+we're seeing like a handful of wallets
+
+already and I know of at least two other
+
+people that are building their own
+
+wallets uh so I think we'll have like a
+
+driving wallet ecosystem but the main
+
+thing I proud of is of like nudging
+
+Rosco to get working on cash grip like
+
+to upgrade cash for cash tokens as soon
+
+as possible and that's what yeah many
+
+projects have now us first the bit cuts
+
+which which were really early I think a
+
+few weeks after the cash tokens upgrades
+
+and then now I I recently use it myself
+
+with the cash ninjas nft mint but then
+
+in between there was also f. cach and
+
+top swap of course yeah so just a bunch
+
+of different projects that have utilized
+
+the uh the cash
+
+scripts yes and and again from the other
+
+side of that picture I really appreciate
+
+that you uh took a really active role in
+
+in getting cash gript R and Rosco
+
+motivated again I was very happy to to
+
+see all that going you guys together are
+
+a pretty superpower that uh that duo is
+
+pretty awesome I I was actually hoping
+
+that he might be able to join us but
+
+he's still traveling right now he's in
+
+the middle of uh some uh heavy travel so
+
+I don't think it would make sense for
+
+him but if he happens to show up I would
+
+I would love to get him on here and and
+
+talk about cash script too yeah that's
+
+right You've Been instrumental in the
+
+cash script upgrad
+
+uh to what degree were you following and
+
+really uh into the chips that led to uh
+
+you know the introspection and then cash
+
+tokens those two specifically like to
+
+what degree were you following and and
+
+interested in those as they buil up oh
+
+yeah I would say I was following very
+
+closely because I was already like very
+
+interested in the smart contract stuff
+
+when everything needed to happen with
+
+the heckey introspection way um so yeah
+
+I try to understand all the the
+
+contracts back then like masas and there
+
+were not too many and of course any
+
+hedge and the nice thing about cash was
+
+that the he actually got abstracted away
+
+so as a as a smart contract dep you
+
+didn't need to understand how it worked
+
+really but uh yeah I wanted to
+
+understand so I just played around with
+
+the all the examples and I asked some
+
+questions and people were very kind to
+
+help me out and then slowly yeah so I
+
+was monitoring for a long time I became
+
+involved in bch in 2018 and I would say
+
+that I've been like very closely
+
+involved ever since but I I wasn't a
+
+builder yet
+
+so ha slowly I like how you said slowly
+
+it's like went from graduating to oh and
+
+I looked at all these examples and now
+
+I'm the one writing the the playground
+
+that everybody else uses to make
+
+contracts you're the one who made the
+
+playground right the main developer over
+
+that Rosco started it at a on but then
+
+it's like he didn't touch it anymore so
+
+it had the core features but it was
+
+still missing a lot of stuff to make it
+
+a nice developer experience so I yeah I
+
+got to polish it when when I had the
+
+vacation I just took a week off to just
+
+work on the
+
+playground yeah so that was fun so I
+
+just I got to do
+
+the oh it's a if you go to cash.org it's
+
+linked there now so so there's a link to
+
+the playground and I think the subdomain
+
+is playground. cash.org okay there you
+
+go cash.org go there and check out that
+
+playground if you're a developer um it's
+
+fantastic it's super useful to be able
+
+to quickly grasp like what a smart
+
+contract means because a lot of people
+
+coming from uh evm ethereum
+
+world will look at Cash script and maybe
+
+think oh okay I get it but they really
+
+don't get utxo they really don't grock
+
+it until you do something like the cash
+
+script playground and you get to
+
+understand oh okay right each coin is a
+
+contract okay it it takes a little bit
+
+of uh of reorganizing your thoughts to
+
+understand it and I think the playground
+
+is probably one of the best place to to
+
+do that yeah just overall the cash care
+
+documentation is very good so I was
+
+lucky uh with that as well so I could
+
+get it and didn't know pretty much
+
+anything but then I learned like
+
+JavaScript by getting started with uh
+
+with cash so I needed node install to
+
+run the uh an npm to run some of the
+
+programs and yeah that was like my foot
+
+in the door so I just started by running
+
+the examples as described in
+
+documentation and yeah and then it
+
+explains itself pretty much yeah yeah it
+
+does uh as as long as you are willing to
+
+let go of the account ideas actually
+
+that's something I've asked uh other
+
+people who have done evm stuff here like
+
+GI who was on previously um I'd like to
+
+know what's your opinion on the
+
+development that you do in evm with
+
+solidity or other tools and then the
+
+current state to-day of of cash script
+
+like not where we were but where we are
+
+today what's what's the big difference
+
+is what's the what's the difficult part
+
+of coming from evm into the utxo and
+
+cash tokens and uh the the bch VM like
+
+what's the hard part of that and what's
+
+the easy part all right yeah so I I
+
+don't I don't actually come from the evm
+
+so I started with cash C was my
+
+introduction to Smart contracts but I
+
+never I never wrote a salid myself I
+
+didn't know I never yeah I never really
+
+really try so the the only thing I'm
+
+doing now is I'm taking a look at
+
+solidity contracts to understand how
+
+they are doing stuff to learn for cash
+
+scpt but I have never like deployed a
+
+contract on E myself a native of utxo
+
+that's fantastic yeah and also not not
+
+even for smart Bitcoin cash so it's not
+
+like there I got involved with it I was
+
+just working on the the bridging stuff
+
+but I didn't get involved in the smart
+
+contract side of things and one thing
+
+that that I do notice from solidity so
+
+this earlier today I had a meeting with
+
+Rosco as well to work on like air coing
+
+session to work on cash caped and this
+
+like this Edition was special because P
+
+joined as well because p is now has been
+
+funded to work on uh debugging tools so
+
+I was very glad that he joined our
+
+meeting so and this is something where
+
+we're also looking at solidity for so
+
+we're looking how does solidity do like
+
+uh errors and how do they do console
+
+logs because we want to emulate them in
+
+this regard like we will have a two-way
+
+mapping between the as the source code
+
+and then the compiled code that will be
+
+so useful yeah yeah yeah so so we
+
+discussed this with Pon and it's looking
+
+good he thought about this very well and
+
+then because currently as you you uh
+
+from General protocol calls will
+
+probably be the most familiar with this
+
+that it's a real headache to do smart
+
+contract debugging currently because
+
+there's no real tooling there's the bit
+
+out ID IDE and there used to be Meep but
+
+that that's it so you need to go low
+
+level to do the debugging and you have
+
+even no clue where the error was it just
+
+says transaction rejected sometimes it
+
+says not enough funds or most of the
+
+time it just says uh check check fgy
+
+file failed or something to that extent
+
+yeah or depending on what node you talk
+
+to it'll tell you something different
+
+you never know exactly what message
+
+you're gonna get yeah so now if it can
+
+say oh validation failed at line five it
+
+will be way easier for smart contract
+
+developers so great yes yeah and then it
+
+will throw the error that you placed in
+
+your a Casp file so it can be like a uh
+
+for example wrong signature or something
+
+like
+
+that oh this is so foundational this
+
+stuff is so so important to have I love
+
+it and then the other thing we're
+
+looking at at solidity for is for the
+
+library stuff so that's what Rosco and I
+
+are focusing on so but is mainly doing
+
+yeah it's working on the debugging tools
+
+Ros and I are working on the library so
+
+you can make kind of functions or macros
+
+that you can use in your smart contract
+
+um and this way you can yeah have
+
+abstract functions that that you can
+
+give a name and that take parameters and
+
+that do the same typing as as the rest
+
+of CCP so that for example take two
+
+integers and you know at the end of the
+
+little program it returns one integer
+
+and this type of thing will be very
+
+handy
+
+uh with complex stuff for example the
+
+fix. cach developers they already wanted
+
+something like this to play around with
+
+a more complex mathematics for their
+
+decks so this way they didn't need to
+
+have the same code all over their
+
+contract they just can abstract this out
+
+and give this a nice name
+
+and yeah so that's what Rosco and I are
+
+working on that's fantastic there there
+
+was also the library aspect right
+
+because um we didn't say it here but the
+
+cash script team was
+
+funded in a flip starter recently to do
+
+some expansions uh one of them was the
+
+library aspects of cash script right and
+
+one of them what was the other main part
+
+of it um yeah the other part we already
+
+finished it was uh changes to the SDK
+
+like an advanced transaction Builder
+
+which is yeah it's it's called Advanced
+
+but uh it's not actually harder to use I
+
+think it just makes it requires you to
+
+select you utxos yourself and handle
+
+change outputs so you need to be more
+
+precise like it but Mo most of the time
+
+with smart contracts you want to be very
+
+precise anyways yes and because of the
+
+way we built the transaction like we we
+
+designed the transaction Builder you can
+
+also do other types of smart or like
+
+multiple smart contracts in the inputs
+
+or even no smart contracts in the inputs
+
+and only pay to public keash inputs it's
+
+very flexible it's like a general
+
+generalized transaction Builder which
+
+happens to to work very well with cash
+
+inputs yeah very very well that's great
+
+and how's the the interaction with all
+
+of these because now you've got two or
+
+three things different uh different
+
+things going on at the same time the
+
+different features that you're
+
+developing is that uh getting
+
+complicated or is it still pretty
+
+straightforward because it's wellmade at
+
+the at the base level yeah so for the
+
+transaction Builder that's already
+
+finished and that will not interact with
+
+the future uh things but the source
+
+mapping what what p is working on for
+
+the debugging tools would interact with
+
+the libraries right because if you make
+
+a source map but then you have Imports
+
+and the source map needs to also work
+
+with Imports so this is still something
+
+we are revolving we're starting with the
+
+easy case where there are no no use of
+
+libraries but uh but but need yeah but
+
+needs to make sure that this
+
+his Source map is flexible enough so it
+
+takes into account libraries from the
+
+start so if you if you end up using
+
+libraries that the debugging also yeah
+
+the debug tooling should also work with
+
+the libraries of course exactly yeah
+
+okay that's really great to hear that
+
+Pat is working with you guys and you
+
+guys invited him to to talk with you and
+
+work together on it I love I love to
+
+hear that that's so good to see uh
+
+people really getting together and
+
+working on things together instead of an
+
+just little individual
+
+uh yeah it's also easier to talk things
+
+out if there's a like a disagreement on
+
+how things should be implemented or
+
+designed it's very easier yeah and and
+
+you catch it earlier there's just so
+
+many benefits yeah you don't want to
+
+overdo communication but it's hard to
+
+overdo Communication in
+
+sometime yeah I think we're in bch we're
+
+most likely at the other end of the
+
+spectrum where we don't have enough
+
+cooperation and and talking between
+
+different people who build on the yeah
+
+similar stuff that's right yeah yeah
+
+I've been happy with the uh the native
+
+wallet group it's a a somewhat
+
+contentious topic you know we've talked
+
+about it several times on this uh show
+
+and then of course you are very well
+
+knowledgeable about the whole setup and
+
+topic but it's a kind of contentious
+
+topic but at the same time there's a lot
+
+of discussion and people talking about
+
+different ways to do things
+
+and I I've I'm still very happy with
+
+everything in the bch ecosystem um
+
+bitcoincash research.org where everybody
+
+discusses topics argues fights agrees
+
+disagrees whatever and it's all
+
+still I mean maybe like you said
+
+communication could be more but overall
+
+it's it's very positive and constructive
+
+and going in a good direction I
+
+think yeah so one thing for the native
+
+wallet is I also remember when I was
+
+starting out cash I and saying uh I
+
+would be implementing cash tokens I
+
+remember that there was some I think
+
+confusion in communication because you
+
+said how would this do like cash tokens
+
+without the specific app metadata and
+
+how with it keep state but yeah what I
+
+what I meant or what I actually
+
+implemented was this kind of General
+
+funable tokens and general nfds like
+
+very simple Collectibles but you're
+
+right for a for a native wallet we will
+
+need uh app specific information like
+
+State that's unique to a smart contract
+
+and that the wallet needs to remember
+
+and you need uh like we we currently
+
+have the wallet connect specification
+
+but yeah to move beyond that to have
+
+some kind of contract templates where
+
+the wallets can recognize Which smart
+
+contract is being used and which
+
+parameters or is or if it's even safe at
+
+all to send money to the to an unknown
+
+address like that yeah yeah yeah I yeah
+
+uh I've it's hard to expl exp it without
+
+getting into the weeds but something
+
+that started off contentious maybe due
+
+to bad communication on on my part I
+
+don't know but uh not my part but like
+
+you know just the the topic in general
+
+because there's different ways to
+
+approach it but I think it's it's going
+
+in a good direction where everybody
+
+understands there there's a lot of room
+
+for improvement and and there's also
+
+steps along the way and both of those
+
+are okay it's okay to to to keep
+
+improving and and have a high high
+
+expectation for the long
+
+term definitely I I wanted to to say on
+
+a on a different topic um back going
+
+back to your
+
+education that it's pretty interesting
+
+you know in in some Industries you get
+
+people who are Builders who have an
+
+interest in certain things Builders who
+
+have an interest in a particular thing
+
+like that matchup and uh economics and
+
+software development is such a weird and
+
+cool mix for me to see in in Bitcoin
+
+cash and uh I guess kind of crypto in
+
+general but especially in Bitcoin cash
+
+where there's there's quite a lot of
+
+people who have some kind of Economics
+
+background and it's really important to
+
+them and they're like very serious about
+
+money you know because when I go out in
+
+the general you know conversation with
+
+people in in in my life there's very few
+
+people who are like yes money is very
+
+important you know they so it's nice to
+
+have people who who have both of those
+
+right software development and building
+
+and wanting to make products and also
+
+they think money and finance and uh
+
+Financial systems are are are very
+
+important also so yeah again just to
+
+reiterate I think we're really lucky
+
+that that you uh decided to to to work
+
+on bitcoin cash and that's sorry that's
+
+what I wanted to ask is what is it that
+
+made you who have uh an economics
+
+background and some uh level of building
+
+and technical experience or expertise or
+
+Talent what made you interested in to
+
+choose Bitcoin cash over the many other
+
+options that are
+
+available oh so I how I ended up um in
+
+the Bitcoin cash Camp uh it was 20 uh
+
+2017 when I joined like the
+
+cryptocurrency space so it was a very
+
+hectic time to get interested because
+
+there was a whole seget and seg to and
+
+the split and Bash and then there was
+
+also the bull run so everything was
+
+going up and BTC at high fees so the
+
+first coin I actually bought and used
+
+was ethereum but then ethereum was also
+
+having problems so then I thought
+
+Litecoin is kind of interesting uh and I
+
+was a student at the time so I was never
+
+going to pay $50 transaction fees right
+
+anywhere near that yeah and and etherum
+
+was always interesting to me because of
+
+italic and the whole different Vision
+
+because in in 2017 there was not the not
+
+really the negatives that we see today
+
+it was still more the internet computer
+
+or the beginnings of Ico but defy wasn't
+
+yeah wasn't term yet and and especially
+
+the ecosystem on ethereum that we see
+
+now with all the layer tws it totally
+
+was not developed yet so then after I
+
+started to learn more I learned about
+
+the Bitcoin history and about the block
+
+debate and then it just made sense to me
+
+that Bitcoin BTC is a very like
+
+nonsensical longterm path and I think
+
+that has been proven right so now their
+
+main Innovation is an accident which is
+
+an orinal and besides that there's uh
+
+every day there's seemingly another
+
+thing of bad news about the lightning
+
+Network and other Concepts about
+
+covenants or side chain proposals they
+
+don't anywhere so yeah this was clear to
+
+me from looking at Bitcoin wow and I
+
+guess yeah I guess I just never got
+
+involved in the E community at all
+
+because I I could have but I just
+
+thought that it was for example by
+
+hearing Roger ver speak things like that
+
+I got really passionate about the
+
+Bitcoin Mission as as like originally
+
+intended not only not in a constraint
+
+Vision but like uh in maximizing what
+
+Bitcoin could be and I feel that's the
+
+Bitcoin cash experiment with the old
+
+original maximalism right like okay
+
+let's do everything yeah yeah let's see
+
+how far we can take
+
+this okay that's that's really
+
+interesting so you came at it from kind
+
+of a rational decision making there's
+
+these things available but this has
+
+these problems that's a possibility but
+
+this is the one that lines up with what
+
+you were interested in what you were
+
+excited about that's really similar to
+
+my story too uh on the later part of it
+
+my my early part was really simple like
+
+oh let me get rich quick but yeah but
+
+then I I later realized how important it
+
+was wow okay that that's that's very
+
+interesting I would love for more people
+
+to to come in that way right but people
+
+who are interested and they see that
+
+that there is actually a vehicle for
+
+this uh well for me it right it's
+
+permissionless money a permissionless
+
+money for everyone for as many people as
+
+possible to use is that kind of your
+
+approach what it is that's interesting
+
+to you how would how would you summarize
+
+what is it that is your goal the
+
+original goal for
+
+you um so I have kind of like a two part
+
+answer so I would also say that making
+
+it money is the the end goal having
+
+people use it as spe to be cash like
+
+having a separate
+
+economies uh like but then the how do we
+
+get there is the the obvious question
+
+and I think to have like this network
+
+effects you like what what general
+
+protocols is working on you need
+
+stability
+
+Solutions and you need yeah you need
+
+some already existing use cases that are
+
+not money to bootstrap the Money Network
+
+effect so I think Defi and all things
+
+related to it where you have your um
+
+Native currency like bch being traded uh
+
+and having a lot of liquidity by being
+
+traded against tokens blockchain native
+
+assets I think that's the way to go so
+
+like short term I think that's what we
+
+should be aiming for maybe uh digital
+
+products and defi because I think aiming
+
+for merchant adoption at this stage is
+
+kind of like self self defeating and if
+
+you've seen a few cycles of people
+
+trying to get adoption in local area and
+
+then it's totally not being used or
+
+falling apart after price crashes or the
+
+merchants being financially hurt or
+
+losing money on speculating or something
+
+like that then you yeah you just get
+
+discouraged from trying the same thing
+
+over and over again so I wouldn't focus
+
+on Merchant adoption or using it as
+
+retail money right now but I love the
+
+idea of having a counter economy where
+
+you try to buy as many yeah goods and
+
+services but then you need like-minded
+
+people who are already interested in bch
+
+so that for the places where most people
+
+live that scales very yeah very
+
+difficult
+
+um that's a great answer yeah not only
+
+where it wants to go which it sounds
+
+like we're we're quite aligned there but
+
+also how do you get there and we're also
+
+quite aligned on that as well you've got
+
+to make things that are useful for
+
+people that provide actual utility um
+
+the summary I make for it is for the old
+
+people like me who lived through the
+
+doom boom you have to graduate from the
+
+from the pets.com era into the
+
+amazon.com era right from from random
+
+speculative just jumble of whatever is
+
+going on into actual products platforms
+
+and services that are useful to people
+
+and yeah that's what we're trying to do
+
+with General protocols and and you're
+
+doing that as well providing apps for
+
+people and uh things that are actually
+
+useful for them them and that comes in
+
+stages right in in steps do you so what
+
+do you think are the the next steps on
+
+that right there's there's obviously
+
+speculation right that's a the the
+
+bottom of the
+
+barrel uh use Cas is speculation but
+
+what what do you see is coming next uh
+
+in that kind of evolution towards High
+
+utility yeah I would just because I feel
+
+like the current cryptocurrency industry
+
+is kind of lost like if you look at the
+
+main negatives out there from the BTC
+
+Camp which is still the biggest and then
+
+from the ethereum side I feel like we
+
+are not
+
+outputting like we still have a message
+
+of freedom but we are not United and not
+
+making sense on the we don't have a
+
+long-term Vision because our main
+
+projects like BTC and ethereum they
+
+simply don't scale um so I wish I wish
+
+for bch to have more of an impact in the
+
+crypto currency industry again because
+
+we used to be at number three or number
+
+four at least in the top 10 based on
+
+market cap and I find this quite a good
+
+metric just to measure the impact of a
+
+community and the importance in the
+
+industry and now we're yeah way down so
+
+I hope with the cash token stuff we had
+
+a great first half year a great great
+
+start of the cash tokens ecosystem and I
+
+hope to see a comeback so not only to
+
+have the current developers but see new
+
+Talent joining to see uh like a a kind
+
+of exponential curve not in the price
+
+per se but in the first in the growth of
+
+the community and of the people involved
+
+and people enthusiastic about it but
+
+yeah currently it's quite a hard time to
+
+build um yeah quite a hard time to build
+
+because of the bare
+
+Market yeah the bare Market makes
+
+everything quite painful yeah yeah it's
+
+not just that but also
+
+uh but also I think the broader Market
+
+hasn't caught up is very far from
+
+catching up with what bch is up to uh
+
+you know like when I look when I look
+
+around um there's still there are still
+
+media Outlets out there who say who
+
+would just reprint stories from years
+
+ago that says oh uh by the way yeah bch
+
+is like BTC but with eight mag Max block
+
+size was like wow wow that was ancient
+
+uh and uh and other and other things
+
+like yeah uh so yeah so what's up with
+
+the latest drama with cs wow that is
+
+also anent you know so um a lot of them
+
+hasn't caught up with uh the latest
+
+things in bch and uh we could do better
+
+jobs like this spasis and other yeah but
+
+I don't think you need to convince
+
+existing crypto Outlets per se so kind
+
+of like I don't think ethereum had a lot
+
+of posts written about them in Bitcoin
+
+magazine but probably they just started
+
+their own Community with their own
+
+influences and their own Outlets yeah
+
+and and in bch we used to have some
+
+Outlets but now the the our presence on
+
+on platforms like uh if you just go on
+
+YouTube and you would search for
+
+information on cash tokens there's very
+
+little and especially very little that
+
+actually gets watched by people so very
+
+very little content that finds it way to
+
+an actual audience I think this is the
+
+main thing we can yeah where there's a
+
+big opportunity and where there's a need
+
+for for people to step up and and which
+
+can organically grow a lot if if there
+
+are more users there will be a demand
+
+for Content about uh just explaining how
+
+to work with stuff and what's new and
+
+but because we are so tiny we we have to
+
+do everything to catch up to more
+
+healthy States and not only so tiny but
+
+to to segue not to segue but just to add
+
+on to that uh so if you if anybody who's
+
+listening goes to I put a link in the in
+
+the Twitter thread uh flip starter.
+
+casan eyes.com this is uh Matthew's
+
+current uh flip starter where he's uh
+
+raging uh raging he's uh doing uh
+
+crowdfunding for the project for the the
+
+wallet that that Matthew has made
+
+and I think that is a point here that
+
+you guys are talking about where there's
+
+so many things to be done but the way
+
+things are done in general in the world
+
+is you know there's a company there's an
+
+organization and they hire you and they
+
+pay you to do things or they contract
+
+you and they pay you to do things but
+
+when you're
+
+bootstrapping a new money system which
+
+is its own Commons right that there's no
+
+Central party that owns it or controls
+
+it the uh who funds things and where
+
+does where does the funding for things
+
+come from how do you actually bootstrap
+
+all of the infrastructure how do you
+
+bootstrap the first apps uh how do you
+
+get investors to take huge risks is is a
+
+difficult thing in itself but then also
+
+the mindset of hey I see something
+
+that's very important well it's too bad
+
+that nobody's doing that right switching
+
+that mindset to okay this needs to be
+
+done so I'm going to do it and I'm going
+
+to go out and convince people that this
+
+is an important thing to be done and get
+
+funded that's a huge step for a lot of
+
+people so this is why I often say the
+
+the the number one thing missing not
+
+missing but the hard thing that that
+
+that we need more of is entrepreneurs
+
+people who are willing to say this is an
+
+important thing and I see how to get it
+
+done let me go get it done and I'm I
+
+think you've been such a great example
+
+of that Matthew of of the Entre R
+
+preneur uh spirit of just saying this is
+
+a thing that needs to happen I'm going
+
+to make it happen come with me right H H
+
+how did you come to that right how how
+
+did you successfully fund several flip
+
+starters along the way how has that
+
+happened for you yeah so the the thing
+
+I'm most yeah for entrepreneurial I
+
+think the the best case to talk about
+
+was the cash ninjas project so uh I
+
+think one important point is to not
+
+start alone so very helpful for me was
+
+to team up with itach the artist which
+
+helped me with the website and with all
+
+the promo and marketing and with Josh
+
+elior which could which could take care
+
+of all the server technical stuff so the
+
+back end and I also helped with
+
+compiling the art and made the art
+
+engine open source so one nice thing
+
+with the cash ninjas project is that
+
+because this was an entrepreneurial
+
+Endeavor yeah that we would get our
+
+funding from the from the mint of the
+
+nfts um and then we could just open
+
+source all all our tooling so this way
+
+we could provide as much value as
+
+possible to the community or like to the
+
+developer community and to Future
+
+projects but also not have to ask for
+
+money using a flip starter could but
+
+could just use this nft mint as an
+
+opportunity to uh raise money for
+
+actually making it and spending the time
+
+developing all the tooling so what we
+
+hope to see and what we already were in
+
+talks with a few people is people who
+
+are interested in using and extending
+
+our open source tooling to actually make
+
+an nft mint on cash tokens themselves so
+
+I'm very
+
+interested and excited to see how that
+
+will play out and I hope with the cash
+
+ninjas we I think we meant it just uh
+
+just short of
+
+1,500 I hope this mint will continue
+
+because uh if if our projects end up
+
+minting out this would be a good sign of
+
+the health of the ecosystem and would
+
+also yeah the funding would go to Al for
+
+making the project in an entrepreneurial
+
+way um because if if there's no if the
+
+NFD projects on bitcoin cash don't
+
+really take off then it's also a signal
+
+for other entrepreneurs to not really
+
+try the same of course right if a if
+
+project fails yeah it's a signal for
+
+others not to try the same and if
+
+something is hugely successful yeah then
+
+others are quick to copy most of the
+
+time so and of especially when when
+
+everything is open so so I think in one
+
+week someone uh who is good at reading
+
+docs and already is a developer in one
+
+week it should be possible to set up
+
+your own uh nftd mint on cash tokens if
+
+you already have the art so first you
+
+have to of course prepare or commission
+
+the art or use AI to make some art but
+
+assuming that you have the art without
+
+tooling I think a week would be
+
+reasonable to set it all up so
+
+interesting so my Approach To those has
+
+been something that probably wouldn't
+
+generally work but I see it as when I
+
+buy the gurus or uh cash ninjas I see it
+
+as exactly like you said as funding
+
+something like sending a signal exactly
+
+as you said sending a signal that hey
+
+this is important and this is uh
+
+worthwhile and so for example with the
+
+the gurus I especially liked uh the
+
+aspect of the gurus uh whoever you
+
+Anonymous developers are out there that
+
+they have the the nfts which is fine but
+
+then also the you know which is also a
+
+provable thing right like hey I bought
+
+these nfts I supported this project at
+
+the very beginning before it was popular
+
+right I'm a total hipster for uh
+
+supporting bch projects but then it also
+
+has a a utility right the the prediction
+
+game that is coming that they are
+
+building it's not out yet so don't want
+
+to get ahead of myself but they say that
+
+they're building uh a prediction game so
+
+I like that aspect that there's actually
+
+going to be something you can use that
+
+there's going to be something um you can
+
+use money to do not just the collectible
+
+aspect so yeah I I don't know how that's
+
+going to work but personally I I I use
+
+it as a signal exactly as you said to
+
+say that yes this is valuable and this
+
+work is
+
+important it will be cool to see on cash
+
+tokens the first fible tokens with some
+
+real use case and for for the furu token
+
+then it will be this prediction platform
+
+but it will yeah be cool to see some
+
+other useful fible tokens because I
+
+started Doge cash and do cash is not
+
+it's not really useful it was just on
+
+the cash tokens launch Day created as a
+
+as a meme
+
+but currently I I find that the cash
+
+tokens nft ecosystem with top Swap and
+
+with the ninjas and with the go and the
+
+bit cuts nft ecosystem is actually more
+
+evolved than the fible token ecosystem
+
+so I'm thinking also along the lines of
+
+how would we like which steps would we
+
+take to build out this fible token
+
+ecosystem and is is like Ico is a good
+
+way to do that or is it a bad way but
+
+then what kind of utility tokens or like
+
+platform tokens or maybe shares like
+
+what would be the the big fible tokens
+
+and it's an interesting question but I
+
+don't think I have a good answer
+
+yet or stable coins probably oh God yeah
+
+don't get me started on stable coins we
+
+probably have different opinions
+
+there okay yeah but but that's one of
+
+the beautiful things with a
+
+permissionless network right if somebody
+
+else thinks that's a valuable thing to
+
+do and that's a useful thing to do and
+
+they're going to make money doing it
+
+then yeah there they go so we'll see
+
+where all these all these things go I I
+
+love seeing it right well I mean at some
+
+point somebody's goingon to a lot of
+
+people is going to get rugged on bch and
+
+they're going to lose Millions to
+
+billions that's just that's just the way
+
+of the way life works I guess so yeah
+
+yeah if people are granting to use uh to
+
+lose billions on bch then at least we
+
+know the cash tokens ecosystem has gr a
+
+lot yeah yeah I know
+
+right billions oh God amount of money
+
+involved currently in the cash tokens
+
+ecosystem is very tiny I think the the
+
+biggest amount of money that I've seen
+
+is the Paka fundraising they raised
+
+100K for for their Venture in the
+
+Philippines for their company so I'm I'm
+
+quite excited for what they will build
+
+but but it's not like the polygon
+
+ecosystem for example where there's
+
+Millions floating around for developers
+
+so yeah I I've I've become a little bit
+
+cynical about those Millions floating
+
+around because I used to think they were
+
+just plain old Millions floating around
+
+but I started to realize that a lot of
+
+those millions are pretty circular right
+
+they the the the millions are are to
+
+some degree uh conjured from thin air uh
+
+along with the tokenomics of some
+
+particular project but well I mean well
+
+well I mean it's not necessarily that
+
+way well you can you can uh you you can
+
+build a loan protocol and then set the
+
+loan uh terms yourself and uh you know
+
+you you print you print some stuff you
+
+put it in there and then voila you
+
+transform your circular fake your
+
+circular fake millons into real millons
+
+and then you get people to hold your
+
+back that's how it works um yeah that's
+
+that that's that's also why everyone
+
+want every everyone wants loan
+
+protocols
+
+yeah hey Matthew actually uh quick aside
+
+there's uh Jerry uh from Bitcoin Bay in
+
+the audience and I have been doing my
+
+best to add him as a speaker he he was
+
+asking to speak I don't know if it's
+
+going to work I've like done it
+
+repeatedly and I'm not somehow he's not
+
+getting up on the speaker list but uh
+
+Jerry I'm trying to get you on here so
+
+I'll keep trying to do that but in the
+
+meantime Matthew I was writing a tweet
+
+here just trying to provide the the
+
+audience with some documentation for
+
+what we're talking about when you when
+
+we were talking about the entrepreneurs
+
+and what to do um oh there he is hey
+
+Jerry if you could mute for a minute so
+
+Matthew what would you say like what
+
+would you summarize your advice to
+
+people who want to be entrepreneurs and
+
+I don't mean the traditional
+
+entrepreneur of start a company but you
+
+know somebody who wants to accomplish
+
+something thinks it's important and
+
+wants to collect resources and people
+
+people in a team or whatever it is to to
+
+work on something what would be your
+
+advice the first one you said was team
+
+up you know find complimentary
+
+talents uh to your own what what would
+
+be the kind of summary of the other
+
+things that you would you would
+
+recommend to an entrepreneur like that
+
+yeah I think it's also good to get quick
+
+feedback from people so you know what
+
+you're doing is actually valuable um
+
+because often times it's not easy to
+
+yeah to know so for example for the cash
+
+ninjas I think our project start to
+
+finish was three months so yeah this is
+
+if you commit to something and you want
+
+to build something out in one year and a
+
+half this is way more uncertainty and
+
+risk that you're taking on yourself
+
+whereas if you know that in three months
+
+your first income should already be
+
+there then you can start building out
+
+and expanding from that point whereas if
+
+you yeah if you have something that's
+
+far off in the future where you don't
+
+know then it's even harder to predict
+
+what your revenues would be so oh my God
+
+yeah yeah I guess my advice would be
+
+start like incrementally building and
+
+start to I would try to have something
+
+that you can ship or some product that
+
+you can start with as soon as
+
+possible
+
+[Music]
+
+um that's a great I've added that to my
+
+list anything else yeah so what I try to
+
+do is not try to reinvent the build
+
+because there has been a lot of
+
+experimentation in crypto already and a
+
+bunch of things have failed so I think
+
+if something has succeeded on another
+
+chain like for example collectible nfts
+
+are just a popular concept like them or
+
+not so I think that's a less risk uh
+
+thing to try on like the first nft
+
+project on cash tokens knew that it was
+
+less risky than trying a totally new ID
+
+on cash tokens right so the tech itself
+
+is not the risk per se it's more I think
+
+the the use case is where the risk is
+
+for example I think I think iOS on cash
+
+tokens will also be tried out because
+
+the Ico concept is just popular so this
+
+chain doesn't matter too much but for
+
+example if you want to build out
+
+recuring payments infrastructure I would
+
+be hesitant because I think this would
+
+take a lot of uh time and Technical
+
+effort but then the first Revenue might
+
+be slow and it's not something that we
+
+see that's very popular on other chains
+
+so I think some technologies will just
+
+have to come when we're more mature and
+
+we're in a later stage of development
+
+whereas now it just might be too early
+
+or for example if you want to build out
+
+fult technology want to build out very
+
+secure Covenant wallets well I I don't
+
+think currently there is a real market
+
+and business use case whereas it would
+
+be super interesting technically so you
+
+also need to make a like a kind of hard
+
+line of these are interesting technical
+
+projects which would improve the space
+
+and these are like business
+
+opportunities where you can actually
+
+have some sustained
+
+income oh that's so good that's going to
+
+be a clip 100% we're gonna make a short
+
+out of that for sure thank you so much
+
+for that advice so some somebody
+
+somebody somebody needs to build the uh
+
+flip starter that spits out tokens
+
+that's basically an
+
+Ico yeah yeah yeah yeah I love it when
+
+people ask about that they're like hey
+
+can you add tokens to flipar and I'm
+
+like yes but not under my name let's do
+
+this in a different
+
+way and uh now there's uh right bch
+
+house actually I don't even know how to
+
+pronounce the name it's like BC house
+
+bch B yeah yeah BC house I don't know
+
+how to say it but I saw it house
+
+I what is it
+
+BC house fly dodev BC housefly dodev you
+
+have to have an invite code to join it
+
+but um yeah sah is actually implemented
+
+a new version of flipart right a smart
+
+contract version flit was telling me to
+
+join it's so awesome that he built out
+
+the smart contract version because I did
+
+some initial work but then it I never
+
+really took it anywhere so it was yeah I
+
+love to see that he picked it up and
+
+actually pushed it over the Finish Line
+
+into something useful isn't it one of
+
+those amazing things where you get to a
+
+point that wait I can't keep up with
+
+everything I absolutely love that
+
+feeling where it's like oh I actually
+
+don't know what's going on everywhere
+
+there's there's uh so many people doing
+
+different things that that it's hard to
+
+keep
+
+up um let me take a break here um Jerry
+
+are you there I'm not sure what it was
+
+you wanted to talk about what is it that
+
+you're that you're wanting to say yeah
+
+yeah can you guys hear me yes yeah
+
+absolutely yes okay um yeah just a
+
+slight tangent on the cash side I think
+
+with the uh Advanced transaction setup
+
+uh you can now basically just control
+
+the input utxos coming in and just
+
+essentially lock out the output so that
+
+you know however you design it as long
+
+as you're just accepting the inputs it
+
+should be able to effectively act
+
+something like a flip
+
+starter but um yeah I just wanted to say
+
+um you know thanks so much for you know
+
+just having me here and uh especially in
+
+Matthew U you know I do remember uh us
+
+having a conversation on uh Telegram and
+
+it was really good to see that you know
+
+you actually managed to implement a uh
+
+cash token minting system uh using cash
+
+script as well so that's really cool to
+
+see um I want to touch on the flip
+
+starter stuff uh because right now for
+
+us at Bitcoin Bay we are looking at one
+
+of the new cardano uh run rounds of
+
+funding um and the way they do it is
+
+that essentially they just uh select
+
+specific times for the entire Community
+
+to be able to vote on which projects to
+
+fund and which ones to not fund um and I
+
+think that you know like there's
+
+something to that where not necessarily
+
+forcing people to you know concentrate
+
+all their efforts but giving that kind
+
+of opportunity to basically Market the
+
+project and ideas that's going on in
+
+space so that you know like maybe
+
+because I know for the protocol operates
+
+we the DCA stuff you know we do them
+
+once every year or so um so maybe you
+
+know like we could do something like
+
+once every two years or once half a year
+
+or something like that right where know
+
+for all the different project ideas that
+
+everyone has you know we can just say
+
+hey come together put all the ideas here
+
+put your submissions in and you know
+
+we'll just promote the out of
+
+everyone all the same
+
+time a good idea that see that that that
+
+requires having a treasury uh we don't
+
+well no it doesn't require having a
+
+treasury right it requires having an
+
+entrepreneur uh we're talking about a
+
+decentralized network entrepreneur right
+
+not
+
+a entrepreneur like an entrepreneur to
+
+take the idea and say hey it would make
+
+a lot of sense and it would be more
+
+effective and more interesting and more
+
+engaging to do all kinds of project uh
+
+funding discussions at the same time and
+
+obviously that wouldn't be for Bitcoin
+
+cash right that would be for my platform
+
+whoever the entrepreneur is I've got a
+
+platform and make it available at this
+
+point in time with these uh discussions
+
+and these features and these social
+
+media aspects to it I would love to see
+
+that I think sah have so I think the um
+
+I think the main thing is that you know
+
+it's everything that you just described
+
+but instead of having everything spread
+
+out throughout the year you know like
+
+all we really need is just concentrate
+
+the marketing efforts right know whoever
+
+is going to donate or like you know
+
+throw money to all these book starters
+
+they're going to do that anyways all I'm
+
+saying is that you know like in terms of
+
+marketing all the different products and
+
+ideas it's a lot easier to do it all at
+
+once and make a big show of it rather
+
+than you know like having it throughout
+
+the year and like be barely noticeable
+
+to the broader audience or or both right
+
+of course both is is is what actually
+
+would happen so yeah I would love to see
+
+that so what that requires is for for
+
+the audience and and Jerry for you too
+
+is maybe you know already but let me
+
+just say it for the audience um it would
+
+require an entrepreneur to say hey this
+
+marketing idea to have or or whatever
+
+however they perceive it it would be
+
+really smart to have all this
+
+fundraising and crowdfunding go on in a
+
+more organized way in a more uh maybe
+
+competitive environment or just more
+
+organized and with more of a marketing
+
+push like a combined marketing push for
+
+the whole whole set of projects and more
+
+curation going on more uh whatever it is
+
+that entrepreneur would identify these
+
+are all the things that would be better
+
+and would be valuable for people and
+
+somehow they would have an angle that
+
+makes money for them to to provide that
+
+service and organization and effort and
+
+and they would have to just execute it
+
+that's it and and anybody could do that
+
+and I think sahed might actually be able
+
+to do that with his bch
+
+housefly dodev that testing out uh it's
+
+possible that he could organize
+
+something like
+
+that I'd love to see it and you're
+
+saying Jerry from your perspective uh
+
+Bitcoin Bay right uh that you'd you'd
+
+rather see something more engaging like
+
+that where you get more visibility as a
+
+as a a proposer as a
+
+campaigner and overall it's going to
+
+draw more attention and more likelihood
+
+to get something funded is that's that's
+
+the angle you're coming yeah I mean yeah
+
+I mean ultimately like for for us like
+
+we we started in 2014 before ethereum
+
+came out and stuff in Toronto and um you
+
+know like I've I've had the very
+
+privileged pleasure of you know actually
+
+meeting vitalic when he was showing off
+
+the beta versions of ethereum before
+
+even the launch um so you know I
+
+definitely have gone through and seen a
+
+lot of like development paths that they
+
+had there and one of the questions I
+
+know throughout all the years that we've
+
+been having meetups and community events
+
+and stuff like that is that you know
+
+people always ask me like why why have I
+
+basically gone all in on bitcoin cash
+
+and fundamentally you know it's like
+
+it's not necessarily for the price right
+
+um it's kind of like you know the way I
+
+kind of like think about it even if
+
+bitcoin price goes down to like zero I
+
+would love to see you know like the
+
+technology like all the overall adoption
+
+having grown exponentially right so that
+
+know by the time it does go to zero it
+
+really just means there's something
+
+better for us you know actually to use
+
+it so you know in that aspect you know
+
+like what I really wanted to see and
+
+this is part of you know like seeing
+
+through all the icos and nft crazes and
+
+all the other whatever right is that you
+
+know like for a lot of people it's you
+
+know really just about the money but you
+
+know sometimes we kind of forget that
+
+you know the technology itself is really
+
+supposed to bring you know freedom and
+
+access to everyone who couldn't get it
+
+for so you know like we're not really
+
+Maxis a lot of people assume we're like
+
+Bitcoin Maxis and they're like shot to
+
+discover we talked about all these other
+
+things um but yeah I know it's like how
+
+do we actually push this adoption to not
+
+just people in crypto which you know
+
+there's quite a lot right now but also
+
+to the broader audience right like the
+
+general public that you know really
+
+couldn't care about any of the inviting
+
+the tribalism and so on and so forth um
+
+I think you know like the one thing
+
+thing that I really like about Bitcoin
+
+cash is that you know like one it
+
+obviously does follow through with the
+
+quote unquote Satoshi and like the white
+
+paper and stuff like that but know like
+
+the whole kind of like ethos in the
+
+community has also been falling through
+
+a it right throughout the years um and I
+
+think that that's something that's you
+
+know vastly different than let's say
+
+something in bitco point where you know
+
+like we had the the I think his name was
+
+Domo the creator of brc2 come out for
+
+ordinal vc20 talk we've had you know
+
+interactions with you know some of the
+
+local Bitcoin only it's it's kind of
+
+funny the Bitcoin only Maxi groups they
+
+tend to like a lot of inflating and so
+
+recently they just have like the spip
+
+group like shave off about half of their
+
+members but um you know it's it's that
+
+kind of like complete disunity and like
+
+not even supporting like new
+
+experimental and accidental Technologies
+
+like ordinals and bc20 and stuff like
+
+that that you know it really just makes
+
+all this broader adoption kind of like
+
+Loot and pointless so yeah I see that's
+
+basically what I'm looking at that
+
+that's cool yeah so we'd like to make uh
+
+we I mean I I think it would be great to
+
+see what you were talking about and just
+
+uh on the topic of the technology uh one
+
+of the great things from my perspective
+
+about Bitcoin cash is that people who
+
+are building on it uh as a general rule
+
+don't lose sight that the techn
+
+technology is in service of achieving a
+
+goal the technology doesn't exist for
+
+its own purposes and the goal is like
+
+Matthew said some form of however you
+
+frame it PTP electronic cash uh for for
+
+the world for as many people as possible
+
+um so yeah I I I'm always proud of
+
+seeing that in Bitcoin cash that people
+
+don't lose that Vision they they keep it
+
+and they understand that the technology
+
+is in the service of doing something the
+
+network is in the service of
+
+uh a
+
+purpose so uh yeah thank you Jerry I
+
+want to get back to Matthew and on this
+
+topic
+
+of uh decentralized funding and
+
+decentralized
+
+crowdfunding Matthew before we finish up
+
+I wanted to ask you to cover your uh
+
+your cash and eyes flip starter and tell
+
+us what it is you're trying to
+
+accomplish with it and uh where it's
+
+going to
+
+go oh yeah okay uh thanks so cash I was
+
+started like almost a year ago now and
+
+it was started as I told as a quick way
+
+to get started with the Mainz library
+
+and make a First Cash tokens demo like
+
+just proof of concept and then it grew
+
+from there and for the longest time as
+
+some might remember it didn't even have
+
+a unique name it was just my cash tokens
+
+web wallet on netlify I think it was on
+
+netlify right yeah on netlify on the sub
+
+domain I didn't have a proper domain
+
+name so yeah it was a long road and it
+
+that was all like a a hobby project so I
+
+want to take it more serious now there's
+
+a bunch of features that I want to add
+
+there's a a whole technology overhaul
+
+that I want to do so currently it's
+
+written in vanilla JavaScript so no
+
+framework used and I want to switch over
+
+to vuejs which is way easier to uh build
+
+with so in the future it will be easier
+
+to add new features and people who want
+
+to add to the project the code base will
+
+be way more organized into components
+
+and I want to add typescript so the wall
+
+becomes safer to work with so uh this is
+
+the the code re Rite then a bunch of
+
+features I want to add and I want to
+
+speed up the wallet because it's not
+
+super well designed it was uh first and
+
+foremost to get something quick out of
+
+the door like a working demo but now I
+
+want to make it into a good user
+
+friendly product so the loading speeds
+
+need to be improved so this work behind
+
+the behind the curtain um for example
+
+the metadata it doesn't need to load
+
+incrementally uh from the chra server it
+
+can just fetch it all at once like budg
+
+requests to the bcmr indexing built by
+
+Baka things like this I also want to do
+
+a dynamic uh loading of token metadata
+
+if someone sends you a token it
+
+automatically goes and checks which
+
+metadata does this token hold because
+
+currently it only checks when you
+
+refresh like this is not a good ux so
+
+people shouldn't need to refresh to see
+
+that they received a certain token with
+
+a certain name the token would would pop
+
+up but just not with the
+
+metadata uh and there's a bunch of
+
+features I want to add like if you want
+
+to transport all your nfds from one
+
+wallet to another there should be a sent
+
+all
+
+nfds uh
+
+button also I want to add support for
+
+easy support in the UI for having a
+
+reserved Supply so if you're a token
+
+Creator and you want to keep your tokens
+
+at the out utxo so to com them as
+
+reserved Supply then this is not
+
+currently possible with the UI but it's
+
+something I would like to add I would
+
+also like to add support for GIF nfts
+
+like gifs and or MP4 so you can have 3D
+
+objects and things like that this would
+
+make the nfts more unique um and then uh
+
+last but not least I want to make an
+
+Android app from the cash wallet because
+
+currently it's not that easy that you on
+
+mobile need to navigate to your browser
+
+first then type in cash.com and only
+
+then can you start using your wallet so
+
+I want to make it into a native app like
+
+an app you can download from the Google
+
+Play store then you can receive
+
+notifications like built in and you can
+
+have some features like camera scans
+
+which will work nicer than they do in
+
+browser things like that so these are
+
+the main things I want to add with the
+
+flip starter and currently half of the
+
+uh target has been uh pledged already so
+
+I think it runs for another week so I'm
+
+uh watching close to see how that goes
+
+but I'm very excited to continue to work
+
+on on cash I and to make it to a more
+
+finished
+
+product I I'm I'm excited to see it and
+
+and for the listeners uh go to uh let me
+
+get the correct address again flip
+
+starter. casan eyes.com and that's also
+
+listed in the uh Twitter thread uh I've
+
+posted it in there and this is one of
+
+those things it's a signal uh money as
+
+as Bitcoin cash autist and many other
+
+people say money is a signal at its root
+
+that's uh kind of a base summary of it
+
+it's a signal of what's valuable what do
+
+you want more of what do you want to see
+
+in the world and that's something that I
+
+would like to see all of those things
+
+you said I'm looking forward to that uh
+
+being a successful flip
+
+starter so good luck on that I I don't
+
+think you need luck I think it's gonna
+
+be fine and I don't think there's about
+
+it
+
+so thank you fantastic to see all right
+
+that's great so I think we're probably
+
+going to wrap up here in a minute uh
+
+it's coming up on an hour but let me ask
+
+if there's anybody else in the audience
+
+who had questions or something they
+
+wanted to to ask about and then of
+
+course also uh you name is there
+
+anything Jonathan was having some kind
+
+of uh heavy heavy storms that that cut
+
+him off so he had to go like in a in a
+
+flurry of static he's like I can't I
+
+can't I
+
+can't gone so he's out but you name was
+
+there anything you wanted to cover
+
+before I I I just want I just want to
+
+recommend that uh people go to his flip
+
+th and fund this guy um like if you ever
+
+want to fund anything this like this is
+
+current this this is the the thing like
+
+today so yeah nice yeah like I said in
+
+the uh in the description of the space
+
+right the many faces of cashion
+
+eyes what Matthew has done with little
+
+resources and little time has been
+
+really impressive I I've been very
+
+impressed uh I mean obviously it's not
+
+perfect right there's we have so many
+
+more things as a whole ecosystem to
+
+improve but what Matthew has
+
+accomplished with cashion eyes in a
+
+short time has been pretty impressive
+
+and together with Pat like uh like
+
+Matthew's pointed out now working with
+
+Pat and the things that Pat has done
+
+also has contributed to this so yeah
+
+it's very impressive and I think the the
+
+the track record speaks for itself if
+
+you're paying attention and we're paying
+
+attention so if you're not sure whether
+
+it's valuable or not it
+
+is Matthew is there anything else you
+
+wanted to to talk about or to bring up
+
+before we wrap
+
+up uh maybe one last thing because it
+
+was something Jerry brought up with the
+
+Bitcoin Bay meetups I would also
+
+encourage everyone to try to get
+
+involved in some kind of cryptocurrency
+
+seen locally um even if it's events or
+
+organ Meetup because now I do the where
+
+I live I do the uh General crypto and
+
+Bitcoin and Krypto Meetup so a bunch of
+
+people uh join even a PhD student who
+
+studies like for a thesis for PhD thesis
+
+blockchain technology uh so it's very
+
+you meet some very interesting people by
+
+organizing and you become like kind of a
+
+Nexus for uh yeah for networking of some
+
+kind so people are also then becoming
+
+interested in oh why are you as the the
+
+organizer so interested in Bitcoin
+
+cashion and I can just talk about cash
+
+tokens so I think this will relate to
+
+Jerry um where is where people ask him
+
+what brought him into bch or why cash
+
+tokens are interesting or because as an
+
+organizer of course you should be
+
+inclusive you hear a lot of perspectives
+
+so if you have a different perspective
+
+you can add something interesting to the
+
+conversation and we are quite unique
+
+from etherum Bitcoin so we have our own
+
+like different narrative to to tell so I
+
+think people find it quite
+
+interesting yeah and I hope people won't
+
+be ashamed right because it's very easy
+
+to be ashamed of the crypto ecosystem in
+
+general it's a mess but I don't think
+
+there's any need for anyone in bch to be
+
+ashamed there's so much to be proud of
+
+and the really is a meaningful goal
+
+behind all the stuff that we're working
+
+on however it is that you frame it
+
+personally the goal that we're aiming
+
+for is is Meaningful and useful in in
+
+human
+
+long-term uh
+
+terms so yeah go out there and and and
+
+don't worry about it and understand
+
+what's important to you and help other
+
+people see it yeah I'm I'm with you on
+
+that all right well that's a good hour
+
+for us I've been told that uh we talk
+
+too much I talk too much maybe so we're
+
+going to try to keep it now to an hour
+
+so that was a great one I really
+
+appreciate your time Matthew and uh look
+
+forward to seeing your flip
+
+starter
+
+decentralized crowdfunding completed and
+
+looking forward to uh the apps and the
+
+utility that you build on the cash and
+
+eyes wallet thanks so much for your time
+
+thank you for having me it was a lot of
+
+fun all right okay thanks yeah yeah all
+
+right take care everybody it's good to
+
+talk with you we'll see you next
+
+week byebye
+
+bye
+
+

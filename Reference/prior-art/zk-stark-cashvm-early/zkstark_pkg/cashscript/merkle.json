@@ -1,0 +1,37 @@
+{
+  "contractName": "MerkleVerify",
+  "constructorInputs": [
+    { "name": "root", "type": "bytes32" }
+  ],
+  "abi": [
+    {
+      "name": "prove",
+      "inputs": [
+        { "name": "leaf", "type": "bytes" },
+        { "name": "path", "type": "bytes" },
+        { "name": "depth", "type": "int" }
+      ]
+    }
+  ],
+  "bytecode": "OP_SWAP OP_SHA256 OP_ROT OP_0 OP_BEGIN OP_DUP OP_5 OP_PICK OP_LESSTHAN OP_DUP OP_TOALTSTACK OP_IF OP_OVER OP_1 OP_SPLIT OP_DUP 20 OP_SPLIT OP_DUP OP_6 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_3 OP_PICK OP_BIN2NUM OP_0 OP_NUMEQUAL OP_IF OP_6 OP_PICK OP_2 OP_PICK OP_CAT OP_SHA256 OP_7 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_ELSE OP_OVER OP_7 OP_PICK OP_CAT OP_SHA256 OP_7 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_ENDIF OP_4 OP_PICK OP_1ADD OP_5 OP_ROLL OP_DROP OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_TOALTSTACK OP_SWAP OP_FROMALTSTACK OP_FROMALTSTACK OP_FROMALTSTACK OP_2DROP OP_2DROP OP_ENDIF OP_FROMALTSTACK OP_NOT OP_UNTIL OP_DROP OP_SWAP OP_ROT OP_EQUAL OP_NIP OP_NIP",
+  "source": "pragma cashscript ^0.13.0;\n\n// Verifies a Merkle inclusion proof by walking the authentication path.\n// path = concatenation of `depth` nodes, each = 1 direction byte || 32-byte sibling.\n// dir 0x00 => current node is the LEFT child; 0x01 => RIGHT child.\ncontract MerkleVerify(bytes32 root) {\n    function prove(bytes leaf, bytes path, int depth) {\n        bytes32 cur = sha256(leaf);\n        bytes remaining = path;\n        for (int i = 0; i < depth; i = i + 1) {\n            bytes dirByte, bytes rest = remaining.split(1);\n            bytes sib, bytes rest2 = rest.split(32);\n            remaining = rest2;\n            if (int(dirByte) == 0) {\n                cur = sha256(cur + sib);\n            } else {\n                cur = sha256(sib + cur);\n            }\n        }\n        require(cur == root);\n    }\n}\n",
+  "fingerprint": "ac0f2eb81c6fb9e99b2a5c95eb85bb4763e1e6138c5dc6c12b88cbe8019f65b0",
+  "debug": {
+    "bytecode": "7ca87b00657655799f766b6378517f7601207f76567a757c6b7c6b7c6b7c6b7c6c6c6c6c537981009c63567952797ea8577a757c6b7c6b7c6b7c6b7c6b7c6c6c6c6c6c677857797ea8577a757c6b7c6b7c6b7c6b7c6b7c6c6c6c6c6c6854798b557a757c6b7c6b7c6b7c6c6c6c6d6d686c9166757c7b877777",
+    "sourceMap": "8:29:8:33;:22::34:1;9:26:9:30:0;10:21:10:22;:8:19:9;:24:10:25;:28::33;;:24:::1;;;:46:19:9:0;11:40:11:49;:56::57;:40::58:1;12:37:12:41:0;:48::50;:37::51:1;13:24:13:29:0;:12::30:1;;;;;;;;;;;;;;;;14:20:14:27:0;;:16::28:1;:32::33:0;:16:::1;:35:16:13:0;15:29:15:32;;:35::38;;:29:::1;:22::39;:16::40;;;;;;;;;;;;;;;;;;;16:19:18:13:0;17:29:17:32;:35::38;;:29:::1;:22::39;:16::40;;;;;;;;;;;;;;;;;;;16:19:18:13;10:39:10:40:0;;:::44:1;:35;;;;;;;;;;;;;:46:19:9;;;;:8;;;20:16:20:19:0;:23::27;:8::29:1;7:54:21:5;",
+    "logs": [],
+    "requires": [
+      { "ip": 119, "line": 20 }
+    ],
+    "sourceTags": "92:107:fu"
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.13.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-06-05T20:29:26.513Z"
+}

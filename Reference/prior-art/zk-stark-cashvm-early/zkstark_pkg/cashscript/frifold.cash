@@ -1,0 +1,20 @@
+pragma cashscript ^0.13.0;
+
+// One FRI folding step over a prime field, with prover-supplied inverse hints.
+// folded = (fpos+fneg)/2 + beta*(fpos-fneg)/(2x)   (mod p)
+// inv2, inv2x are hints; verified so the prover cannot cheat the division.
+contract FriFold(int p) {
+    function fold(
+        int fpos, int fneg, int beta, int x,
+        int inv2, int inv2x, int expected
+    ) {
+        require((inv2 * 2) % p == 1);
+        require((inv2x * ((2 * x) % p)) % p == 1);
+        int summ = (fpos + fneg) % p;
+        int e    = (summ * inv2) % p;
+        int diff = (fpos - fneg + p) % p;
+        int o    = (((diff * inv2x) % p) * beta) % p;
+        int folded = (e + o) % p;
+        require(folded == expected);
+    }
+}

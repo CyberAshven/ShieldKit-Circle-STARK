@@ -1,0 +1,22 @@
+pragma cashscript ^0.13.0;
+
+// Verifies a Merkle inclusion proof by walking the authentication path.
+// path = concatenation of `depth` nodes, each = 1 direction byte || 32-byte sibling.
+// dir 0x00 => current node is the LEFT child; 0x01 => RIGHT child.
+contract MerkleVerify(bytes32 root) {
+    function prove(bytes leaf, bytes path, int depth) {
+        bytes32 cur = sha256(leaf);
+        bytes remaining = path;
+        for (int i = 0; i < depth; i = i + 1) {
+            bytes dirByte, bytes rest = remaining.split(1);
+            bytes sib, bytes rest2 = rest.split(32);
+            remaining = rest2;
+            if (int(dirByte) == 0) {
+                cur = sha256(cur + sib);
+            } else {
+                cur = sha256(sib + cur);
+            }
+        }
+        require(cur == root);
+    }
+}

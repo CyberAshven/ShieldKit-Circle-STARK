@@ -1,0 +1,24 @@
+pragma cashscript ^0.13.0;
+
+// Hash time-locked contract for a cross-chain atomic swap leg.
+// The SAME sha256 hashlock is used on both chains. Claiming on one chain reveals
+// the preimage on-chain, which the counterparty uses to claim the other leg.
+contract HTLC(
+    bytes20 recipientPKH,   // who receives if the secret is revealed
+    bytes20 senderPKH,      // who refunds after timeout
+    bytes32 hashlock,       // sha256(secret)
+    int timeout             // block height for refund
+) {
+    // recipient claims by revealing the secret preimage
+    function claim(pubkey pk, sig s, bytes secret) {
+        require(sha256(secret) == hashlock);
+        require(hash160(pk) == recipientPKH);
+        require(checkSig(s, pk));
+    }
+    // sender reclaims funds after the timeout if never claimed
+    function refund(pubkey pk, sig s) {
+        require(tx.time >= timeout);
+        require(hash160(pk) == senderPKH);
+        require(checkSig(s, pk));
+    }
+}

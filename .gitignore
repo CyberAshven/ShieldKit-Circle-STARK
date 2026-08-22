@@ -18,8 +18,10 @@
 .local/
 node_modules/
 .atlas-cycle-stage-*
+# Local-only source trees (never commit)
 Telegram_export/
-research-lanes/bch-shielded-pool-design/sources/telegram-2026-07-29/
+research-lanes/bch-shielded-pool-design/sources/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+**/target/

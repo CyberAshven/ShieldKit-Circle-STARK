@@ -1,0 +1,8 @@
+pragma cashscript ^0.13.0;
+
+contract Grind(bytes32 transcript) {
+    function check(bytes nonce) {
+        bytes32 h = sha256(transcript + nonce);
+        require(h.split(2)[0] == 0x0000);
+    }
+}

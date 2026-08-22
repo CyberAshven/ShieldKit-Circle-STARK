@@ -1,0 +1,65 @@
+pragma cashscript ^0.13.0;
+
+// On-chain membership-AIR composition check (one query), 6-column layout.
+// Columns: st, u2, u4, u6, nu (held), inj (secret at leaf row / sibling at level rows).
+// 5 transition constraints (u2,u4,u6 round-aux; st main; nu held) + 3 boundary
+// (st@row0=0, st@root_row=root, st@null_row=nullifierHash) = 8 constraints.
+// Recomputes comp = sum(alpha_i * quotient_i) and requires it equals the FRI layer-0
+// value at the query index. Selector values (isr,sl,slv,sn,sp,rc) are bound to x by
+// selector_horner.cash (Horner over hash-pinned public coeffs); here they are inputs.
+contract MembershipComp(int P, int omegaN, int offsetD, int last, int DOM) {
+    function check(
+        int k,
+        int isr, int sl, int slv, int sn, int sp, int rc,
+        int st, int u2, int u4, int u6, int nu, int inj,
+        int stn, int nun,
+        int a0, int a1, int a2, int a3, int a4, int a5, int a6, int a7,
+        int root, int nh, int hdRoot, int hdNull,
+        int invZH, int invX0, int invXroot, int invXnull,
+        int target
+    ) {
+        // x = offsetD * omegaN^k  (modexp, k < 2048 -> 11 bits)
+        int r = 1; int b = omegaN % P; int e = k;
+        for (int t = 0; t < 11; t = t + 1) {
+            if (e % 2 == 1) { r = (r * b) % P; }
+            b = (b * b) % P; e = e / 2;
+        }
+        int x = (offsetD * r) % P;
+        // x^T - 1, T = 64 -> 6 squarings
+        int xn = (x * x) % P; xn = (xn * xn) % P; xn = (xn * xn) % P;
+        xn = (xn * xn) % P; xn = (xn * xn) % P; xn = (xn * xn) % P;
+        int xn1 = (xn - 1 + P) % P;
+        int xml = (x - last + P) % P;
+        require((invZH * xn1) % P == 1);
+        require((invX0 * ((x - 1 + P) % P)) % P == 1);
+        require((invXroot * ((x - hdRoot + P) % P)) % P == 1);
+        require((invXnull * ((x - hdNull + P) % P)) % P == 1);
+        // transition values
+        int u = (st + rc) % P;
+        int vu2 = (isr * ((u2 - ((u * u) % P) + P) % P)) % P;
+        int vu4 = (isr * ((u4 - ((u2 * u2) % P) + P) % P)) % P;
+        int vu6 = (isr * ((u6 - ((u4 * u2) % P) + P) % P)) % P;
+        int rnd  = (isr * ((u6 * u) % P)) % P;
+        int leaf = (sl  * (((st + inj) % P + nu) % P)) % P;   // secret(inj) + nullifier(held)
+        int lvl  = (slv * ((st + inj) % P)) % P;              // sibling(inj)
+        int nulc = (sn  * ((nu + DOM) % P)) % P;
+        int padc = (sp  * st) % P;
+        int rhs  = (((rnd + leaf) % P + (lvl + nulc) % P) % P + padc) % P;
+        int vst  = (stn - rhs + P) % P;
+        int vnu  = (nun - nu + P) % P;
+        // transition quotients
+        int qu2 = (((vu2 * xml) % P) * invZH) % P;
+        int qu4 = (((vu4 * xml) % P) * invZH) % P;
+        int qu6 = (((vu6 * xml) % P) * invZH) % P;
+        int qst = (((vst * xml) % P) * invZH) % P;
+        int qnu = (((vnu * xml) % P) * invZH) % P;
+        // boundary quotients
+        int qb0    = (((st - 0 + P) % P) * invX0) % P;
+        int qbroot = (((st - root + P) % P) * invXroot) % P;
+        int qbnull = (((st - nh + P) % P) * invXnull) % P;
+        int comp =
+            ((((((((a0*qu2)%P + (a1*qu4)%P)%P + (a2*qu6)%P)%P + (a3*qst)%P)%P
+            + (a4*qnu)%P)%P + (a5*qb0)%P)%P + (a6*qbroot)%P)%P + (a7*qbnull)%P) % P;
+        require(comp == target);
+    }
+}

@@ -1,0 +1,28 @@
+pragma cashscript ^0.13.0;
+
+// Composed multi-query verifier: NESTED LOOPS (outer over queries, inner over
+// each query's Merkle authentication path). All queries verify against one root.
+// leaves: nQueries * 40-byte leaves concatenated.
+// paths : nQueries * depth nodes, each node = 1 dir byte || 32-byte sibling.
+contract MultiMerkle(bytes32 root) {
+    function proveAll(bytes leaves, bytes paths, int nQueries, int depth) {
+        bytes remLeaves = leaves;
+        bytes remPaths = paths;
+        for (int q = 0; q < nQueries; q = q + 1) {
+            bytes leaf, bytes rl = remLeaves.split(40);
+            remLeaves = rl;
+            bytes32 cur = sha256(leaf);
+            for (int i = 0; i < depth; i = i + 1) {
+                bytes dirByte, bytes r1 = remPaths.split(1);
+                bytes sib, bytes r2 = r1.split(32);
+                remPaths = r2;
+                if (int(dirByte) == 0) {
+                    cur = sha256(cur + sib);
+                } else {
+                    cur = sha256(sib + cur);
+                }
+            }
+            require(cur == root);
+        }
+    }
+}

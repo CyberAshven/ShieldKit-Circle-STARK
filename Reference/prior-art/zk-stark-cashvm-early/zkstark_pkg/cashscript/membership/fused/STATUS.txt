@@ -1,0 +1,31 @@
+FUSED LOOP VERIFIER — STATUS (honest)
+
+VALIDATED ON THE REAL 2026 VM (fused_loop.mjs, via createVirtualMachineBch2026):
+  - A single redeem PROGRAM (94 bytes, CONSTANT in query count, <= 10KB) that:
+      defines a per-query subroutine (OP_DEFINE) and OP_BEGIN/OP_UNTIL LOOPS over all
+      16 queries, OP_INVOKE-ing the subroutine each iteration. The subroutine runs its
+      OWN modexp loop -> NESTED loops, the pattern cashc 0.13.0 cannot emit but the VM
+      executes via OP_DEFINE/OP_INVOKE.
+  - Per query it recomputes x = offset * omega^k mod P and binds it to the witness x.
+  - Real (k,x) data from a real membership proof. Correct data ACCEPTS; a tampered
+      query x REJECTS. Op-cost budget scales with witness size (4.2KB witness already
+      provides enough budget for all 16 nested modexp loops).
+
+KEY CONSENSUS FINDING (measured):
+  - The UNLOCKING (witness) script of ONE input is capped at 10,000 bytes. The full
+    membership openings (~64KB) therefore CANNOT fit in one input. The whole proof
+    spans a FEW inputs in ONE tx (each input's redeem = this loop program; each witness
+    <= 10KB carries a few queries). Total tx ~74KB <= 90KB (see apps/txplan.py).
+  - So "single <=10KB loop redeem" = the PROGRAM (done, validated). "Whole proof in one
+    INPUT" is impossible by consensus; it is verified across a few inputs in one TX.
+
+REMAINING INTEGRATION (NOT done; honest):
+  - The subroutine body here checks a REAL but PARTIAL per-query relation (the x=offset*
+    omega^k binding). The FULL per-query logic — multi-column Merkle opening, the
+    8-constraint composition (membership_comp.cash, validated separately), the FRI fold
+    chain, and the selector-Horner binding (selector_horner.cash, validated separately) —
+    is NOT yet translated into this loop subroutine body. Each piece is validated on the
+    VM independently; fusing them into the single looping subroutine is the remaining
+    (mechanical but substantial) hand-CashAssembly work.
+  - On-chain Fiat-Shamir recomputation (deriving alphas/betas/grind/query-indices from the
+    transcript) is also not folded into the loop yet.

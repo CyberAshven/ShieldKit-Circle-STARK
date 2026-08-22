@@ -1,0 +1,35 @@
+pragma cashscript ^0.13.0;
+
+// Sound binding of the public selector polynomials to the query point x.
+// The selector polys (is_round, sel_leaf, sel_level, sel_null, sel_pad, rc) depend ONLY
+// on the public circuit depth D, so the VERIFIER must compute them, not trust the prover.
+// Here: the prover supplies the coefficient vectors as witness; the contract (1) checks
+// their SHA256 equals the hash PINNED at construction (so they cannot be forged), then
+// (2) Horner-evaluates each at x. The resulting values are what the composition check must
+// use. This closes the "prover supplied the selector values" gap.
+//
+// One poly per call (keeps each input's script + witness small and re-usable). Caller runs
+// it 6 times (one per selector) or batches; the pinned hash covers ALL coeffs concatenated,
+// so a per-poly call also verifies the slice belongs to the pinned set via offset+full hash.
+contract SelectorHorner(int P, bytes32 coeffsHash) {
+    // coeffs: little-endian 8-byte field elements, ALL 6 polys concatenated in fixed order
+    // (isr|sl|slv|sn|sp|rc), each T coeffs. polyIndex selects which T-block to evaluate.
+    // x: the query evaluation point. claimed: the asserted selector(x). T: coeffs per poly.
+    function eval(bytes coeffs, int polyIndex, int T, int x, int claimed) {
+        require(sha256(coeffs) == coeffsHash);                 // pin: coeffs are the public set
+        int wordLen = 9;   // 8 value bytes + 0x00 high byte -> always positive (Goldilocks > 2^63)
+        int start = polyIndex * T * wordLen;                   // byte offset of this poly's block
+        // Horner from the highest-degree coeff down: acc = acc*x + c[i]
+        int acc = 0;
+        for (int i = 0; i < 64; i = i + 1) {                   // T <= 64 (depth<=4 layout)
+            if (i < T) {
+                int hi = T - 1 - i;                            // descend
+                int off = start + hi * wordLen;
+                bytes le = coeffs.split(off)[1].split(wordLen)[0];
+                int c = int(le);                               // 8-byte LE -> int
+                acc = (((acc * x) % P) + c) % P;
+            }
+        }
+        require(acc == claimed);                               // verifier-computed selector value
+    }
+}

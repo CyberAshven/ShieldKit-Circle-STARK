@@ -1,0 +1,42 @@
+{
+  "contractName": "FriFold",
+  "constructorInputs": [
+    { "name": "p", "type": "int" }
+  ],
+  "abi": [
+    {
+      "name": "fold",
+      "inputs": [
+        { "name": "fpos", "type": "int" },
+        { "name": "fneg", "type": "int" },
+        { "name": "beta", "type": "int" },
+        { "name": "x", "type": "int" },
+        { "name": "inv2", "type": "int" },
+        { "name": "inv2x", "type": "int" },
+        { "name": "expected", "type": "int" }
+      ]
+    }
+  ],
+  "bytecode": "OP_5 OP_PICK OP_2 OP_MUL OP_OVER OP_MOD OP_1 OP_NUMEQUALVERIFY OP_6 OP_PICK OP_2 OP_6 OP_ROLL OP_MUL OP_2 OP_PICK OP_MOD OP_MUL OP_OVER OP_MOD OP_1 OP_NUMEQUALVERIFY OP_OVER OP_3 OP_PICK OP_ADD OP_OVER OP_MOD OP_5 OP_ROLL OP_MUL OP_OVER OP_MOD OP_2SWAP OP_SWAP OP_SUB OP_2 OP_PICK OP_ADD OP_2 OP_PICK OP_MOD OP_4 OP_ROLL OP_MUL OP_2 OP_PICK OP_MOD OP_3 OP_ROLL OP_MUL OP_2 OP_PICK OP_MOD OP_ADD OP_SWAP OP_MOD OP_NUMEQUAL",
+  "source": "pragma cashscript ^0.13.0;\n\n// One FRI folding step over a prime field, with prover-supplied inverse hints.\n// folded = (fpos+fneg)/2 + beta*(fpos-fneg)/(2x)   (mod p)\n// inv2, inv2x are hints; verified so the prover cannot cheat the division.\ncontract FriFold(int p) {\n    function fold(\n        int fpos, int fneg, int beta, int x,\n        int inv2, int inv2x, int expected\n    ) {\n        require((inv2 * 2) % p == 1);\n        require((inv2x * ((2 * x) % p)) % p == 1);\n        int summ = (fpos + fneg) % p;\n        int e    = (summ * inv2) % p;\n        int diff = (fpos - fneg + p) % p;\n        int o    = (((diff * inv2x) % p) * beta) % p;\n        int folded = (e + o) % p;\n        require(folded == expected);\n    }\n}\n",
+  "fingerprint": "0d9d0f287d9007e202fca03f8bb8d4c163b0e6bb43d1e4c1ebb65ecbd0abcd70",
+  "debug": {
+    "bytecode": "557952957897519d567952567a95527997957897519d785379937897557a957897727c94527993527997547a95527997537a95527997937c979c",
+    "sourceMap": "11:17:11:21;;:24::25;:17:::1;:29::30:0;:16:::1;:34::35:0;:8::37:1;12:17:12:22:0;;:27::28;:31::32;;:27:::1;:36::37:0;;:26:::1;:17::38;:42::43:0;:16:::1;:47::48:0;:8::50:1;13:20:13:24:0;:27::31;;:20:::1;:35::36:0;:19:::1;14:27:14:31:0;;:20:::1;:35::36:0;:19:::1;15:20:15:31:0;;::::1;:34::35:0;;:20:::1;:39::40:0;;:19:::1;16:29:16:34:0;;:22:::1;:38::39:0;;:21:::1;:43::47:0;;:20:::1;:51::52:0;;:19:::1;17:22:17:27;:31::32:0;:21:::1;18:8:18:36",
+    "logs": [],
+    "requires": [
+      { "ip": 8, "line": 11 },
+      { "ip": 22, "line": 12 },
+      { "ip": 59, "line": 18 }
+    ]
+  },
+  "compiler": {
+    "name": "cashc",
+    "version": "0.13.0",
+    "options": {
+      "enforceFunctionParameterTypes": true,
+      "enforceLocktimeGuard": true
+    }
+  },
+  "updatedAt": "2026-06-05T20:31:47.032Z"
+}
