@@ -192,9 +192,14 @@ describe("note-auth step kernel — N notes in one transaction", () => {
   it("permuting which note goes in which step is rejected", () => {
     const b = batchOf(3);
     const h = honestSteps(b);
+    // Swap the ACTUAL note assignments, not literal 0 and 1. honestSteps sorts by
+    // nullifier, which is random per run, so hardcoding the indices restored the
+    // honest assignment whenever the sort had already swapped these two - the test
+    // then failed for the right reason (the tx really did verify). CI caught it.
+    assert.notEqual(h[0]!.noteAt, h[1]!.noteAt, "distinct notes, or the swap is a no-op");
     const swapped = [
-      { ...h[0]!, noteAt: 1 },
-      { ...h[1]!, noteAt: 0 },
+      { ...h[0]!, noteAt: h[1]!.noteAt },
+      { ...h[1]!, noteAt: h[0]!.noteAt },
       h[2]!,
     ];
     assert.notEqual(runSteps(b, swapped), "ok", "order is bound by the baked roots");
