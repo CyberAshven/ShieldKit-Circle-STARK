@@ -355,6 +355,10 @@ export function compileCovenantSuccessor(args: {
     path: Uint8Array[];
     rIn: Uint8Array;
     rOut: Uint8Array;
+    /** Previous step's nullifier. Steps run in strictly increasing nullifier
+     *  order, which is what makes a duplicate note unsatisfiable on chain.
+     *  Build these with `stepPlan`, which sorts and rejects duplicates. */
+    prevNf?: Uint8Array;
   }>;
   /**
    * Tape tip lock chain (C-BINDING). When present the tape tip is a P2SH32
@@ -382,7 +386,9 @@ export function compileCovenantSuccessor(args: {
   // supplied. FRI9 tape hops pass none, so this stays false for them.
   const stepSpends = args.stepSpends ?? [];
   const stepN = stepSpends.length;
-  const stepLocks = stepSpends.map((sp) => compileNoteAuthStepLockP2sh32(sp.rIn, sp.rOut));
+  const stepLocks = stepSpends.map((sp) =>
+    compileNoteAuthStepLockP2sh32(sp.rIn, sp.rOut, sp.prevNf ?? new Uint8Array(32)),
+  );
   // A batch drops the audited kernel: one SHA256(old || nf) == new step cannot
   // express N insertions, and the step kernels do that job instead.
   const wantNote =

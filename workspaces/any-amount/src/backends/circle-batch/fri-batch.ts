@@ -485,30 +485,49 @@ export function verifyFri(
   const hash = friHash(opts);
   const cons = checkPublicConservation(statement);
   if (!cons.ok) return cons;
-  const auth = resolveAuthForVerify(statement, proof, witness, opts, hash);
-  if (!auth.ok) return auth;
-  // INVARIANT 2: every auth is checked, from the PUBLISHED proof.
+
+  // INVARIANT 2: every published auth is checked.
   //
-  // FRI9 already validates N notes correctly (checkBatchSpends: no duplicate
-  // index, positive amounts, membership, non-zero nullifier, sum == public net) -
-  // but only when the WITNESS carries them (air.ts:141). Without a witness it
-  // falls through to the single-note check and rejects an honest batch with
-  // "withdraw exceeds note". So synthesise the batch from the auths the proof
-  // publishes and run FRI9's own audited path over it, rather than a parallel
-  // reimplementation that could drift from it.
-  if (!proof.authMasked && proof.auths.length > 0) {
-    const fromProof: FriWitness = {
-      spent: {
-        note: openedNote(proof.auths[0]!),
-        index: proof.auths[0]!.index,
-        path: proof.auths[0]!.path,
-      },
-      batch: proof.auths.map((a) => ({ note: openedNote(a), index: a.index, path: a.path })),
-    };
+  // The auths are OTP-masked in the published encoding, so they can only be read
+  // with the viewing key. Resolve them ONCE here; everything below works from the
+  // opened list. The previous gate was `!proof.authMasked`, which is never true
+  // for a published proof - so these checks were unreachable exactly where they
+  // mattered, key or no key.
+  const key = opts.viewingKey ?? (proof.authMasked ? undefined : proof.viewingKey);
+  const opened: FriAuth[] | undefined = proof.authMasked
+    ? key
+      ? unmaskAuths(proof.auths, key, hash)
+      : undefined
+    : proof.auths;
+
+  // Public checks run ALWAYS, masked or not: leaf, index, path and nullifier are
+  // never masked, so membership, duplicates and the root fold need no key. This
+  // is what a verifier reading only the published proof can establish.
+  const pub = checkAuthsPublicly(statement, proof.auths, hash);
+  if (!pub.ok) return pub;
+
+  // Hand FRI9's own audited path the batch, so its single-note fallthrough
+  // ("withdraw exceeds note") cannot fire on an honest batch.
+  const fromProof: FriWitness | undefined = opened
+    ? {
+        spent: {
+          note: openedNote(opened[0]!),
+          index: opened[0]!.index,
+          path: opened[0]!.path,
+        },
+        batch: opened.map((a) => ({ note: openedNote(a), index: a.index, path: a.path })),
+      }
+    : undefined;
+
+  const auth = resolveAuthForVerify(statement, proof, fromProof ?? witness, opts, hash);
+  if (!auth.ok) return auth;
+
+  if (opened && fromProof) {
     const all = checkBatchSpends(statement, fromProof.batch!, hash);
     if (!all.ok) return all;
-    // and the stricter published-proof checks: leaf opens, nullifier matches
-    const strict = checkAuthsAgainstStatement(statement, proof.auths, hash);
+    // and with the key: leaf opens to its preimage, the nullifier derives from
+    // it, amounts are positive, and the sum equals the public net
+    const strict = checkAuthsAgainstStatement(statement, opened, hash);
     if (!strict.ok) return strict;
   }
   if (witness.batch && witness.batch.length > 0) {
@@ -666,6 +685,39 @@ function decodeAuth(bytes: Uint8Array, start: number): { auth: FriAuth; viewingC
  * the first failure, but only after every auth has been reached in turn: the loop
  * never short-circuits on success.
  */
+/**
+ * The checks a verifier can run with NO viewing key.
+ *
+ * maskAuth (witness-mask.ts:31) masks rho, owner, amountSats and publicDeltaSats
+ * and nothing else, so leaf, index, path and nullifier are public. That is enough
+ * for membership, duplicate detection and the nullifier-root fold. It is NOT
+ * enough for amounts, so the sum check lives in the keyed function below.
+ */
+export function checkAuthsPublicly(
+  statement: PoolStatement,
+  auths: readonly FriAuth[],
+  hash: InternalHash,
+): { ok: true } | { ok: false; reason: string } {
+  if (auths.length === 0) return { ok: false, reason: "no auths" };
+  const root = statement.oldState.noteRoot;
+  const seen = new Set<number>();
+  for (const [i, a] of auths.entries()) {
+    if (seen.has(a.index)) return { ok: false, reason: `duplicate note index at auth ${i}` };
+    seen.add(a.index);
+    if (!nativeWalk(a.leaf, a.index, a.path, root, hash)) {
+      return { ok: false, reason: `auth ${i} membership` };
+    }
+    if (isZero32(a.nullifier)) return { ok: false, reason: `auth ${i} nullifier zero` };
+  }
+  // The accumulator must advance by exactly these nullifiers, in insertion order.
+  let acc = statement.oldState.nullifierRoot;
+  for (const a of auths) acc = hash.digest(concatBytes(acc, a.nullifier));
+  if (!eq32(acc, statement.newState.nullifierRoot)) {
+    return { ok: false, reason: "nullifier root is not the fold of these auths" };
+  }
+  return { ok: true };
+}
+
 export function checkAuthsAgainstStatement(
   statement: PoolStatement,
   auths: readonly FriAuth[],
@@ -694,6 +746,24 @@ export function checkAuthsAgainstStatement(
   }
   if (absNet > 0n && sum !== absNet) {
     return { ok: false, reason: `auth sum ${sum} != public net ${absNet}` };
+  }
+  // The nullifier accumulator must ACTUALLY advance by these nullifiers.
+  //
+  // Without this a prover sets newState.nullifierRoot to anything they like and
+  // the spends are never recorded - a double-spend across transactions. Nothing
+  // else covers it: checkBatchSpends does not fold, AIR cells 21/22 hold both
+  // roots but appear in no constraint, and FRI9's published proof carries one
+  // auth so it cannot fold N. On chain the audited note-auth kernel enforces one
+  // step, which is why landed single-note withdrawals are safe - but a batch has
+  // no such kernel, and a pool that does not walk notes on chain at all has none
+  // either. Publishing every auth is what makes this checkable here.
+  //
+  // Order matters: NullifierSet.root is a running fold in INSERTION order, so the
+  // auths must be in the order the pool inserted them.
+  let acc = statement.oldState.nullifierRoot;
+  for (const a of auths) acc = hash.digest(concatBytes(acc, a.nullifier));
+  if (!eq32(acc, statement.newState.nullifierRoot)) {
+    return { ok: false, reason: "nullifier root is not the fold of these auths" };
   }
   return { ok: true };
 }

@@ -17,7 +17,7 @@ import { createVirtualMachineBch2026, decodeTransaction } from "@bitauth/libauth
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { poolLockP2sh32 } from "../src/chain/covenant-p2s.ts";
 import { runBatchSuccessor } from "../src/pool/mix-successor.ts";
-import { stepRoots, compileNoteAuthStepLockP2sh32 } from "../src/chain/note-auth-step-kernel.ts";
+import { stepPlan, compileNoteAuthStepLockP2sh32 } from "../src/chain/note-auth-step-kernel.ts";
 import { compileNoteAuthLockP2sh32 } from "../src/chain/note-auth-kernel.ts";
 import { encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
 import { compileFriQueryLockP2sh32 } from "../src/chain/fri-kernel.ts";
@@ -30,9 +30,7 @@ import {
 import { compileFoldLockP2sh32, foldKernelCount } from "../src/chain/fold-kernel.ts";
 import { compileGrindLockP2sh32 } from "../src/chain/grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "../src/chain/algebraic-c-kernel.ts";
-import { nullifierOf } from "../src/pool/notes.ts";
 import { createLabWallet, p2pkhLockingOf } from "../src/chain/wallet.ts";
-import { defaultInternalHash } from "../src/backends/circle/internal-hash.ts";
 
 /**
  * Envelope B is consensus-valid and NON-standard by design (~500 KB), so it must
@@ -78,17 +76,18 @@ const ENV_B: Env = { slots: SLOTS, envelope: "consensus", standard: false };
 function buildFor(env: Env, noteCount: number) {
   const folds = foldKernelCount(env.slots);
   const b = runBatchSuccessor({ depositCount: Math.max(6, noteCount), noteCount });
-  const hash = defaultInternalHash();
-  const nfs = b.spends.map((s) => nullifierOf(s.note, b.oldState.poolInstanceId, hash));
-  const roots = stepRoots(b.oldState.nullifierRoot, nfs);
-  const stepSpends = b.spends.map((s, i) => ({
-    note: s.note,
-    index: s.index,
-    path: s.path,
-    rIn: roots[i]!,
-    rOut: roots[i + 1]!,
-  }));
-  const stepLocks = stepSpends.map((s) => compileNoteAuthStepLockP2sh32(s.rIn, s.rOut));
+  // stepPlan sorts by nullifier and threads prevNf; runBatchSuccessor sorts the
+  // same way, so newState.nullifierRoot equals the plan's last root.
+  const plan = stepPlan({
+    oldNfRoot: b.oldState.nullifierRoot,
+    poolInstanceId: b.oldState.poolInstanceId,
+    spends: b.spends,
+  });
+  const roots = plan.roots;
+  const stepSpends = plan.spends;
+  const stepLocks = stepSpends.map((s) =>
+    compileNoteAuthStepLockP2sh32(s.rIn, s.rOut, s.prevNf),
+  );
   const finalNfRoot = roots[noteCount]!;
   const nExtras = 3 + folds + env.slots + noteCount;
   const tx = compileCovenantSuccessor({
@@ -240,6 +239,30 @@ describe("envelope B: N notes walked on chain in one consensus transaction", () 
     // Non-standard on purpose: over 100 KB, under the 1 MB consensus ceiling.
     assert.ok(built.tx.txBytes > 100_000, `B is non-standard by design (${built.tx.txBytes})`);
     assert.ok(built.tx.txBytes < 1_000_000, `B stays under 1 MB (${built.tx.txBytes})`);
+  });
+
+  it("NON-BATCHED: a 1-note batch is the same path and still verifies", () => {
+    const built = buildFor(ENV_B, 1);
+    const tx = decodeTransaction(built.tx.raw);
+    if (typeof tx === "string") throw new Error(tx);
+    assert.equal(built.stepSpends.length, 1);
+    assert.deepEqual(built.stepSpends[0]!.prevNf, new Uint8Array(32));
+    assert.equal(
+      verdict(tx, sourceOutputsFor(built, built.stepLocks), built.env.standard),
+      true,
+      "N=1 must verify through the batch path too",
+    );
+  });
+
+  it("the plan's final root is the state's new nullifier root", () => {
+    for (const n of [1, 3]) {
+      const built = buildFor(ENV_B, n);
+      assert.deepEqual(
+        built.roots[n],
+        built.b.newState.nullifierRoot,
+        `N=${n}: sorted plan must land on the state's root`,
+      );
+    }
   });
 
   it("FRI9's unbatched covenant is untouched", () => {

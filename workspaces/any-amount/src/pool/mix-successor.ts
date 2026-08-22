@@ -6,7 +6,8 @@ import { encodeFriProof, proveFri, wWithdraw, type FriWitness } from "../backend
 import { wBatchExit } from "../backends/circle/air.ts";
 import { encodePublicPaa1, emptyState, type AnyAmountState } from "./state.ts";
 import { writeU64BE } from "./bytes.ts";
-import { IncrementalMerkle, NullifierSet, type Note } from "./notes.ts";
+import { IncrementalMerkle, NullifierSet, nullifierOf, type Note } from "./notes.ts";
+import { cmpUnsignedLe } from "../chain/note-auth-step-kernel.ts";
 import { applyBatchExit, applyDeposit, applyWithdraw, type PoolMachine } from "./transition.ts";
 import type { PoolStatement } from "./statement.ts";
 import { LAB_PAYOUT_DIGEST, LAB_PAYOUT_LOCKING } from "../chain/payout.ts";
@@ -180,9 +181,20 @@ export function runBatchSuccessor(args?: {
     held.push({ note, index: d.index });
   }
   const oldState = structuredCloneState(machine.state);
+  // Sort by nullifier BEFORE applying. The pool folds nullifiers in insertion
+  // order, and the on-chain step kernels require strictly increasing nullifier
+  // order (that ordering is what makes a duplicate unsatisfiable). Sorting here
+  // makes the two agree, so newState.nullifierRoot == the step plan's last root.
+  const hashForSort = defaultInternalHash();
+  const ordered = held.slice(0, noteCount).sort((x, y) =>
+    cmpUnsignedLe(
+      nullifierOf(x.note, oldState.poolInstanceId, hashForSort),
+      nullifierOf(y.note, oldState.poolInstanceId, hashForSort),
+    ),
+  );
   const b = applyBatchExit(
     machine,
-    held.slice(0, noteCount).map((h) => ({
+    ordered.map((h) => ({
       note: h.note,
       index: h.index,
       withdrawSats: h.note.amountSats,

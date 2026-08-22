@@ -1,6 +1,7 @@
 /**
  * On-chain note Merkle + nullifier-root chain + amount/auth preimage.
- * B (and C pay hop) only — A cannot hold this plus 36 queries in 100 KB.
+ * B (and C pay hop) only — A does not carry this kernel by default. That is about
+ * THIS kernel: the step kernel (note-auth-step-kernel.ts, 182 B) does fit A.
  * Spender unlocking carries the note; CashVM SHA-256 matches default InternalHash.
  * Dummy leftover-fill cargo is not this kernel. The one-byte dummy in front of
  * the redeem is the same density prefix every kernel uses (OP_DROP).

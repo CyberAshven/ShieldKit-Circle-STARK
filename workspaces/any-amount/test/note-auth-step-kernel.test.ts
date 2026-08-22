@@ -21,7 +21,9 @@ import {
   compileNoteAuthStepKernel,
   compileNoteAuthStepLockP2sh32,
   noteAuthStepUnlocking,
+  stepPlan,
   stepRoots,
+  cmpUnsignedLe,
 } from "../src/chain/note-auth-step-kernel.ts";
 import {
   compileNoteAuthKernel,
@@ -70,12 +72,13 @@ function batchOf(n: number) {
 /** One transaction carrying `steps` step kernels against a single carrier NFT. */
 function runSteps(
   b: ReturnType<typeof batchOf>,
-  steps: Array<{ noteAt: number; rIn: Uint8Array; rOut: Uint8Array }>,
+  steps: Array<{ noteAt: number; rIn: Uint8Array; rOut: Uint8Array; prevNf?: Uint8Array }>,
 ): string {
   const vm = createVirtualMachineBch2026(true);
   const outState = {
     ...b.statement.newState,
-    nullifierRoot: b.roots[b.roots.length - 1]!,
+    // last step's rOut - the sorted plan may differ from deposit order
+    nullifierRoot: steps.length ? steps[steps.length - 1]!.rOut : b.roots[0]!,
   };
   const r = vm.verify({
     sourceOutputs: [
@@ -92,7 +95,7 @@ function runSteps(
         },
       },
       ...steps.map((s) => ({
-        lockingBytecode: compileNoteAuthStepLockP2sh32(s.rIn, s.rOut),
+        lockingBytecode: compileNoteAuthStepLockP2sh32(s.rIn, s.rOut, s.prevNf ?? new Uint8Array(32)),
         valueSatoshis: 1000n,
       })),
     ],
@@ -118,6 +121,7 @@ function runSteps(
               path: sp.path,
               rIn: s.rIn,
               rOut: s.rOut,
+              prevNf: s.prevNf,
             }),
           };
         }),
@@ -138,8 +142,20 @@ function runSteps(
   return r === true ? "ok" : String(r).replace(/\s+/g, " ").slice(0, 110);
 }
 
-const honestSteps = (b: ReturnType<typeof batchOf>) =>
-  b.spent.map((_, i) => ({ noteAt: i, rIn: b.roots[i]!, rOut: b.roots[i + 1]! }));
+/** The planner sorts by nullifier and threads prevNf - the on-chain contract. */
+function honestSteps(b: ReturnType<typeof batchOf>) {
+  const plan = stepPlan({
+    oldNfRoot: b.statement.oldState.nullifierRoot,
+    poolInstanceId: b.statement.oldState.poolInstanceId,
+    spends: b.spent.map((s) => ({ note: s.note, index: s.index, path: s.path })),
+  });
+  return plan.spends.map((p) => ({
+    noteAt: b.spent.findIndex((s) => s.index === p.index),
+    rIn: p.rIn,
+    rOut: p.rOut,
+    prevNf: p.prevNf,
+  }));
+}
 
 describe("note-auth step kernel — N notes in one transaction", () => {
   it("the step chain closes on the state's new nullifier root", () => {
@@ -239,6 +255,58 @@ describe("note-auth step kernel — N notes in one transaction", () => {
     assert.ok(stepU.length < auditedU.length, "and so must its unlocking");
     // Each step is its OWN input, so the 2026 per-input 10 KB cap never binds.
     assert.ok(stepU.length < 10_000, `step unlocking ${stepU.length} must fit one input`);
+  });
+
+  it("NON-BATCHED: a single note still works, and is the same code path", () => {
+    const b = batchOf(1);
+    const steps = honestSteps(b);
+    assert.equal(steps.length, 1, "one note, one step");
+    assert.deepEqual(steps[0]!.prevNf, new Uint8Array(32), "step 0 compares against ZERO32");
+    assert.equal(runSteps(b, steps), "ok", "the N=1 case must verify like any other");
+  });
+
+  it("DUPLICATE: the same note spent twice is unsatisfiable on chain", () => {
+    // Before the ordering guard this was ACCEPTED by the VM: one note folded
+    // twice gives a valid root chain, and no single kernel can see the other.
+    const b = batchOf(2);
+    const nf0 = b.spent[0]!.nullifier;
+    const r1 = stepRoots(b.statement.oldState.nullifierRoot, [nf0, nf0]);
+    const dup = [
+      { noteAt: 0, rIn: r1[0]!, rOut: r1[1]!, prevNf: new Uint8Array(32) },
+      { noteAt: 0, rIn: r1[1]!, rOut: r1[2]!, prevNf: nf0 },
+    ];
+    assert.notEqual(runSteps(b, dup), "ok", "nf > prevNf is false for equals");
+  });
+
+  it("the planner refuses to build a duplicate plan at all", () => {
+    const b = batchOf(2);
+    const one = { note: b.spent[0]!.note, index: b.spent[0]!.index, path: b.spent[0]!.path };
+    assert.throws(
+      () =>
+        stepPlan({
+          oldNfRoot: b.statement.oldState.nullifierRoot,
+          poolInstanceId: b.statement.oldState.poolInstanceId,
+          spends: [one, one],
+        }),
+      /duplicate note/,
+    );
+  });
+
+  it("out-of-order steps are rejected — order is the guard", () => {
+    const b = batchOf(3);
+    const steps = honestSteps(b);
+    // keep the roots, but give step 1 a prevNf that is larger than its own nf
+    const bad = steps.map((s, i) => (i === 1 ? { ...s, prevNf: steps[2]!.prevNf } : s));
+    if (cmpUnsignedLe(bad[1]!.prevNf!, steps[1]!.prevNf!) === 0) return; // degenerate
+    assert.notEqual(runSteps(b, bad), "ok");
+  });
+
+  it("the sort matches the VM's unsigned little-endian comparison", () => {
+    const lo = new Uint8Array(32); lo[31] = 0x10;
+    const hi = new Uint8Array(32); hi[31] = 0xfe; // high bit set: signed would flip this
+    assert.equal(cmpUnsignedLe(lo, hi), -1, "0xfe must sort ABOVE 0x10, not below");
+    assert.equal(cmpUnsignedLe(hi, lo), 1);
+    assert.equal(cmpUnsignedLe(lo, lo), 0);
   });
 
   it("the audited kernel is untouched by any of this", () => {

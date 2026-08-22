@@ -24,7 +24,7 @@ Envelope **B** is the hole-free statistical-soundness envelope (C's pay hop runs
 | Bind-T | Newton T interpolates packed cells |
 | algebraicC | Point checks (digest cell, seq+1, action 1\|2, UTXO conservation). **Is** the FRI interpolant: C = interpolant(algebraicC residuals), Q = C/Z (`FRI_VERSION` 9). Off-trace airNumerator (`FRI_VERSION` 8) is prior art, not this statement |
 | Slot ×36 | FS index recomputed; `R_on(i)+Z(i)·R_off(i)`; `(qTable−R)·Z` equals `C(z)`, the algebraicC residual interpolant (`FRI_VERSION` 9); honest C is the zero polynomial. Independent of nTable — masked nTable cannot cancel R |
-| Note-auth ×1 | SHA-256 note preimage → leaf; Merkle walk to NFT `noteRoot`; `nf = SHA256(instance\|\|owner\|\|rho)`; `SHA256(oldNfRoot\|\|nf)` (withdraw) or equal nfRoots (deposit). Change-note append when `createdSteps` is non-empty. On **B and C's pay hop** (C funds it with `forceNoteAuth`). A has no room for this kernel. |
+| Note-auth ×1 | SHA-256 note preimage → leaf; Merkle walk to NFT `noteRoot`; `nf = SHA256(instance\|\|owner\|\|rho)`; `SHA256(oldNfRoot\|\|nf)` (withdraw) or equal nfRoots (deposit). Change-note append when `createdSteps` is non-empty. On **B and C's pay hop** (C funds it with `forceNoteAuth`). A does not carry *this* kernel by default; the smaller step kernel (182 B) does fit A - see FRI10-BATCH-EXIT.md. |
 
 **99 KB packing is not the verifier.** `packTo` defaults to **0**. Dummy `OP_DROP` leftover-fill cargo is not foldPair / C=QZ / R / note-auth. Density pad on high-index FS kernels (unlocking longer so `800×(41+unlocking)` covers the hash loop) is the VM meter, not cargo. Leftover 1 MB on B is unused headroom for more real kernels.
 
@@ -201,7 +201,7 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
 - A **confirmed block** for B's successor (accepted at zero-conf in the lab BCHN; depth follows from the lab miner).
 - That C's 36 orbits are **same-tx** binds. C matches B on the completeness kernels — note-auth included — but 32 of the 36 orbits sit on tape hops; only 4 R-slots run on the pay tx.
-- Envelope A note/nullifier membership (A has no room; still `verifyFri`).
+- Envelope A note/nullifier membership by default (still `verifyFri`). Not a size limit: the step kernel fits A and a 3-note batch verifies there in 100 KB (`test/envelope-batch.test.ts`); it is simply not adopted.
 - Batch-exit extra notes (one-auth FRI + this kernel still walk the first spent note).
 - Dummy 99 KB cargo as a verifier (it never was).
 - A Lean theorem that FRI openings hide the statement.

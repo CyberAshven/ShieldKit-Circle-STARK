@@ -43,7 +43,8 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { HASH_AMOUNT_TAG } from "../amounts/hash-commit.ts";
 import { writeI64LE, concatBytes, sha256 } from "../pool/bytes.ts";
-import { type Note } from "../pool/notes.ts";
+import { nullifierOf, type Note } from "../pool/notes.ts";
+import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 import {
   EXTRACT_INSTANCE,
   EXTRACT_NOTE_ROOT,
@@ -74,10 +75,22 @@ const TAG = hexPush(HASH_AMOUNT_TAG);
  * nf           = SHA256(instance || owner || rho)
  *
  * Identical to the audited kernel's three formulas; only the root handling differs.
+ *
+ * ORDERING GUARD. Each step also asserts its nullifier is strictly greater than
+ * the previous step's, compared UNSIGNED (`<0x00> OP_CAT OP_BIN2NUM` - a 32-byte
+ * value with its top byte >= 0x80 would otherwise read as negative, the same
+ * idiom BIND_PAA1 uses). Strictly increasing implies all distinct, so spending
+ * one note twice in a batch becomes unsatisfiable on chain rather than merely
+ * caught by the proof. Step 0 uses ZERO32, which every real nullifier exceeds.
  */
-export function noteAuthStepKernelAsm(rIn: Uint8Array, rOut: Uint8Array): string {
+export function noteAuthStepKernelAsm(
+  rIn: Uint8Array,
+  rOut: Uint8Array,
+  prevNf: Uint8Array = new Uint8Array(32),
+): string {
   if (rIn.length !== 32) throw new Error(`rIn must be 32 bytes, got ${rIn.length}`);
   if (rOut.length !== 32) throw new Error(`rOut must be 32 bytes, got ${rOut.length}`);
+  if (prevNf.length !== 32) throw new Error(`prevNf must be 32 bytes, got ${prevNf.length}`);
   return `
 OP_DROP
 OP_DUP OP_TOALTSTACK
@@ -90,6 +103,11 @@ OP_CAT
 OP_SWAP
 OP_CAT
 OP_SHA256
+OP_DUP
+<0x00> OP_CAT OP_BIN2NUM
+${hexPush(concatBytes(prevNf, Uint8Array.of(0)))} OP_BIN2NUM
+OP_GREATERTHAN
+OP_VERIFY
 ${hexPush(rIn)}
 OP_SWAP
 OP_CAT
@@ -124,15 +142,23 @@ OP_1
 `;
 }
 
-export function compileNoteAuthStepKernel(rIn: Uint8Array, rOut: Uint8Array): Uint8Array {
-  const bin = cashAssemblyToBin(noteAuthStepKernelAsm(rIn, rOut));
+export function compileNoteAuthStepKernel(
+  rIn: Uint8Array,
+  rOut: Uint8Array,
+  prevNf: Uint8Array = new Uint8Array(32),
+): Uint8Array {
+  const bin = cashAssemblyToBin(noteAuthStepKernelAsm(rIn, rOut, prevNf));
   if (typeof bin === "string") throw new Error(`note-auth-step-kernel: ${bin}`);
   return bin;
 }
 
 /** One address per (R_IN, R_OUT), so step j and step k cannot be swapped. */
-export function compileNoteAuthStepLockP2sh32(rIn: Uint8Array, rOut: Uint8Array): Uint8Array {
-  return encodeLockingBytecodeP2sh32(hash256(compileNoteAuthStepKernel(rIn, rOut)));
+export function compileNoteAuthStepLockP2sh32(
+  rIn: Uint8Array,
+  rOut: Uint8Array,
+  prevNf: Uint8Array = new Uint8Array(32),
+): Uint8Array {
+  return encodeLockingBytecodeP2sh32(hash256(compileNoteAuthStepKernel(rIn, rOut, prevNf)));
 }
 
 /**
@@ -146,6 +172,9 @@ export function noteAuthStepUnlocking(args: {
   path: Uint8Array[];
   rIn: Uint8Array;
   rOut: Uint8Array;
+  /** The previous step's nullifier. Steps must run in strictly increasing
+   *  nullifier order, which is what makes a duplicate note unsatisfiable. */
+  prevNf?: Uint8Array;
 }): Uint8Array {
   const payload = concatBytes(
     pushData(encodeWalkSteps(args.index, args.path)),
@@ -153,7 +182,9 @@ export function noteAuthStepUnlocking(args: {
     pushData(args.note.rho),
     pushData(args.note.ownerSecret),
   );
-  const redeem = pushData(compileNoteAuthStepKernel(args.rIn, args.rOut));
+  const redeem = pushData(
+    compileNoteAuthStepKernel(args.rIn, args.rOut, args.prevNf ?? new Uint8Array(32)),
+  );
   return concatBytes(payload, densityPadUnlocking(redeem, redeem.length + 1));
 }
 
@@ -167,4 +198,65 @@ export function stepRoots(oldNfRoot: Uint8Array, nullifiers: readonly Uint8Array
   // knob the prover happens to be using.
   for (const nf of nullifiers) out.push(sha256(concatBytes(out[out.length - 1]!, nf)));
   return out;
+}
+
+/**
+ * Order N spends the way the on-chain guard compares them, and derive every
+ * step's (rIn, rOut, prevNf).
+ *
+ * The kernel reads its nullifier with `OP_BIN2NUM` after appending 0x00, so the
+ * comparison is UNSIGNED LITTLE-ENDIAN: byte 31 is the most significant. Sorting
+ * any other way produces a plan the VM rejects, so this comparator is part of the
+ * contract, not a convenience.
+ *
+ * Strictly increasing order is what makes a duplicate note unsatisfiable: two
+ * copies of one note share a nullifier, and `nf > prevNf` is false for equals.
+ */
+export function stepPlan(args: {
+  oldNfRoot: Uint8Array;
+  poolInstanceId: Uint8Array;
+  spends: ReadonlyArray<{ note: Note; index: number; path: Uint8Array[] }>;
+  hash?: InternalHash;
+}): {
+  spends: Array<{
+    note: Note;
+    index: number;
+    path: Uint8Array[];
+    rIn: Uint8Array;
+    rOut: Uint8Array;
+    prevNf: Uint8Array;
+  }>;
+  roots: Uint8Array[];
+} {
+  const hash = args.hash ?? defaultInternalHash();
+  const withNf = args.spends.map((s) => ({
+    ...s,
+    nf: nullifierOf(s.note, args.poolInstanceId, hash),
+  }));
+  withNf.sort((a, b) => cmpUnsignedLe(a.nf, b.nf));
+  for (let i = 1; i < withNf.length; i += 1) {
+    if (cmpUnsignedLe(withNf[i - 1]!.nf, withNf[i]!.nf) === 0) {
+      throw new Error(`duplicate note at position ${i}: the same note cannot be spent twice`);
+    }
+  }
+  const roots = stepRoots(args.oldNfRoot, withNf.map((s) => s.nf));
+  return {
+    spends: withNf.map((s, i) => ({
+      note: s.note,
+      index: s.index,
+      path: s.path,
+      rIn: roots[i]!,
+      rOut: roots[i + 1]!,
+      prevNf: i === 0 ? new Uint8Array(32) : withNf[i - 1]!.nf,
+    })),
+    roots,
+  };
+}
+
+/** Matches OP_BIN2NUM on a 0x00-extended 32-byte push: little-endian, unsigned. */
+export function cmpUnsignedLe(a: Uint8Array, b: Uint8Array): number {
+  for (let i = a.length - 1; i >= 0; i -= 1) {
+    if (a[i]! !== b[i]!) return a[i]! < b[i]! ? -1 : 1;
+  }
+  return 0;
 }
