@@ -402,7 +402,13 @@ export function poolWitnessPushes(w: PoolUnlockWitness): Uint8Array {
 export function p2sh32Unlocking(
   w?: PoolUnlockWitness,
   layerRoots?: Uint8Array[] | Uint8Array,
-  opts?: { slotKernels?: number; forceNoteAuth?: boolean; tapeTipLock?: Uint8Array },
+  opts?: {
+    slotKernels?: number;
+    forceNoteAuth?: boolean;
+    tapeTipLock?: Uint8Array;
+    /** Option A': must match the lock's pin or the redeem will not hash to it. */
+    finalNfRoot?: Uint8Array;
+  },
 ): Uint8Array {
   const redeem = pushData(compilePoolCovenant(opts));
   const prefix =

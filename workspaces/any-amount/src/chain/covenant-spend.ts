@@ -82,6 +82,7 @@ import { compileAlgebraicCLockP2sh32, algebraicCKernelUnlocking } from "./algebr
 import {
   compileNoteAuthLockP2sh32,
   includeNoteAuth,
+  noteAuthKernelUnlocking,
   noteAuthUnlockingFromProof,
   prefixExtraKernelCount,
 } from "./note-auth-kernel.ts";
@@ -116,10 +117,11 @@ function lockOf(
   slotKernels = SLOT_KERNEL_COUNT,
   forceNoteAuth = false,
   tapeTipLock?: Uint8Array,
+  finalNfRoot?: Uint8Array,
 ): Uint8Array {
   return kind === "p2s"
-    ? poolLockP2sFor({ slotKernels, forceNoteAuth, tapeTipLock })
-    : poolLockP2sh32({ slotKernels, forceNoteAuth, tapeTipLock });
+    ? poolLockP2sFor({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot })
+    : poolLockP2sh32({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot });
 }
 
 function measureOf(
@@ -181,6 +183,12 @@ export function compileCovenantSpend(args: {
   /** Envelope C: pin the terminal tape tip lock into the pool covenant here, at
    * genesis, so the pay hop cannot spend a tip committed to another digest. */
   tapeTipLock?: Uint8Array;
+  /**
+   * Option A' (FRI10-BATCH-EXIT.md): pin the batch's landing root R_N into the
+   * pool covenant. Genesis is the only place this can be committed, since the
+   * covenant is what the pool NFT is locked to.
+   */
+  finalNfRoot?: Uint8Array;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -230,7 +238,13 @@ export function compileCovenantSpend(args: {
     ],
     outputs: [
       {
-        lockingBytecode: lockOf(lockKind, slotKernels, args.forceNoteAuth ?? false, args.tapeTipLock),
+        lockingBytecode: lockOf(
+          lockKind,
+          slotKernels,
+          args.forceNoteAuth ?? false,
+          args.tapeTipLock,
+          args.finalNfRoot,
+        ),
         valueSatoshis: value,
         token: {
           amount: 0n,
@@ -311,6 +325,15 @@ export function compileCovenantSuccessor(args: {
   /** Match a genesis locked with forceNoteAuth (envelope C pay hop). */
   forceNoteAuth?: boolean;
   /**
+   * Option A' (FRI10-BATCH-EXIT.md): this hop's own note walk. A batch spreads N
+   * notes across N tape hops, and the published proof's single `auth` describes
+   * only the first, so each hop past the first must supply its own index+path.
+   * Omit for FRI9, which reads the walk out of the proof.
+   */
+  noteSpent?: { index: number; path: Uint8Array[] };
+  /** Option A': must equal what genesis pinned, or the pool lock will not match. */
+  finalNfRoot?: Uint8Array;
+  /**
    * Tape tip lock chain (C-BINDING). When present the tape tip is a P2SH32
    * covenant rather than a P2PKH: spend it with `tapeTipRedeem`, and a tape hop
    * must recreate `tapeTipNextLock` at output 1. The chain is counted, so hops
@@ -332,7 +355,12 @@ export function compileCovenantSuccessor(args: {
   const depositNeed = net > 0n ? net : 0n;
   const userFee = Boolean(args.feeUtxo);
   const tape = Boolean(args.tapeUtxo);
-  const wantNote = (args.includePool !== false) && (includeNoteAuth(slotKernels) || Boolean(args.note));
+  // Option A': a tape hop may carry its own note-auth kernel when a note is
+  // supplied. FRI9 tape hops pass none, so this stays false for them.
+  const wantNote =
+    args.includePool !== false
+      ? includeNoteAuth(slotKernels) || Boolean(args.note)
+      : Boolean(args.note);
   if (depositNeed > 0n && !args.feeUtxo) {
     throw new Error("deposit successor needs a funder utxo for the net");
   }
@@ -382,6 +410,7 @@ export function compileCovenantSuccessor(args: {
           slotKernels,
           forceNoteAuth: args.forceNoteAuth ?? false,
           tapeTipLock: args.tapeTipLock,
+          finalNfRoot: args.finalNfRoot,
         })
     : packedAirCarrierUnlocking(packed instanceof Uint8Array ? packed : encodeAirPacked(args.statement!, decoded));
   const shards = friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
@@ -400,9 +429,9 @@ export function compileCovenantSuccessor(args: {
       ? [
           { tx_hash: dummy, tx_pos: 11, value: 1000 },
           { tx_hash: dummy, tx_pos: 12, value: 1000 },
-          ...(wantNote ? [{ tx_hash: dummy, tx_pos: 13, value: 1000 }] : []),
         ]
       : []),
+    ...(wantNote ? [{ tx_hash: dummy, tx_pos: includePool ? 13 : 11, value: 1000 }] : []),
     ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + f, value: 1000 })),
     ...Array.from({ length: slotN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + i, value: 1000 })),
   ];
@@ -411,7 +440,9 @@ export function compileCovenantSuccessor(args: {
   }
   if (wantNote) {
     if (!args.note) throw new Error("note-auth kernel needs the opened note (not the OTP-masked proof field)");
-    if (!args.statement) throw new Error("note-auth kernel needs the statement");
+    if (!args.noteSpent && !args.statement) {
+      throw new Error("note-auth kernel needs the statement (or an explicit noteSpent walk)");
+    }
   }
 
   const airPacked =
@@ -461,21 +492,32 @@ export function compileCovenantSuccessor(args: {
               sequenceNumber: 0xffffffff,
               unlockingBytecode: algebraicCKernelUnlocking(),
             },
-            ...(wantNote
-              ? [
-                  {
-                    outpointIndex: extras[3]!.tx_pos,
-                    outpointTransactionHash: hexToBin(extras[3]!.tx_hash),
-                    sequenceNumber: 0xffffffff,
-                    unlockingBytecode: noteAuthUnlockingFromProof({
-                      note: args.note!,
-                      change: args.change,
-                      proof: args.proof,
-                      statement: args.statement!,
-                    }),
-                  },
-                ]
-              : []),
+          ]
+        : []),
+      ...(wantNote
+        ? [
+            {
+              outpointIndex: extras[includePool ? 3 : 1]!.tx_pos,
+              outpointTransactionHash: hexToBin(extras[includePool ? 3 : 1]!.tx_hash),
+              sequenceNumber: 0xffffffff,
+              // Option A': a batch hop supplies its own note's walk, since the
+              // published proof's single `auth` covers only the first spent note.
+              unlockingBytecode: args.noteSpent
+                ? noteAuthKernelUnlocking({
+                    note: args.note!,
+                    change: args.change,
+                    spentIndex: args.noteSpent.index,
+                    spentPath: args.noteSpent.path,
+                    createdIndex: 0,
+                    createdPath: [],
+                  })
+                : noteAuthUnlockingFromProof({
+                    note: args.note!,
+                    change: args.change,
+                    proof: args.proof,
+                    statement: args.statement!,
+                  }),
+            },
           ]
         : []),
       ...Array.from({ length: foldN }, (_, f) => ({
@@ -536,7 +578,13 @@ export function compileCovenantSuccessor(args: {
   const outputs = includePool
     ? [
       {
-        lockingBytecode: lockOf(lockKind, slotKernels, args.forceNoteAuth ?? false, args.tapeTipLock),
+        lockingBytecode: lockOf(
+          lockKind,
+          slotKernels,
+          args.forceNoteAuth ?? false,
+          args.tapeTipLock,
+          args.finalNfRoot,
+        ),
         valueSatoshis: value,
         token: {
           amount: 0n,

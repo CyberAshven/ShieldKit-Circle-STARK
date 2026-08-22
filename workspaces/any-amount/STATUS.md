@@ -76,8 +76,10 @@ the witness can run the membership/nullifier/sum checks. On-chain batch note wal
 are **built and tested, not shipped**: one transaction can make one nullifier
 insertion, so **option A'** spreads N kernels across envelope C's tape hops and
 binds the running root into the pool (pre-minted sibling roots, root-pinned tip
-chain, `finalNfRoot` covenant pin; 12 tests; FRI9 byte-identical). Not wired into
-landing, and no N-note batch has been broadcast.
+chain, `finalNfRoot` covenant pin), wired through `landC(hops, scratch, batchNotes)`
+and VM-verified as a 3-note batch with all 18 tape hops passing. FRI9 stays
+byte-identical. **No N-note batch has been broadcast** - the claims here are about
+compiled and VM-verified transactions, not confirmed ones.
 See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
 
 ## Not done (honest)

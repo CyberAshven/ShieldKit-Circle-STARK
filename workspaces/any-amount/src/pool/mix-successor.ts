@@ -3,12 +3,15 @@
  * partial withdraw. Public PAA1 carries roots + reserve only — not note amounts.
  */
 import { encodeFriProof, proveFri, wWithdraw, type FriWitness } from "../backends/circle/fri.ts";
+import { wBatchExit } from "../backends/circle/air.ts";
 import { encodePublicPaa1, emptyState, type AnyAmountState } from "./state.ts";
 import { writeU64BE } from "./bytes.ts";
 import { IncrementalMerkle, NullifierSet, type Note } from "./notes.ts";
-import { applyDeposit, applyWithdraw, type PoolMachine } from "./transition.ts";
+import { applyBatchExit, applyDeposit, applyWithdraw, type PoolMachine } from "./transition.ts";
 import type { PoolStatement } from "./statement.ts";
-import { LAB_PAYOUT_DIGEST } from "../chain/payout.ts";
+import { LAB_PAYOUT_DIGEST, LAB_PAYOUT_LOCKING } from "../chain/payout.ts";
+import { defaultInternalHash } from "../backends/circle/internal-hash.ts";
+import { concatBytes } from "./bytes.ts";
 
 export type PublicPoolView = {
   sequence: string;
@@ -129,4 +132,64 @@ export function mixChangedRootsAndReserve(mix: MixSuccessor): boolean {
 
 function eq32(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+/**
+ * Option A' (FRI10-BATCH-EXIT.md): the batch equivalent of `runMixSuccessor`.
+ *
+ * Deposits `depositCount` notes, then exits `noteCount` of them in ONE batch, and
+ * returns the intermediate nullifier roots the tape hops walk through. The proof
+ * is a plain FRI9 proof over the batch statement - FRI9 already validates N notes
+ * via `checkBatchSpends` when the witness carries them, so no FRI_VERSION bump is
+ * involved. Its single published `auth` covers only the first note, which is why
+ * each hop supplies its own walk.
+ *
+ * `roots` is R_0..R_noteCount: R_0 is the old root, R_i = SHA256(R_{i-1} || nf_i),
+ * and R_noteCount is the new state's root. Callers pad it out to the hop count.
+ */
+export function runBatchSuccessor(args?: {
+  depositCount?: number;
+  noteCount?: number;
+  instance?: Uint8Array;
+}): {
+  oldState: AnyAmountState;
+  newState: AnyAmountState;
+  statement: PoolStatement;
+  proof: Uint8Array;
+  spends: Array<{ note: Note; index: number; path: Uint8Array[] }>;
+  roots: Uint8Array[];
+} {
+  const deposits = args?.depositCount ?? 6;
+  const noteCount = args?.noteCount ?? 3;
+  if (noteCount < 1 || noteCount > deposits) {
+    throw new Error(`noteCount ${noteCount} must be in 1..${deposits}`);
+  }
+  let machine: PoolMachine = {
+    state: emptyState(args?.instance ?? rnd32()),
+    notes: new IncrementalMerkle(),
+    nullifiers: new NullifierSet(),
+  };
+  const held: Array<{ note: Note; index: number }> = [];
+  for (let i = 0; i < deposits; i += 1) {
+    const note: Note = { amountSats: 2_000n * BigInt(i + 1), rho: rnd32(), ownerSecret: rnd32() };
+    const d = applyDeposit(machine, note);
+    machine = d.machine;
+    held.push({ note, index: d.index });
+  }
+  const oldState = structuredCloneState(machine.state);
+  const b = applyBatchExit(
+    machine,
+    held.slice(0, noteCount).map((h) => ({
+      note: h.note,
+      index: h.index,
+      withdrawSats: h.note.amountSats,
+      payoutLocking: LAB_PAYOUT_LOCKING,
+    })),
+  );
+  const spends = b.spent.map((s) => ({ note: s.note, index: s.index, path: s.path }));
+  const proof = encodeFriProof(proveFri(b.statement, wBatchExit(spends)));
+  const hash = defaultInternalHash();
+  const roots: Uint8Array[] = [new Uint8Array(oldState.nullifierRoot)];
+  for (const s of b.spent) roots.push(hash.digest(concatBytes(roots[roots.length - 1]!, s.nullifier)));
+  return { oldState, newState: b.machine.state, statement: b.statement, proof, spends, roots };
 }

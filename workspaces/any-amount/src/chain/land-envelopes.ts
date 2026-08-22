@@ -22,9 +22,9 @@ import {
   compileTapeKernelGroups,
   QUERIES_PER_TAPE_HOP,
 } from "./chained.ts";
-import { tapeTipLockChain } from "./tape-tip.ts";
+import { tapeTipLockChain, tapeTipLockChainWithRoots } from "./tape-tip.ts";
 import { circleFriPlugin } from "../backends/circle/plugin.ts";
-import { mixChangedRootsAndReserve, runMixSuccessor } from "../pool/mix-successor.ts";
+import { mixChangedRootsAndReserve, runMixSuccessor, runBatchSuccessor } from "../pool/mix-successor.ts";
 import { encodePublicPaa1, utxoValueFor } from "../pool/state.ts";
 import { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "./air-cqz.ts";
 import { FRI_QUERIES } from "../backends/circle/params.ts";
@@ -226,10 +226,35 @@ async function landAB(
   }
 }
 
-async function landC(hops: number, scratch: string): Promise<Record<string, unknown>> {
-  const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 1_000n });
-  if (!mixChangedRootsAndReserve(mix)) throw new Error("mix did not update roots");
-  const v = circleFriPlugin.verify(mix.statement, mix.proof);
+async function landC(
+  hops: number,
+  scratch: string,
+  /**
+   * Option A' (FRI10-BATCH-EXIT.md): spend this many notes in one batch, one
+   * note-auth kernel per tape hop. 1 keeps the FRI9 single-note path exactly as
+   * it landed on 2026-08-21 - same tip chain, same covenant, same bytes.
+   */
+  batchNotes = 1,
+): Promise<Record<string, unknown>> {
+  const tapeHopsC = Math.ceil(FRI_QUERIES / QUERIES_PER_TAPE_HOP);
+  if (batchNotes < 1 || batchNotes > tapeHopsC) {
+    throw new Error(`batchNotes ${batchNotes} must be in 1..${tapeHopsC} (one per tape hop)`);
+  }
+  const batched =
+    batchNotes > 1
+      ? runBatchSuccessor({ depositCount: Math.max(6, batchNotes), noteCount: batchNotes })
+      : undefined;
+  const mix = batched ? undefined : runMixSuccessor({ depositCount: 6, withdrawSats: 1_000n });
+  if (mix && !mixChangedRootsAndReserve(mix)) throw new Error("mix did not update roots");
+  const oldState = batched ? batched.oldState : mix!.oldState;
+  const newState = batched ? batched.newState : mix!.newState;
+  const statement = batched ? batched.statement : mix!.statement;
+  const proof = batched ? batched.proof : mix!.proof;
+  // R_0..R_tapeHops. Hops past the notes hold the root still, so the terminal
+  // value is the new state's root either way.
+  const roots = batched ? [...batched.roots] : [];
+  while (batched && roots.length < tapeHopsC + 1) roots.push(roots[roots.length - 1]!);
+  const v = circleFriPlugin.verify(statement, proof);
   if (!v.ok) throw new Error(`verify: ${v.reason}`);
   const wallet = await loadLabWallet();
   const client = await connectChipnet();
@@ -274,21 +299,38 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
     // hash256 of the WHOLE proof, not proof.slice(0, 32). The prefix is 4 constant
     // bytes + grindNonce + the first 24 bytes of traceRoot: statement-binding, but
     // truncated to ~2^96. Hashing commits to every layer root, query and auth.
-    const tapeDigest = hash256(mix.proof);
-    const tipChain = tapeTipLockChain(tapeDigest, tapeHops);
+    const tapeDigest = hash256(proof);
+    // Under a batch each tip also pins its hop's output root, so a hop cannot
+    // publish a root its note-auth kernel did not produce.
+    const tipChain = batched
+      ? tapeTipLockChainWithRoots(tapeDigest, roots.slice(1))
+      : tapeTipLockChain(tapeDigest, tapeHops);
     const genesis = compileCovenantSpend({
       wallet,
       utxo: picked,
-      state: mix.oldState,
-      proof: mix.proof,
+      state: oldState,
+      proof,
       lockKind: "p2sh32",
       envelope: "standard",
       slotKernels: SLOT_KERNEL_COUNT,
       // The pay hop carries a note-auth kernel at 4 slots, so the pool lock has to
-      // expect it. The lock is committed here, at genesis.
-      forceNoteAuth: true,
+      // expect it. The lock is committed here, at genesis. Under a batch the hops
+      // carry the kernels instead and the pay hop carries none, so this flips.
+      forceNoteAuth: !batched,
       tapeTipLock: tipChain[tapeHops],
-      siblingNfts: { count: tapeHops, lockingBytecode: proofCargoLock() },
+      // Genesis is the only place the landing root can be committed, because the
+      // covenant is what the pool NFT is locked to.
+      finalNfRoot: batched ? roots[tapeHops] : undefined,
+      siblingNfts: {
+        count: tapeHops,
+        lockingBytecode: proofCargoLock(),
+        // Sibling g carries R_g, so hop g can advance it one step.
+        commitments: batched
+          ? Array.from({ length: tapeHops }, (_, g) =>
+              encodePublicPaa1({ ...oldState, nullifierRoot: roots[g]! }),
+            )
+          : undefined,
+      },
     });
     const genesisTxid = (await broadcastRetry(client, genesis.raw, genesis.txid)).txid;
     await waitForTxid(client, genesisTxid);
@@ -353,20 +395,21 @@ async function landC(hops: number, scratch: string): Promise<Record<string, unkn
       tapeUtxo: split.tapeUtxo,
       hops,
       digest: tapeDigest,
-      proof: mix.proof,
+      proof,
       pool: {
         tx_hash: genesisTxid,
         tx_pos: 0,
-        value: utxoValueFor(mix.oldState),
+        value: utxoValueFor(oldState),
         category: hexToBin(picked.tx_hash),
-        commitment: encodePublicPaa1(mix.oldState),
+        commitment: encodePublicPaa1(oldState),
       },
-      newState: mix.newState,
-      statement: mix.statement,
+      newState,
+      statement,
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
-      note: mix.spent.note,
-      change: mix.witness.created?.note,
+      note: batched ? undefined : mix!.spent.note,
+      change: batched ? undefined : mix!.witness.created?.note,
+      ...(batched ? { batch: { spends: batched.spends, roots } } : {}),
     });
     mkdirSync(scratch, { recursive: true });
     for (const hop of chain.hops) {

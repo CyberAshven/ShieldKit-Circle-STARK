@@ -180,10 +180,14 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 > tested, not landed**: N note-auth kernels cannot share one transaction, so
 > **option A'** puts one per envelope-C tape hop and binds the running nullifier
 > root end to end - pre-minted sibling roots, a root-pinned tip chain, and a
-> `finalNfRoot` pin on the pool covenant (12 tests; FRI9 byte-identical at
-> A 87611 / B 498398 / C pay 89354). Nothing is wired into landing and no N-note
-> batch has been broadcast, so batch-exit extra notes remain off-chain in practice
-> and the claim below stands. See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
+> `finalNfRoot` pin on the pool covenant. It is wired end to end through
+> `landC(hops, scratch, batchNotes)`, and a 3-note batch has been verified on the
+> 2026 VM with **all 18 tape hops passing** and a forged intermediate root
+> rejected (`test/batch-chained-vm.test.ts`). FRI9 stays byte-identical at
+> A 87611 / B 498398 / C pay 89354 / C total 1662420. **Nothing has been
+> broadcast**: no N-note batch has touched Chipnet, so batch-exit extra notes
+> remain off-chain in practice and the claim below stands.
+> See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
 
 ## What is still not claimed
 

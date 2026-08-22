@@ -97,7 +97,7 @@ what this document originally said it was; its on-chain half is now built as
 | 1 | new backend | `FriProof.auths: FriAuth[]`, length-prefixed in the encoding | **done** |
 | 2 | new backend | per-auth OTP pads (`auth-pad.ts`) | **done** |
 | 3 | new backend | verify checks every auth, count pinned to `withdrawalCount` | **done** |
-| 4 | `covenant-spend.ts`, `tape-tip.ts`, `covenant-p2s.ts` | N note-auth kernels on chain, via **option A’** (one per tape hop + root binding) | **built & tested; landing wiring open** |
+| 4 | `covenant-spend.ts`, `tape-tip.ts`, `covenant-p2s.ts`, `chained.ts`, `land-envelopes.ts` | N note-auth kernels on chain, via **option A’** (one per tape hop + root binding), wired through `landC(..., batchNotes)` | **built, wired & VM-verified; not broadcast** |
 | 5 | `registry.ts` | `circle-fri-m31-batch` beside `circle-fri-m31` | **done** |
 
 What 1-3 turned out to mean, which was less than expected: FRI9 **already**
@@ -257,9 +257,41 @@ one: *"the tip pins the root even when the hop carries NO note-auth kernel."*
 FRI9 stays byte-identical - measured A 87611 / B 498398 / C pay 89354 /
 C total 1662420, unchanged.
 
-**Still open, and deliberately not done here:** wiring A' into `land-envelopes.ts`
-so a real N-note batch lands on Chipnet, and the FRI10 switchover itself. Those are
-audit calls, not mechanical work.
+### Wired end to end (2026-08-22)
+
+A' is no longer three loose primitives. The path a real batch takes now exists:
+
+| where | what |
+| --- | --- |
+| `mix-successor.ts` | `runBatchSuccessor` - N-note batch + FRI9 proof + R_0..R_N |
+| `covenant-spend.ts` | `noteSpent?` so a hop supplies its own walk; note-auth allowed on a tape hop |
+| `note-auth-kernel.ts` | `prefixExtraKernelCount` returns 2 for a tape hop that carries a kernel |
+| `chained.ts` | `compileTapeKernelGroups({ noteAuthHops })` + `compileChainedWithdraw({ batch })` |
+| `land-envelopes.ts` | `landC(hops, scratch, batchNotes)` - genesis mints the intermediate siblings and pins R_N |
+
+Two things worth knowing about the shape:
+
+**The proof is a plain FRI9 proof over a batch statement.** That is what lets A'
+land with no `FRI_VERSION` bump: FRI9 already validates N notes through
+`checkBatchSpends` when the witness carries them. Its single published `auth`
+covers only the first note, which is exactly why every hop supplies its own
+`noteSpent` walk rather than reading the proof.
+
+**The pay hop carries NO note-auth kernel under a batch** (`forceNoteAuth: !batch`).
+Its single step `SHA256(R_0 || nf) == R_N` is precisely what is unsatisfiable for
+N > 1. The hops do the walking; the covenant's `finalNfRoot` pin validates where
+they landed. Genesis commits that pin, so it must be known before genesis.
+
+Verified in `test/batch-chained-vm.test.ts`: a 3-note batch built through
+`compileChainedWithdraw` where **every one of the 18 tape hops verifies on the 2026
+VM**, three of them carrying their own note-auth kernel, and a forged intermediate
+root is rejected. FRI9 single-note chaining is asserted unchanged in the same file.
+
+**Still open:** nothing has been broadcast. `landC(..., batchNotes)` builds and
+signs but no N-note batch has touched Chipnet, so every claim here is about
+compiled and VM-verified transactions, not confirmed ones. The FRI10 switchover -
+bumping the version and moving all envelopes onto the batch family - remains an
+audit call.
 
 ## Size budget (measured)
 

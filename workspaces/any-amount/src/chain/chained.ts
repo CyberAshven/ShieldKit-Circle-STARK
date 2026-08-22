@@ -1,6 +1,8 @@
 import {
   tapeTipLockChain,
+  tapeTipLockChainWithRoots,
   tapeTipRedeemChain,
+  tapeTipRedeemChainWithRoots,
   tapeTipUnlocking,
 } from "./tape-tip.ts";
 /**
@@ -24,6 +26,7 @@ import {
 import { concatBytes } from "../pool/bytes.ts";
 import { compileCovenantSuccessor, type MeasuredTx } from "./covenant-spend.ts";
 import { compileCqzLockP2sh32, compileSlotsLockP2sh32 } from "./air-cqz.ts";
+import { compileNoteAuthLockP2sh32 } from "./note-auth-kernel.ts";
 import { compileFoldLockP2sh32 } from "./fold-kernel.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { successorFeeCoinSats, TAPE_HOP_OUT_SATS } from "./envelope.ts";
@@ -251,6 +254,23 @@ export function compileChainedWithdraw(args: {
     fri: ChainUtxo[];
     extra: ChainUtxo[];
   }>;
+  /**
+   * Option A' (FRI10-BATCH-EXIT.md): spend N notes by giving hop i its own
+   * note-auth kernel, advancing the nullifier root one step per hop.
+   *
+   * `spends[i]` is the note hop i walks; hops past the end carry no kernel and
+   * leave the root where it is. `roots` is R_0..R_tapeN inclusive, so hop i reads
+   * R_i from its sibling and writes R_{i+1}; R_tapeN is what the pool covenant
+   * pins with `finalNfRoot`.
+   *
+   * The pay hop carries NO note-auth kernel in this mode: its single step
+   * SHA256(R_0 || nf) == R_N is precisely what is unsatisfiable for N > 1. The
+   * hops do the walking; the covenant pin validates where they landed.
+   */
+  batch?: {
+    spends: ReadonlyArray<{ note: import("../pool/notes.ts").Note; index: number; path: Uint8Array[] }>;
+    roots: readonly Uint8Array[];
+  };
 }): ChainedWithdraw {
   const digest = args.digest.length === 32 ? args.digest : hash256(args.digest);
   const hops: ChainedHop[] = [];
@@ -261,8 +281,23 @@ export function compileChainedWithdraw(args: {
   // Counted tip lock chain: L(d,i) requires output 1 to be L(d,i+1); L(d,tapeN)
   // is terminal and is what the pay hop spends. Binds every hop to one digest and
   // makes skipping impossible - see C-BINDING.md.
-  const tipRedeems = tapeTipRedeemChain(digest, tapeN);
-  const tipLocks = tapeTipLockChain(digest, tapeN);
+  // Option A' pins each hop's output root into its tip, so a hop cannot publish a
+  // root its kernel did not produce - and a hop with no kernel cannot forge one.
+  const batch = args.batch;
+  if (batch) {
+    if (batch.roots.length !== tapeN + 1) {
+      throw new Error(`batch roots ${batch.roots.length} != tapeN + 1 (${tapeN + 1})`);
+    }
+    if (batch.spends.length > tapeN) {
+      throw new Error(`batch of ${batch.spends.length} exceeds ${tapeN} tape hops`);
+    }
+  }
+  const tipRedeems = batch
+    ? tapeTipRedeemChainWithRoots(digest, batch.roots.slice(1))
+    : tapeTipRedeemChain(digest, tapeN);
+  const tipLocks = batch
+    ? tapeTipLockChainWithRoots(digest, batch.roots.slice(1))
+    : tapeTipLockChain(digest, tapeN);
   if (hopCount < tapeN + 1) {
     throw new Error(`chained needs ${tapeN + 1} hops for ${FRI_QUERIES} unique-orbit slices (got ${hopCount})`);
   }
@@ -270,6 +305,7 @@ export function compileChainedWithdraw(args: {
     const q0 = i * qn;
     const thisN = Math.min(qn, FRI_QUERIES - q0);
     const group = args.tapeKernels?.[i];
+    const spend = batch?.spends[i];
     const sliceTx = compileCovenantSuccessor({
       wallet: args.wallet,
       includePool: false,
@@ -283,7 +319,12 @@ export function compileChainedWithdraw(args: {
       kernelUtxos: group?.fri,
       extraKernels: group?.extra,
       pool: args.pool,
-      newState: args.newState,
+      // Output 0 carries this hop's intermediate root; cqz binds only noteRoot
+      // and seq, both unchanged across a full-note batch, so this is legal.
+      newState: batch ? { ...args.newState, nullifierRoot: batch.roots[i + 1]! } : args.newState,
+      ...(spend
+        ? { note: spend.note, noteSpent: { index: spend.index, path: spend.path } }
+        : {}),
       proof: args.proof,
       statement: args.statement,
       lockKind: "p2sh32",
@@ -316,8 +357,13 @@ export function compileChainedWithdraw(args: {
     envelope: "standard",
     slotKernels: SLOT_KERNEL_COUNT,
     // 4 slots but a note-auth kernel is present, so the pool lock must expect it.
-    // Genesis commits the matching lock (landC passes the same flag).
-    forceNoteAuth: true,
+    // Genesis commits the matching lock (landC passes the same flag). Under a
+    // batch the pay hop carries no note-auth kernel at all - see `batch` above -
+    // so the flag flips and genesis must match.
+    forceNoteAuth: !batch,
+    // The landing root the hops walked to. Genesis pinned this into the covenant,
+    // so the pay hop must present a redeem carrying the same value.
+    finalNfRoot: batch ? batch.roots[tapeN] : undefined,
     // Terminal link: only L(digest, tapeN) can be spent here, so the pay hop
     // cannot reach past the tape to the funder's tip.
     tapeTipRedeem: tipRedeems[tapeN],
@@ -326,7 +372,8 @@ export function compileChainedWithdraw(args: {
     extraKernels: args.extraKernels,
     extraPayouts: args.extraPayouts,
     payoutLockingBytecode: args.payoutLockingBytecode,
-    note: args.note,
+    // Under a batch the hops carry the kernels; the pay hop carries none.
+    note: batch ? undefined : args.note,
     change: args.change,
   });
   if (successor.txBytes > RELAY_STANDARD_TX_BYTES) {
@@ -377,6 +424,14 @@ export function compileTapeKernelGroups(args: {
   feeSats?: bigint;
   /** Genesis sibling NFTs (vout 2+g), one per hop, each holding the OLD PAA1. */
   carriers: ChainUtxo[];
+  /**
+   * Option A' (FRI10-BATCH-EXIT.md): which hops carry their own note-auth kernel.
+   * A batch of N notes sets the first N true, so hop g advances the nullifier root
+   * by one step. Those hops get a 6th extra (the note lock, right after cqz) and
+   * the group offsets stop being uniform. Omit for FRI9: every hop keeps 5 extras
+   * and the layout is byte-identical.
+   */
+  noteAuthHops?: readonly boolean[];
 }): {
   raw: Uint8Array;
   txid: string;
@@ -388,7 +443,20 @@ export function compileTapeKernelGroups(args: {
   }
   const kernelSats = BigInt(args.kernelSats ?? 1_000);
   const feeCoin = successorFeeCoinSats("standard");
-  const perGroup = FRI_KERNEL_INPUTS + 5; // carriers are genesis sibling NFTs
+  const noteAt = (g: number) => args.noteAuthHops?.[g] === true;
+  if (args.noteAuthHops && args.noteAuthHops.length !== args.tapeHops) {
+    throw new Error(
+      `noteAuthHops ${args.noteAuthHops.length} != tapeHops ${args.tapeHops}`,
+    );
+  }
+  // 5 extras per hop (cqz + 2 fold + 2 slots), plus the note lock on hops that
+  // carry one. Offsets are cumulative because that count varies per hop.
+  const extrasAt = (g: number) => 5 + (noteAt(g) ? 1 : 0);
+  const baseAt = (g: number) => {
+    let off = 0;
+    for (let i = 0; i < g; i += 1) off += FRI_KERNEL_INPUTS + extrasAt(i);
+    return off;
+  };
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const friLock = compileFriQueryLockP2sh32();
@@ -403,6 +471,11 @@ export function compileTapeKernelGroups(args: {
     }
     // extras, in the order compileCovenantSuccessor consumes them
     outputs.push({ lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: kernelSats });
+    // Must sit directly after cqz: compileCovenantSuccessor reads extras as
+    // [cqz, note?, folds, slots] on a tape hop.
+    if (noteAt(g)) {
+      outputs.push({ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: kernelSats });
+    }
     for (let f = 0; f < QUERIES_PER_TAPE_HOP; f += 1) {
       outputs.push({ lockingBytecode: compileFoldLockP2sh32(1, q0 + f), valueSatoshis: kernelSats });
     }
@@ -441,14 +514,14 @@ export function compileTapeKernelGroups(args: {
   const txid = hashTransaction(raw);
 
   const groups = Array.from({ length: args.tapeHops }, (_, g) => {
-    const base = g * perGroup;
+    const base = baseAt(g);
     const at = (i: number, v: bigint) => ({ tx_hash: txid, tx_pos: base + i, value: Number(v) });
     return {
       fri: [
         at(0, kernelSats + feeCoin),
         ...Array.from({ length: FRI_KERNEL_INPUTS - 1 }, (_, i) => at(i + 1, kernelSats)),
       ],
-      extra: Array.from({ length: 5 }, (_, i) => at(FRI_KERNEL_INPUTS + i, kernelSats)),
+      extra: Array.from({ length: extrasAt(g) }, (_, i) => at(FRI_KERNEL_INPUTS + i, kernelSats)),
       carrier: args.carriers[g]!,
     };
   });

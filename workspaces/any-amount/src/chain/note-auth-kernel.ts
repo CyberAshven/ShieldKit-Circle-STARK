@@ -209,9 +209,13 @@ export function includeNoteAuth(slotKernels: number, force = false): boolean {
   return force || slotKernels > SLOT_KERNEL_COUNT;
 }
 
-/** bind-T + grind + algebraicC [+ note-auth on B or C pay]. Tape hops (no pool) keep 1. */
+/**
+ * bind-T + grind + algebraicC [+ note-auth on B or C pay]. Tape hops (no pool)
+ * keep 1, or 2 under option A' when the hop carries its own note-auth kernel
+ * (FRI10-BATCH-EXIT.md). FRI9 tape hops pass no note, so they stay at 1.
+ */
 export function prefixExtraKernelCount(slotKernels: number, includePool = true, forceNoteAuth = false): number {
-  if (!includePool) return 1;
+  if (!includePool) return forceNoteAuth ? 2 : 1;
   return includeNoteAuth(slotKernels, forceNoteAuth) ? 4 : 3;
 }
 
