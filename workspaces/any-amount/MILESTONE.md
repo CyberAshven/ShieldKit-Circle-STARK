@@ -199,18 +199,25 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
 ## Landed: N-note batch exit on chain (2026-08-22)
 
-Envelope A (standard, 4 R-slots), **3 notes walked on chain in one transaction**,
-each by its own step kernel. Chipnet:
+**12 notes walked on chain in ONE standard transaction**, each by its own step
+kernel. 12 is the ceiling for envelope A: 99063 B against the 100000 B standard
+limit, and N=13 measures 100014 B - fourteen bytes over. ~951 B per extra note.
 
 | | txid | bytes |
 | --- | --- | --- |
-| genesis | `938336c4af01412c2d9e87af708934635b1d2bc7e21d5d520677977f4c727cfa` | 392 |
-| kernels | `fff91c85fff28b6061d5dd5d409ad94838e1e29e5892f0194724c686d490bdb4` | 1109 |
-| successor | `0c669205e84ba0bf109e182e85779ef61ec7dd31c7b7e713884c0e373f3e284f` | 90504 |
+| genesis | `ee9f46c0dea8b7a81a628b48c44ee0de7ca99bea718f4e87f4f5a1f05bb6516d` | 392 |
+| kernels | `638c55f2eadab2876c7882968bf3284e5d6fd5ebbd9c49efe46cd0b258b428e6` | 1505 |
+| successor | `ce421f056a05680b44345ec92ecae3e26fb501d949a6f554a4e73200c128b981` | 99063 |
 
-All three confirmed present on chain. The successor carries 3 step-kernel inputs,
-no audited note-auth kernel (a batch drops it), and the pool covenant pins both the
-step locks and the landing root R_N. A VM pre-flight runs before any broadcast.
+32 inputs (1 pool + 10 FRI + cqz/grind/algebraicC + 1 fold + 4 slots + **12 steps**
++ 1 funder) and 14 outputs (pool + 12 payouts + change - BIND_PAA1 requires
+`withdrawalCount delta == outputCount - 2`, so the funder input is not optional).
+No audited note-auth kernel: a batch drops it.
+
+An earlier 3-note run landed the same way: genesis
+`938336c4af01412c2d9e87af708934635b1d2bc7e21d5d520677977f4c727cfa`, kernels
+`fff91c85fff28b6061d5dd5d409ad94838e1e29e5892f0194724c686d490bdb4`, successor
+`0c669205e84ba0bf109e182e85779ef61ec7dd31c7b7e713884c0e373f3e284f` (90504 B).
 
 **Envelope B is not landed.** It compiles, pre-flights clean and verifies on the VM
 at 499665 B, but that is non-standard and electrum will not relay it - it needs a
