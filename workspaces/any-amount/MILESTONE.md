@@ -197,6 +197,25 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 > be dropped or reordered. Room by bytes: A 14 notes, B 602, C pay hop 12. Not
 > adopted, not broadcast: `FRI_VERSION` stays 9 and FRI9 is byte-identical.
 
+## Landed: N-note batch exit on chain (2026-08-22)
+
+Envelope A (standard, 4 R-slots), **3 notes walked on chain in one transaction**,
+each by its own step kernel. Chipnet:
+
+| | txid | bytes |
+| --- | --- | --- |
+| genesis | `938336c4af01412c2d9e87af708934635b1d2bc7e21d5d520677977f4c727cfa` | 392 |
+| kernels | `fff91c85fff28b6061d5dd5d409ad94838e1e29e5892f0194724c686d490bdb4` | 1109 |
+| successor | `0c669205e84ba0bf109e182e85779ef61ec7dd31c7b7e713884c0e373f3e284f` | 90504 |
+
+All three confirmed present on chain. The successor carries 3 step-kernel inputs,
+no audited note-auth kernel (a batch drops it), and the pool covenant pins both the
+step locks and the landing root R_N. A VM pre-flight runs before any broadcast.
+
+**Envelope B is not landed.** It compiles, pre-flights clean and verifies on the VM
+at 499665 B, but that is non-standard and electrum will not relay it - it needs a
+direct node RPC (`BCHN_RPC_URL`). A transport limit, not a validity one.
+
 ## What is still not claimed
 
 - A **confirmed block** for B's successor (accepted at zero-conf in the lab BCHN; depth follows from the lab miner).

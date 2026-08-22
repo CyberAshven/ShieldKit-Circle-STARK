@@ -37,7 +37,7 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function broadcastRetry(
+export async function broadcastRetry(
   client: Awaited<ReturnType<typeof connectChipnet>>,
   raw: Uint8Array,
   expectedTxid: string,
@@ -80,7 +80,7 @@ async function broadcastRetry(
   return sent;
 }
 
-async function waitForTxid(client: Awaited<ReturnType<typeof connectChipnet>>, txid: string): Promise<void> {
+export async function waitForTxid(client: Awaited<ReturnType<typeof connectChipnet>>, txid: string): Promise<void> {
   for (let i = 0; i < 12; i += 1) {
     try {
       await getTx(client, txid);

@@ -784,6 +784,10 @@ export function compileFundVerifierKernels(
   slotKernels = SLOT_KERNEL_COUNT,
   feeCoinSats: bigint = successorFeeCoinSats("standard"),
   forceNoteAuth = false,
+  /** Option B: one carrier per step kernel, funded after the slots. When these
+   *  are present the audited note-auth carrier is NOT funded, matching what the
+   *  covenant expects (requireFriInputsAsm drops it for a batch). */
+  stepLocks: readonly Uint8Array[] = [],
 ): {
   raw: Uint8Array;
   txid: string;
@@ -799,7 +803,12 @@ export function compileFundVerifierKernels(
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
   const foldN = foldKernelCount(slotKernels);
-  const extraCount = prefixExtraKernelCount(slotKernels, true, forceNoteAuth) + foldN + slotKernels;
+  const batched = stepLocks.length > 0;
+  const extraCount =
+    (batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth)) +
+    foldN +
+    slotKernels +
+    stepLocks.length;
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
   const fee = 2_000n + BigInt(count) * 80n;
@@ -835,7 +844,7 @@ export function compileFundVerifierKernels(
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
-      ...(includeNoteAuth(slotKernels, forceNoteAuth)
+      ...(!batched && includeNoteAuth(slotKernels, forceNoteAuth)
         ? [{ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: BigInt(kernelSats) }]
         : []),
       ...Array.from({ length: foldN }, (_, f) => ({
@@ -844,6 +853,10 @@ export function compileFundVerifierKernels(
       })),
       ...Array.from({ length: slotKernels }, (_, i) => ({
         lockingBytecode: compileSlotsLockP2sh32(i),
+        valueSatoshis: BigInt(kernelSats),
+      })),
+      ...stepLocks.map((lock) => ({
+        lockingBytecode: lock,
         valueSatoshis: BigInt(kernelSats),
       })),
       ...tail,
