@@ -350,6 +350,17 @@ Anchoring is deliberately outside the kernel, so every step is the same shape:
 genesis mints R_0 and pins R_N through `finalNfRoot`. A step proves only "this
 note's nullifier carries R_IN to R_OUT", which is all it should prove.
 
+### Envelope A also batches - the old "A has no room" is retired
+
+A was always described as the envelope that cannot walk a note: *"A cannot hold
+this plus 36 queries in 100 KB"*, *"A has no room for that kernel"*. That was true
+of the **audited** kernel. The step kernel is 182 B of redeem and 792 B of
+unlocking, and a standard A leaves ~12.4 KB spare, so the constraint was the
+kernel's shape, not the byte budget.
+
+`test/envelope-batch.test.ts` verifies a 3-note batch on envelope A in **standard**
+VM mode, inside 100 KB, with the covenant pinning its steps exactly as B's.
+
 ### Envelope B now batches (verified)
 
 `test/envelope-b-batch.test.ts` builds a real consensus transaction through

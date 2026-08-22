@@ -1,5 +1,5 @@
 /**
- * Envelope B batching: N notes walked on chain in ONE consensus transaction.
+ * Envelope A and B batching: N notes walked on chain in ONE transaction.
  *
  * Until now B could walk exactly one note, because the audited kernel reads both
  * nullifier roots at absolute index 0 and a transaction has one such pair. The
@@ -24,6 +24,7 @@ import { compileFriQueryLockP2sh32 } from "../src/chain/fri-kernel.ts";
 import {
   compileCqzLockP2sh32,
   compileSlotsLockP2sh32,
+  SLOT_KERNEL_COUNT,
   SLOT_KERNEL_COUNT_CONSENSUS,
 } from "../src/chain/air-cqz.ts";
 import { compileFoldLockP2sh32, foldKernelCount } from "../src/chain/fold-kernel.ts";
@@ -39,11 +40,13 @@ import { defaultInternalHash } from "../src/backends/circle/internal-hash.ts";
  * on size alone - which would also make every negative test below pass for the
  * wrong reason. vm-verifier.ts:257 uses the same rule: standard iff slots <= 4.
  */
-const consensusVm = () => createVirtualMachineBch2026(false);
-
 /** true only when the VM accepted; otherwise the reason, for asserting on it. */
-function verdict(transaction: unknown, sourceOutputs: unknown): true | string {
-  const r = consensusVm().verify({ transaction, sourceOutputs } as never);
+function verdict(
+  transaction: unknown,
+  sourceOutputs: unknown,
+  standard = false,
+): true | string {
+  const r = createVirtualMachineBch2026(standard).verify({ transaction, sourceOutputs } as never);
   if (r === true) return true;
   const msg = String(r);
   if (/maximum standard byte length/.test(msg)) {
@@ -63,7 +66,17 @@ const KERNEL_SATS = 1000n;
 const SLOTS = SLOT_KERNEL_COUNT_CONSENSUS;
 const FOLDS = foldKernelCount(SLOTS);
 
-function buildB(noteCount: number) {
+/**
+ * Envelope A is standard-size with 4 R-slots; B is consensus with 36. Both take
+ * the same step kernels - only the slot count, the envelope and therefore the VM
+ * mode differ. vm-verifier.ts:257: standard iff slots <= SLOT_KERNEL_COUNT.
+ */
+type Env = { slots: number; envelope: "standard" | "consensus"; standard: boolean };
+const ENV_A: Env = { slots: SLOT_KERNEL_COUNT, envelope: "standard", standard: true };
+const ENV_B: Env = { slots: SLOTS, envelope: "consensus", standard: false };
+
+function buildFor(env: Env, noteCount: number) {
+  const folds = foldKernelCount(env.slots);
   const b = runBatchSuccessor({ depositCount: Math.max(6, noteCount), noteCount });
   const hash = defaultInternalHash();
   const nfs = b.spends.map((s) => nullifierOf(s.note, b.oldState.poolInstanceId, hash));
@@ -77,7 +90,7 @@ function buildB(noteCount: number) {
   }));
   const stepLocks = stepSpends.map((s) => compileNoteAuthStepLockP2sh32(s.rIn, s.rOut));
   const finalNfRoot = roots[noteCount]!;
-  const nExtras = 3 + FOLDS + SLOTS + noteCount;
+  const nExtras = 3 + folds + env.slots + noteCount;
   const tx = compileCovenantSuccessor({
     pool: {
       tx_hash: POOL,
@@ -90,8 +103,8 @@ function buildB(noteCount: number) {
     statement: b.statement,
     proof: b.proof,
     lockKind: "p2sh32",
-    envelope: "consensus",
-    slotKernels: SLOTS,
+    envelope: env.envelope,
+    slotKernels: env.slots,
     stepSpends,
     finalNfRoot,
     // BIND_PAA1 checks withdrawalCount delta == outputCount - 2, so a batch of N
@@ -106,14 +119,14 @@ function buildB(noteCount: number) {
       value: 1000,
     })),
   });
-  return { b, roots, stepSpends, stepLocks, finalNfRoot, tx, noteCount };
+  return { b, roots, stepSpends, stepLocks, finalNfRoot, tx, noteCount, env, folds };
 }
 
-function sourceOutputsFor(built: ReturnType<typeof buildB>, stepLocks: Uint8Array[]) {
+function sourceOutputsFor(built: ReturnType<typeof buildFor>, stepLocks: Uint8Array[]) {
   return [
     {
       lockingBytecode: poolLockP2sh32({
-        slotKernels: SLOTS,
+        slotKernels: built.env.slots,
         finalNfRoot: built.finalNfRoot,
         stepLocks,
       }),
@@ -134,11 +147,11 @@ function sourceOutputsFor(built: ReturnType<typeof buildB>, stepLocks: Uint8Arra
     { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: KERNEL_SATS },
     { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: KERNEL_SATS },
     { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: KERNEL_SATS },
-    ...Array.from({ length: FOLDS }, (_, f) => ({
+    ...Array.from({ length: built.folds }, (_, f) => ({
       lockingBytecode: compileFoldLockP2sh32(1, f),
       valueSatoshis: KERNEL_SATS,
     })),
-    ...Array.from({ length: SLOTS }, (_, i) => ({
+    ...Array.from({ length: built.env.slots }, (_, i) => ({
       lockingBytecode: compileSlotsLockP2sh32(i),
       valueSatoshis: KERNEL_SATS,
     })),
@@ -153,7 +166,7 @@ function sourceOutputsFor(built: ReturnType<typeof buildB>, stepLocks: Uint8Arra
 
 describe("envelope B: N notes walked on chain in one consensus transaction", () => {
   it("the step roots close on the batch's new nullifier root", () => {
-    const built = buildB(3);
+    const built = buildFor(ENV_B, 3);
     assert.deepEqual(
       built.roots[3],
       built.b.newState.nullifierRoot,
@@ -162,42 +175,42 @@ describe("envelope B: N notes walked on chain in one consensus transaction", () 
   });
 
   it("a 3-note batch verifies on the 2026 VM", () => {
-    const built = buildB(3);
+    const built = buildFor(ENV_B, 3);
     const tx = decodeTransaction(built.tx.raw);
     if (typeof tx === "string") throw new Error(tx);
     const sourceOutputs = sourceOutputsFor(built, built.stepLocks);
     assert.equal(tx.inputs.length, sourceOutputs.length, "input count must line up");
-    assert.equal(verdict(tx, sourceOutputs), true, "the batched consensus transaction must verify");
+    assert.equal(verdict(tx, sourceOutputs, built.env.standard), true, "the batched consensus transaction must verify");
   });
 
   it("the covenant REQUIRES the step kernels — dropping one is rejected", () => {
-    const built = buildB(3);
+    const built = buildFor(ENV_B, 3);
     const tx = decodeTransaction(built.tx.raw);
     if (typeof tx === "string") throw new Error(tx);
     // Same transaction, but the pool is locked to a covenant that pins only two
     // steps. The input count check and the per-index pins must both object.
     const short = sourceOutputsFor(built, built.stepLocks.slice(0, 2));
     assert.notEqual(
-      verdict(tx, short),
+      verdict(tx, short, built.env.standard),
       true,
       "a covenant pinning fewer steps must not accept this transaction",
     );
   });
 
   it("swapping two step locks is rejected — order is pinned by index", () => {
-    const built = buildB(3);
+    const built = buildFor(ENV_B, 3);
     const tx = decodeTransaction(built.tx.raw);
     if (typeof tx === "string") throw new Error(tx);
     const swapped = [built.stepLocks[1]!, built.stepLocks[0]!, built.stepLocks[2]!];
     assert.notEqual(
-      verdict(tx, sourceOutputsFor(built, swapped)),
+      verdict(tx, sourceOutputsFor(built, swapped), built.env.standard),
       true,
       "the covenant pins each step at its own index",
     );
   });
 
   it("a batched B drops the audited single-note kernel", () => {
-    const built = buildB(3);
+    const built = buildFor(ENV_B, 3);
     const withSteps = poolLockP2sh32({
       slotKernels: SLOTS,
       finalNfRoot: built.finalNfRoot,
@@ -216,11 +229,11 @@ describe("envelope B: N notes walked on chain in one consensus transaction", () 
   });
 
   it("eight notes also fit and verify, well inside the 1 MB envelope", () => {
-    const built = buildB(8);
+    const built = buildFor(ENV_B, 8);
     const tx = decodeTransaction(built.tx.raw);
     if (typeof tx === "string") throw new Error(tx);
     assert.equal(
-      verdict(tx, sourceOutputsFor(built, built.stepLocks)),
+      verdict(tx, sourceOutputsFor(built, built.stepLocks), built.env.standard),
       true,
       "8 notes in one consensus transaction must verify",
     );
@@ -236,5 +249,41 @@ describe("envelope B: N notes walked on chain in one consensus transaction", () 
       poolLockP2sh32({ slotKernels: SLOTS, stepLocks: [] }),
       "an empty step list must change nothing",
     );
+  });
+});
+
+describe("envelope A: the same step kernels in a standard 100 KB transaction", () => {
+  it("a 3-note batch verifies in STANDARD mode", () => {
+    const built = buildFor(ENV_A, 3);
+    const tx = decodeTransaction(built.tx.raw);
+    if (typeof tx === "string") throw new Error(tx);
+    const outs = sourceOutputsFor(built, built.stepLocks);
+    assert.equal(tx.inputs.length, outs.length, "input count must line up");
+    assert.ok(built.tx.txBytes <= 100_000, `A must stay standard-size (${built.tx.txBytes})`);
+    assert.equal(
+      verdict(tx, outs, built.env.standard),
+      true,
+      "a batched standard transaction must verify",
+    );
+  });
+
+  it("the covenant pins A's steps too — dropping one is rejected", () => {
+    const built = buildFor(ENV_A, 3);
+    const tx = decodeTransaction(built.tx.raw);
+    if (typeof tx === "string") throw new Error(tx);
+    assert.notEqual(
+      verdict(tx, sourceOutputsFor(built, built.stepLocks.slice(0, 2)), built.env.standard),
+      true,
+      "a covenant pinning fewer steps must not accept this transaction",
+    );
+  });
+
+  it("so A is no longer the envelope that cannot walk a note", () => {
+    // The old note was that A has no room for the audited kernel alongside its
+    // queries. The step kernel is 182 B of redeem and 792 B of unlocking, and A
+    // has ~12 KB spare, so the constraint was the kernel's shape, not the bytes.
+    const built = buildFor(ENV_A, 3);
+    assert.ok(built.tx.txBytes > 87_611, "a batched A is larger than the unbatched one");
+    assert.ok(built.tx.txBytes <= 100_000, "and still standard");
   });
 });
