@@ -79,6 +79,7 @@ import {
 import { compileFoldLockP2sh32, foldKernelCount, foldKernelUnlocking } from "./fold-kernel.ts";
 import { compileGrindLockP2sh32, grindKernelUnlocking } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32, algebraicCKernelUnlocking } from "./algebraic-c-kernel.ts";
+import { compileNoteAuthStepLockP2sh32, noteAuthStepUnlocking } from "./note-auth-step-kernel.ts";
 import {
   compileNoteAuthLockP2sh32,
   includeNoteAuth,
@@ -118,10 +119,11 @@ function lockOf(
   forceNoteAuth = false,
   tapeTipLock?: Uint8Array,
   finalNfRoot?: Uint8Array,
+  stepLocks: readonly Uint8Array[] = [],
 ): Uint8Array {
   return kind === "p2s"
-    ? poolLockP2sFor({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot })
-    : poolLockP2sh32({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot });
+    ? poolLockP2sFor({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot, stepLocks })
+    : poolLockP2sh32({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot, stepLocks });
 }
 
 function measureOf(
@@ -189,6 +191,12 @@ export function compileCovenantSpend(args: {
    * covenant is what the pool NFT is locked to.
    */
   finalNfRoot?: Uint8Array;
+  /**
+   * Option B: the per-note step-kernel locks the successor will carry. Genesis
+   * commits the covenant, so the same list has to be known here or the
+   * successor cannot spend what genesis created.
+   */
+  stepLocks?: readonly Uint8Array[];
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
@@ -244,6 +252,7 @@ export function compileCovenantSpend(args: {
           args.forceNoteAuth ?? false,
           args.tapeTipLock,
           args.finalNfRoot,
+          args.stepLocks ?? [],
         ),
         valueSatoshis: value,
         token: {
@@ -334,6 +343,20 @@ export function compileCovenantSuccessor(args: {
   /** Option A': must equal what genesis pinned, or the pool lock will not match. */
   finalNfRoot?: Uint8Array;
   /**
+   * Option B (note-auth-step-kernel.ts): walk N notes in THIS transaction, one
+   * step kernel per note, appended after the slots. The audited single-note
+   * kernel is dropped when these are present - its one root step is exactly
+   * what a batch cannot satisfy. The covenant pins each step lock by index, so
+   * genesis must have been compiled with the same list.
+   */
+  stepSpends?: ReadonlyArray<{
+    note: Note;
+    index: number;
+    path: Uint8Array[];
+    rIn: Uint8Array;
+    rOut: Uint8Array;
+  }>;
+  /**
    * Tape tip lock chain (C-BINDING). When present the tape tip is a P2SH32
    * covenant rather than a P2PKH: spend it with `tapeTipRedeem`, and a tape hop
    * must recreate `tapeTipNextLock` at output 1. The chain is counted, so hops
@@ -357,10 +380,17 @@ export function compileCovenantSuccessor(args: {
   const tape = Boolean(args.tapeUtxo);
   // Option A': a tape hop may carry its own note-auth kernel when a note is
   // supplied. FRI9 tape hops pass none, so this stays false for them.
+  const stepSpends = args.stepSpends ?? [];
+  const stepN = stepSpends.length;
+  const stepLocks = stepSpends.map((sp) => compileNoteAuthStepLockP2sh32(sp.rIn, sp.rOut));
+  // A batch drops the audited kernel: one SHA256(old || nf) == new step cannot
+  // express N insertions, and the step kernels do that job instead.
   const wantNote =
-    args.includePool !== false
-      ? includeNoteAuth(slotKernels) || Boolean(args.note)
-      : Boolean(args.note);
+    stepN > 0
+      ? false
+      : args.includePool !== false
+        ? includeNoteAuth(slotKernels) || Boolean(args.note)
+        : Boolean(args.note);
   if (depositNeed > 0n && !args.feeUtxo) {
     throw new Error("deposit successor needs a funder utxo for the net");
   }
@@ -411,6 +441,7 @@ export function compileCovenantSuccessor(args: {
           forceNoteAuth: args.forceNoteAuth ?? false,
           tapeTipLock: args.tapeTipLock,
           finalNfRoot: args.finalNfRoot,
+          stepLocks,
         })
     : packedAirCarrierUnlocking(packed instanceof Uint8Array ? packed : encodeAirPacked(args.statement!, decoded));
   const shards = friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
@@ -422,7 +453,12 @@ export function compileCovenantSuccessor(args: {
   if (kernels.length !== FRI_KERNEL_INPUTS) {
     throw new Error(`need ${FRI_KERNEL_INPUTS} FRI kernel UTXOs, got ${kernels.length}`);
   }
-  const prefixN = prefixExtraKernelCount(slotKernels, includePool, wantNote);
+  // A batch drops the audited kernel, so the prefix is cqz+grind+algC = 3 even at
+  // 36 slots, where includeNoteAuth would otherwise say 4. The covenant computes
+  // the same 3 (requireFriInputsAsm), and a mismatch here would shift every fold
+  // and slot index by one.
+  const prefixN =
+    stepN > 0 ? 3 : prefixExtraKernelCount(slotKernels, includePool, wantNote);
   const extras = args.extraKernels ?? [
     { tx_hash: dummy, tx_pos: 10, value: 1000 },
     ...(includePool
@@ -434,9 +470,12 @@ export function compileCovenantSuccessor(args: {
     ...(wantNote ? [{ tx_hash: dummy, tx_pos: includePool ? 13 : 11, value: 1000 }] : []),
     ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + f, value: 1000 })),
     ...Array.from({ length: slotN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + i, value: 1000 })),
+    ...Array.from({ length: stepN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + slotN + i, value: 1000 })),
   ];
-  if (extras.length !== prefixN + foldN + slotN) {
-    throw new Error(`need ${prefixN + foldN + slotN} extra kernel UTXOs, got ${extras.length}`);
+  if (extras.length !== prefixN + foldN + slotN + stepN) {
+    throw new Error(
+      `need ${prefixN + foldN + slotN + stepN} extra kernel UTXOs, got ${extras.length}`,
+    );
   }
   if (wantNote) {
     if (!args.note) throw new Error("note-auth kernel needs the opened note (not the OTP-masked proof field)");
@@ -532,6 +571,12 @@ export function compileCovenantSuccessor(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: slotsKernelUnlocking((queryStart + i) * SLOTS_PER_KERNEL),
       })),
+      ...stepSpends.map((sp, i) => ({
+        outpointIndex: extras[prefixN + foldN + slotN + i]!.tx_pos,
+        outpointTransactionHash: hexToBin(extras[prefixN + foldN + slotN + i]!.tx_hash),
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: noteAuthStepUnlocking(sp),
+      })),
       ...(userFee && args.feeUtxo && c && data
         ? [
             {
@@ -584,6 +629,7 @@ export function compileCovenantSuccessor(args: {
           args.forceNoteAuth ?? false,
           args.tapeTipLock,
           args.finalNfRoot,
+          stepLocks,
         ),
         valueSatoshis: value,
         token: {

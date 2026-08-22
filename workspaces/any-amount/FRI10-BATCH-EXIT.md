@@ -293,6 +293,95 @@ compiled and VM-verified transactions, not confirmed ones. The FRI10 switchover 
 bumping the version and moving all envelopes onto the batch family - remains an
 audit call.
 
+## Option B, done as a NEW kernel (2026-08-22)
+
+Not an edit to the audited kernel — a second kernel beside it, per the standing
+rule that audited on-chain code is never modified in place. `note-auth-step-kernel.ts`.
+
+The earlier costing of option B assumed unrolling N notes inside one kernel, which
+Script's lack of loops forces and which caps at 8. **That was the wrong shape.**
+The right one is the position-indexing the codebase already uses for
+`compileFoldLockP2sh32(nFold, queryIndex)` and `compileSlotsLockP2sh32(slot)`: one
+kernel per note, each with its two roots **baked into the redeem**.
+
+```
+SHA256(R_IN || nf) == R_OUT        (both constants, not read from the tx)
+```
+
+Because the roots are constants rather than `<0> OP_UTXOTOKENCOMMITMENT` and
+`<0> OP_OUTPUTTOKENCOMMITMENT`, step j and step k are different programs at
+different P2SH32 addresses with nothing to collide over. N of them coexist in one
+transaction. That is precisely what the audited kernel cannot do.
+
+### Measured, and better than the unrolled estimate
+
+| | redeem | unlocking | lock |
+| --- | --- | --- | --- |
+| step kernel (new) | **182 B** | **792 B** | 35 B |
+| audited kernel | 467 B | 1154 B | 35 B |
+
+It is *smaller* because batch exit is full-note only, so there is no change branch
+and no deposit branch — the absence of those cases, not a weakening of the rules.
+
+And each step is its **own input**, so the 2026 per-input 10 KB cap never binds
+(792 B << 10 000). The unrolled design would have paid `N x 467` for the redeem
+inside a single input and capped at 8. Room in one transaction, by bytes:
+
+| envelope | free | notes in ONE tx |
+| --- | --- | --- |
+| A standard (87611 of 100000) | 12389 B | **14** |
+| B consensus (498398 of 1000000) | 501602 B | **602** |
+| C pay hop (89354 of 100000) | 10646 B | **12** |
+
+### What makes it sound rather than merely possible
+
+The covenant **pins each step lock by index** (`stepLocks` in
+`compilePoolCovenant`). Without that the step kernels would be unobserved and a
+prover could simply omit them — the same trap plain option A fell into. With it,
+neither the count nor the order can be altered.
+
+A batched transaction also **drops the audited kernel**: its single
+`SHA256(oldRoot || nf) == newRoot` step is exactly what N insertions cannot
+satisfy. `requireFriInputsAsm` therefore uses a 3-kernel prefix when steps are
+present, and `covenant-spend.ts` matches it — a mismatch there would shift every
+fold and slot index by one.
+
+Anchoring is deliberately outside the kernel, so every step is the same shape:
+genesis mints R_0 and pins R_N through `finalNfRoot`. A step proves only "this
+note's nullifier carries R_IN to R_OUT", which is all it should prove.
+
+### Envelope B now batches (verified)
+
+`test/envelope-b-batch.test.ts` builds a real consensus transaction through
+`compileCovenantSuccessor({ stepSpends })` and runs the 2026 VM over it:
+
+| | |
+| --- | --- |
+| 3-note batch verifies | yes |
+| 8-note batch verifies | yes (503 671 B, non-standard by design, under 1 MB) |
+| dropping a step | rejected by the covenant |
+| swapping two steps | rejected - each is pinned at its own index |
+| audited kernel present | no - a batched B drops it |
+| FRI9's unbatched covenant | byte-identical |
+
+Two things that had to be right, and were not at first:
+
+**Verify B in CONSENSUS mode, not standard.** B is ~500 KB and non-standard by
+design, so `createVirtualMachineBch2026(true)` rejects it on size alone - which
+would also make every negative test above pass for the wrong reason. The test
+helper now throws if a size rejection ever masks a covenant check.
+
+**`BIND_PAA1` ties payout count to the withdrawal delta**: it requires
+`withdrawalCount delta == outputCount - 2`. A single-note withdraw gets away with
+two outputs, but a batch of N needs N payout outputs *plus* a change output, so
+`runBatchSuccessor` returns its payouts and the caller must supply a funder input.
+
+### Status
+
+Built, VM-verified, **not adopted**. `FRI_VERSION` stays 9, nothing points at it by
+default, and FRI9 is byte-identical (A 87611 / B 498398 / C pay 89354 /
+C total 1662420). Switching envelopes onto it is an audit call.
+
 ## Size budget (measured)
 
 A note-auth input is **1725 B** when it carries a change note (1684 unlocking + ~41

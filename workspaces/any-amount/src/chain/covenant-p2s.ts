@@ -57,17 +57,30 @@ OP_0 OP_OUTPUTTOKENCOMMITMENT
  * lock, finds note-auth, and OP_EQUALVERIFY fails - every later index is shifted
  * by one too. Default false keeps A and B byte-identical.
  */
-function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT, forceNoteAuth = false): string {
+function requireFriInputsAsm(
+  slotKernels = SLOT_KERNEL_COUNT,
+  forceNoteAuth = false,
+  /**
+   * Option B (note-auth-step-kernel.ts): one lock per note, pinned by index
+   * after the slots. Unpinned they would be unobserved - a prover could simply
+   * omit them - which is the trap plain option A fell into. When steps are
+   * present the audited single-note kernel is NOT included: its one
+   * SHA256(oldRoot || nf) == newRoot step is exactly what a batch cannot
+   * satisfy. Empty for FRI9, which keeps the layout byte-identical.
+   */
+  stepLocks: readonly Uint8Array[] = [],
+): string {
   const lockHex = binToHex(compileFriQueryLockP2sh32());
   const cqzHex = binToHex(compileCqzLockP2sh32());
   const grindHex = binToHex(compileGrindLockP2sh32());
   const algHex = binToHex(compileAlgebraicCLockP2sh32());
   const foldN = foldKernelCount(slotKernels);
   const prefix = 1 + FRI_KERNEL_INPUTS;
-  const extraN = prefixExtraKernelCount(slotKernels, true, forceNoteAuth);
+  const batched = stepLocks.length > 0;
+  const extraN = batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth);
   const lines = [
     "OP_TXINPUTCOUNT",
-    `<${prefix + extraN + foldN + slotKernels}>`,
+    `<${prefix + extraN + foldN + slotKernels + stepLocks.length}>`,
     "OP_GREATERTHANOREQUAL",
     "OP_VERIFY",
   ];
@@ -77,7 +90,7 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT, forceNoteAuth = fa
   lines.push(`<${prefix}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
   lines.push(`<${prefix + 1}>`, "OP_UTXOBYTECODE", `<0x${grindHex}>`, "OP_EQUALVERIFY");
   lines.push(`<${prefix + 2}>`, "OP_UTXOBYTECODE", `<0x${algHex}>`, "OP_EQUALVERIFY");
-  if (includeNoteAuth(slotKernels, forceNoteAuth)) {
+  if (!batched && includeNoteAuth(slotKernels, forceNoteAuth)) {
     const noteHex = binToHex(compileNoteAuthLockP2sh32());
     lines.push(`<${prefix + 3}>`, "OP_UTXOBYTECODE", `<0x${noteHex}>`, "OP_EQUALVERIFY");
   }
@@ -96,6 +109,16 @@ function requireFriInputsAsm(slotKernels = SLOT_KERNEL_COUNT, forceNoteAuth = fa
       `<${prefix + extraN + foldN + i}>`,
       "OP_UTXOBYTECODE",
       `<0x${slotsHex}>`,
+      "OP_EQUALVERIFY",
+    );
+  }
+  // Step kernels last, one per note, each pinned to its own (R_in, R_out)
+  // address so neither the order nor the count can be altered.
+  for (const [j, lock] of stepLocks.entries()) {
+    lines.push(
+      `<${prefix + extraN + foldN + slotKernels + j}>`,
+      "OP_UTXOBYTECODE",
+      `<0x${binToHex(lock)}>`,
       "OP_EQUALVERIFY",
     );
   }
@@ -293,6 +316,12 @@ export function compilePoolCovenant(opts?: {
    * nullifierRoot is bytes 96..128 of the 128-byte PAA1 (state.ts:77).
    */
   finalNfRoot?: Uint8Array;
+  /**
+   * Option B: the per-note step-kernel locks this transaction must carry, in
+   * order. Pair with `finalNfRoot` so the chain they walk is anchored at both
+   * ends. Omit for FRI9.
+   */
+  stepLocks?: readonly Uint8Array[];
 }): Uint8Array {
   const slots = opts?.slotKernels ?? SLOT_KERNEL_COUNT;
   const requireTape = opts?.tapeTipLock
@@ -307,7 +336,7 @@ OP_TXINPUTCOUNT OP_1SUB OP_UTXOBYTECODE <0x${binToHex(opts.tapeTipLock)}> OP_EQU
 <0> OP_OUTPUTTOKENCOMMITMENT <96> OP_SPLIT OP_NIP <0x${binToHex(opts.finalNfRoot)}> OP_EQUALVERIFY`
     : "";
   const bin = cashAssemblyToBin(
-    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false)}${requireTape}${requireFinalRoot}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
+    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false, opts?.stepLocks ?? [])}${requireTape}${requireFinalRoot}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
   );
   if (typeof bin === "string") throw new Error(`covenant compile: ${bin}`);
   return bin;
@@ -323,6 +352,8 @@ export function poolLockP2sh32(opts?: {
   tapeTipLock?: Uint8Array;
   /** Option A': pin output-0 nullifierRoot. See compilePoolCovenant. */
   finalNfRoot?: Uint8Array;
+  /** Option B: per-note step-kernel locks. See compilePoolCovenant. */
+  stepLocks?: readonly Uint8Array[];
 }): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compilePoolCovenant(opts)));
 }
@@ -333,6 +364,8 @@ export function poolLockP2sFor(opts?: {
   tapeTipLock?: Uint8Array;
   /** Option A': pin output-0 nullifierRoot. See compilePoolCovenant. */
   finalNfRoot?: Uint8Array;
+  /** Option B: per-note step-kernel locks. See compilePoolCovenant. */
+  stepLocks?: readonly Uint8Array[];
 }): Uint8Array {
   return compilePoolCovenant(opts);
 }
@@ -408,6 +441,8 @@ export function p2sh32Unlocking(
     tapeTipLock?: Uint8Array;
     /** Option A': must match the lock's pin or the redeem will not hash to it. */
     finalNfRoot?: Uint8Array;
+    /** Option B: must match the lock's step pins, for the same reason. */
+    stepLocks?: readonly Uint8Array[];
   },
 ): Uint8Array {
   const redeem = pushData(compilePoolCovenant(opts));

@@ -158,6 +158,9 @@ export function runBatchSuccessor(args?: {
   proof: Uint8Array;
   spends: Array<{ note: Note; index: number; path: Uint8Array[] }>;
   roots: Uint8Array[];
+  /** One per spent note. BIND_PAA1 requires outputCount - 2 == withdrawalCount
+   *  delta, so a batch needs N payout outputs AND a change output. */
+  payouts: Array<{ sats: bigint; lockingBytecode: Uint8Array }>;
 } {
   const deposits = args?.depositCount ?? 6;
   const noteCount = args?.noteCount ?? 3;
@@ -191,5 +194,13 @@ export function runBatchSuccessor(args?: {
   const hash = defaultInternalHash();
   const roots: Uint8Array[] = [new Uint8Array(oldState.nullifierRoot)];
   for (const s of b.spent) roots.push(hash.digest(concatBytes(roots[roots.length - 1]!, s.nullifier)));
-  return { oldState, newState: b.machine.state, statement: b.statement, proof, spends, roots };
+  return {
+    oldState,
+    newState: b.machine.state,
+    statement: b.statement,
+    proof,
+    spends,
+    roots,
+    payouts: b.payouts,
+  };
 }

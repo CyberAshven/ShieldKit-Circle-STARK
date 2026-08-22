@@ -188,6 +188,14 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 > broadcast**: no N-note batch has touched Chipnet, so batch-exit extra notes
 > remain off-chain in practice and the claim below stands.
 > See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
+>
+> Envelope **B** batches too, via a SECOND kernel built beside the audited one
+> (`note-auth-step-kernel.ts`, never an edit to it). It bakes (R_in, R_out) into
+> the redeem rather than reading them at index 0, so N coexist in one transaction
+> - which the audited kernel cannot do. 3- and 8-note batches verified on the 2026
+> VM in consensus mode, with the covenant pinning each step by index so none can
+> be dropped or reordered. Room by bytes: A 14 notes, B 602, C pay hop 12. Not
+> adopted, not broadcast: `FRI_VERSION` stays 9 and FRI9 is byte-identical.
 
 ## What is still not claimed
 

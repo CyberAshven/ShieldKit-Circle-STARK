@@ -80,7 +80,13 @@ chain, `finalNfRoot` covenant pin), wired through `landC(hops, scratch, batchNot
 and VM-verified as a 3-note batch with all 18 tape hops passing. FRI9 stays
 byte-identical. **No N-note batch has been broadcast** - the claims here are about
 compiled and VM-verified transactions, not confirmed ones.
-See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
+A second kernel, `note-auth-step-kernel.ts`, is built beside the audited one (never
+an edit to it): it bakes (R_in, R_out) into the redeem instead of reading them at
+index 0, so N coexist in one transaction. That gives **envelope B on-chain batching**
+- 3 and 8 note batches verified on the 2026 VM in consensus mode, the covenant
+pinning each step by index so none can be dropped or reordered. Room by bytes:
+A 14 notes, B 602, C pay hop 12. Not adopted; `FRI_VERSION` stays 9 and FRI9 is
+byte-identical. See [`FRI10-BATCH-EXIT.md`](FRI10-BATCH-EXIT.md).
 
 ## Not done (honest)
 
