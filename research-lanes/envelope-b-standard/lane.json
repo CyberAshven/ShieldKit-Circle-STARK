@@ -1,0 +1,35 @@
+{
+  "apiVersion": "shieldkit-labs.research-lane/v1alpha1",
+  "kind": "ResearchLane",
+  "id": "research-lane:envelope-b-standard",
+  "title": "Envelope B into one standard BCH transaction",
+  "status": "open-not-qualified",
+  "createdAt": "2026-08-22T00:00:00Z",
+  "copiedFrom": {
+    "branch": "Optimization",
+    "commit": "5c055713f108fd1ab56689c30de906fda0cec2bf",
+    "tree": "workspaces/any-amount"
+  },
+  "objective": "Put FRI9 envelope-B completeness (36 unique-orbit Circle-FRI queries, on-chain R, grind, algebraicC, bind-T, note-auth or step-kernel equivalent) into one May-2026 standard transaction: 100000 B, 10000 B unlocking and redeem, standard hash meters, no dummy pad. Chipnet only. Not a qualification of a shielded pool.",
+  "entrypoints": {
+    "rules": "RULES.md",
+    "next": "NEXT.md",
+    "status": "STATUS.md",
+    "design": "DESIGN.md",
+    "cli": "src/cli.ts",
+    "params": "src/backends/circle/params.ts",
+    "covenant": "src/chain/covenant-spend.ts",
+    "envelope": "src/chain/envelope.ts",
+    "stepKernel": "src/chain/note-auth-step-kernel.ts",
+    "bIdentityTest": "test/hole-free-b.test.ts",
+    "leanbch": "/home/toorik/Projects/ShieldKit/LeanBCH"
+  },
+  "doesNotClaim": [
+    "not qualified",
+    "not mainnet",
+    "not a 100000-byte B land yet",
+    "not a Lean/BCHN equivalence theorem",
+    "not a rename of envelope A or C"
+  ],
+  "workSurface": "This directory is the only edit surface for the B-standard hypothesis. Do not edit workspaces/any-amount or research-lanes/bch-shielded-pool-design for this work."
+}
