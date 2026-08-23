@@ -18,6 +18,7 @@ import { sha256 } from "../src/pool/bytes.ts";
 import {
   AIR_NEWTON_BYTES,
   AIR_OFF_EVEN,
+  AIR_OFF_NONCE,
   AIR_OFF_NTABLE,
   AIR_OFF_ODD,
   AIR_OFF_OPEN_MASK,
@@ -380,5 +381,95 @@ describe("hole-free statistical-soundness kernels (B)", () => {
     });
     assert.equal(ev.accepted, false, "fake rho must fail on-chain note Merkle");
     void d;
+  });
+
+  it("Merkle walker rejects omitting openings (N=1 LIFO-last or drop slot 0)", () => {
+    const { w, proof, note, change } = mix();
+    const base = {
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof,
+      statement: w.statement,
+      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+      standard: true as const,
+      note,
+      change,
+    };
+    const proofs = buildLayerProofs(collectFriOpenings(proof));
+    const n1 = proofs.map((p) =>
+      encodeLayerUnlocking(
+        { ...p, openings: [p.openings[p.openings.length - 1]!] },
+        compileFriQueryKernel(p.layer),
+      ),
+    );
+    const omit0 = proofs.map((p) =>
+      encodeLayerUnlocking(
+        { ...p, openings: p.openings.filter((o) => o.slot !== 0) },
+        compileFriQueryKernel(p.layer),
+      ),
+    );
+    const ev1 = evaluatePoolSuccessorVm({ ...base, kernelUnlockings: n1 });
+    const ev0 = evaluatePoolSuccessorVm({ ...base, kernelUnlockings: omit0 });
+    assert.equal(ev1.accepted, false, "N=1 LIFO-last must fail leftover pair-group empty check");
+    assert.equal(ev0.accepted, false, "dropping slot-0 opening must fail leftover pair-group empty check");
+  });
+
+  it("grind nonce, dup×36 openings, and table-index confusion are rejected", () => {
+    const { w, proof, note, change } = mix();
+    const base = {
+      oldState: w.statement.oldState,
+      newState: w.statement.newState,
+      proof,
+      statement: w.statement,
+      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+      standard: true as const,
+      note,
+      change,
+    };
+    const proofs = buildLayerProofs(collectFriOpenings(proof));
+    const last = proofs.map((p) => {
+      const o = p.openings[p.openings.length - 1]!;
+      return encodeLayerUnlocking(
+        { ...p, openings: Array.from({ length: FRI_QUERIES }, () => o) },
+        compileFriQueryKernel(p.layer),
+      );
+    });
+    const dup = evaluatePoolSuccessorVm({ ...base, kernelUnlockings: last });
+    assert.equal(dup.accepted, false, "one leaf ×36 must not bind 36 pair groups");
+
+    const p0 = proofs[0]!;
+    assert.ok(p0.table.length >= 64, "need two unique siblings to swap");
+    const table = new Uint8Array(p0.table);
+    const a = table.slice(0, 32);
+    table.set(table.subarray(32, 64), 0);
+    table.set(a, 32);
+    const swapped = proofs.map((p, i) =>
+      encodeLayerUnlocking(i === 0 ? { ...p, table } : p, compileFriQueryKernel(p.layer)),
+    );
+    const swapEv = evaluatePoolSuccessorVm({ ...base, kernelUnlockings: swapped });
+    assert.equal(swapEv.accepted, false, "swapped unique-table slots must fail the walk");
+
+    const oF = { ...p0.openings[0]!, compactPath: new Uint8Array(p0.openings[0]!.compactPath) };
+    oF.compactPath[1] = 0xff;
+    oF.compactPath[2] = 0xff;
+    const ffff = proofs.map((p, i) =>
+      encodeLayerUnlocking(
+        i === 0 ? { ...p, openings: [oF, ...p.openings.slice(1)] } : p,
+        compileFriQueryKernel(p.layer),
+      ),
+    );
+    const idxEv = evaluatePoolSuccessorVm({ ...base, kernelUnlockings: ffff });
+    assert.equal(idxEv.accepted, false, "compact-path index 0xFFFF must not PICK a forged sibling");
+
+    const packed = encodeAirPacked(w.statement, proof);
+    packed[AIR_OFF_NONCE + 3] ^= 0x01;
+    const grindEv = evaluatePoolSuccessorVm({ ...base, airPacked: packed });
+    assert.equal(grindEv.accepted, false, "flipped grind nonce must fail grind or unique-FS bind");
+
+    const empty = proofs.map((p) =>
+      encodeLayerUnlocking({ ...p, openings: [] }, compileFriQueryKernel(p.layer)),
+    );
+    const n0 = evaluatePoolSuccessorVm({ ...base, kernelUnlockings: empty });
+    assert.equal(n0.accepted, false, "N=0 must not vacuously accept a full pair blob");
   });
 });

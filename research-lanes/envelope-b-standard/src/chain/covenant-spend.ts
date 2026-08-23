@@ -386,6 +386,16 @@ export function compileCovenantSuccessor(args: {
   // supplied. FRI9 tape hops pass none, so this stays false for them.
   const stepSpends = args.stepSpends ?? [];
   const stepN = stepSpends.length;
+  if (args.statement) {
+    const spentNotes = Number(
+      args.statement.newState.withdrawalCount - args.statement.oldState.withdrawalCount,
+    );
+    if (spentNotes > 1 && stepN !== spentNotes) {
+      throw new Error(
+        `H1: ${spentNotes}-note withdraw requires ${spentNotes} step kernels (got ${stepN}); extras in verifyFri are not a B successor`,
+      );
+    }
+  }
   const stepLocks = stepSpends.map((sp) =>
     compileNoteAuthStepLockP2sh32(sp.rIn, sp.rOut, sp.prevNf ?? new Uint8Array(32)),
   );

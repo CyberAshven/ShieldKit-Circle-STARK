@@ -5,9 +5,15 @@
  * bits = queries * log2(blowup) + grind   (rate 1/B)
  * bits = queries * (log2(blowup)-1) + grind  (rate 2/B)
  *
- * Floor 100, target 128. The old n=32 / q=8 / sound:false bench is a fail.
+ * Floor 100, target 128 **query-conjecture bits** (ethSTARK toy, rate 2/B).
+ * Not Stwo QM31 field+query bits. M31 is 31-bit; SZ on TRACE 64 is tens of bits.
+ * The old n=32 / q=8 / sound:false bench is a fail.
  */
 export const M31_P = 2147483647n;
+/** log2(p+1) ≈ 31. FRI here is base-field M31, not QM31. */
+export const FIELD_BIT_LENGTH = 31;
+/** False: this vk is not Stwo's extension-field FRI. */
+export const STWO_FIELD_PARITY = false;
 
 export const TRACE_LEN = 64;
 export const BLOWUP = 16;

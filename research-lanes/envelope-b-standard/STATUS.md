@@ -1,5 +1,7 @@
 # Status (2026-08-21)
 
+**Argument freeze:** [`ARGUMENT.md`](ARGUMENT.md) (`circle-fri-m31-t64-b16-q36-g20-fri9`). Pre-patch Chipnet `56be9ac0…` is not this freeze.
+
 **Pre-release.** Off-chain TypeScript prover/verifier + a 2026 pool lock that
 **binds** the new 128-byte PAA1 NFT and spends **10 FRI-kernel inputs** that
 Merkle-walk packed openings. Default spend **A** is **100 KB relay** with **4**

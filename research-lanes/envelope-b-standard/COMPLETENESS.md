@@ -1,5 +1,7 @@
 # Completeness list (non-negotiable for this lane)
 
+**Argument freeze:** [`ARGUMENT.md`](ARGUMENT.md) is the vk (`circle-fri-m31-t64-b16-q36-g20-fri9`). Numbered lock checks, named FRI conjecture, JS-only holes. This page is the older table; if they disagree, ARGUMENT.md wins until both are edited in the same commit.
+
 Signed 2026-08-22. Changing an item later is allowed. Changing it **silently** is not: edit this page in the same commit as the construction.
 
 This is **B’s claim** (one consensus tx, ≤ 1 MB). A candidate that drops a row is a **different family** and a different vk, not “smaller B.”
