@@ -1,0 +1,6 @@
+parent: envelope-b-standard
+branch: Optimization
+commit: 3d90eef3ec6dfdfa1ad3c2297078d5496e232ad0
+copied: 2026-08-23T13:51:45Z
+evidence: survey/artifacts/argument-freeze/ (91 KB B, Chipnet 58b7df7f…, 91598 B)
+prior-for-rules-7: research-lanes/batch-exit-walkin (generic step / walk-in; not this product)
