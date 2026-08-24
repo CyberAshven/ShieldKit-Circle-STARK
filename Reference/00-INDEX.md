@@ -108,4 +108,3 @@ Related public papers (not Circle-FRI math):
 - [prior-art/quantumroot.md](prior-art/quantumroot.md) — PQ vault, not the mixer
 - [prior-art/any-amount-profile.md](prior-art/any-amount-profile.md) — one pool, type any amount (product)
 - [prior-art/cli-ux.md](prior-art/cli-ux.md) — OPTN nav + any-amount home
-- [ai-prompt-master-references.md](ai-prompt-master-references.md) — master AI prompt (corrected: Pedersen emulatable, no transfer in Fv1)
