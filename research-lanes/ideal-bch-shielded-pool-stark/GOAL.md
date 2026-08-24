@@ -6,7 +6,7 @@
 
 One Chipnet Electrum transaction that is **B** under [`RULES.md`](RULES.md): one standard May-2026 tx, soundness min(FRI-query, field, SZ, hash-RO) ≥ 100, miner runs every numbered check, Circle FRI + SHA-256, on-chain money relation, shielded unlocking (no rho/owner/amount preimage), walk-in batch exit with N on-chain walks, encoding ≡ spec.
 
-That object does not exist yet. The 91 KB M31 freeze is a measured wall, not this end.
+That object does not exist yet. The 91 KB M31 freeze is a measured wall, not this end. Occupancy pack [`survey/artifacts/qm31-fri10/`](survey/artifacts/qm31-fri10/) (vk `circle-fri-m31-qm31-t64-b16-q36-g20-fri10-` + full `RULES.md` SHA-256, Chipnet `60d186de…` 99043 B) is a later measured wall. §6 / §7 still open.
 
 ## Why a new lane
 

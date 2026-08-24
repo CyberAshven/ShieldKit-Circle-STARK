@@ -13,6 +13,7 @@
   "rules": "RULES.md",
   "rulesSha256": "de1f4dcf0b16d9f8cec265719673a108e2ac4703059fd9d1998d09fcd121de22",
   "vk": null,
+  "occupancyVk": "circle-fri-m31-qm31-t64-b16-q36-g20-fri10-de1f4dcf0b16d9f8cec265719673a108e2ac4703059fd9d1998d09fcd121de22",
   "objective": "One standard May-2026 BCH transaction that is B under RULES.md: tx ≤ 100000 B, unlocking/redeem ≤ 10000 B, createVirtualMachineBch2026(true), Electrum; min(FRI-query, field, SZ, hash-RO) ≥ 100; miner runs C1…Ck; Circle FRI + SHA-256; on-chain money relation; no rho/owner/amount in unlocking; walk-in N-note batch with N on-chain walks. Parent 91 KB M31 freeze is evidence, not this product.",
   "entrypoints": {
     "rules": "RULES.md",
@@ -20,17 +21,19 @@
     "argument": "ARGUMENT.md",
     "next": "NEXT.md",
     "freezeEvidence": "survey/artifacts/argument-freeze/",
+    "occupancyPack": "survey/artifacts/qm31-fri10/",
     "cli": "src/cli.ts",
     "params": "src/backends/circle/params.ts"
   },
   "doesNotClaim": [
-    "not a vk yet",
-    "not 100-bit field soundness (parent is M31)",
-    "not shielded unlocking (parent publishes preimages)",
+    "occupancy pack is not the named end",
+    "not shielded unlocking (note preimage still in unlocking)",
+    "not walk-in N-note batch",
     "not qualified",
     "not mainnet",
     "not a rename of envelope A or C",
-    "not a relabel of the 91 KB freeze"
+    "not a relabel of the 91 KB freeze",
+    "query-conjecture 128 is speculative"
   ],
   "workSurface": "This directory is the only edit surface for the ideal-B hypothesis. Do not edit research-lanes/envelope-b-standard, research-lanes/batch-exit-walkin, or workspaces/any-amount for this work."
 }
