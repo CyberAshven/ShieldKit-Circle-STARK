@@ -1,0 +1,12 @@
+parent: ideal-bch-shielded-pool-stark
+branch: Optimization
+commit: 1b18a988db71ec86cc4d0810ba6315c3f6b72c50
+copied: 2026-08-25
+starting-artifact: occupancy + HASH_BIT host at 1b18a98
+chipnet-hashbit-host: 5de6827277d9d56735ef144954bb450aab505359ddcc567a1cc0e06e654f1b53 (99144 B, Electrum)
+chipnet-occupancy: 60d186ded18897a50d0a4205ed446ab02339a53eb6d8f4a7043b4e405796edc4 (99043 B)
+extra-input-sha-air-meter: 94788 B (36 × (41 + 576×4 + 9×32)); occupancy+AIR ≈ 194 kB
+evidence-freeze: survey/artifacts/argument-freeze/ (91 KB B, Chipnet 58b7df7f…, 91598 B)
+sibling-100kb: research-lanes/ideal-bch-shielded-pool-stark (HASH_BIT leftover walks; not this product)
+sibling-1mb: research-lanes/nonstandard-ideal-circle-stark (SHA AIR on own inputs; not this product)
+note: policy 100 KB / Electrum is this lane’s box. Geometry is SHA in occupancy C, same 36 queries.
