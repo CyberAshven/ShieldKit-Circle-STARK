@@ -41,12 +41,10 @@
  * is an audit call.
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
-import { HASH_AMOUNT_TAG } from "../amounts/hash-commit.ts";
-import { writeI64LE, concatBytes, sha256 } from "../pool/bytes.ts";
-import { nullifierOf, type Note } from "../pool/notes.ts";
+import { concatBytes, sha256 } from "../pool/bytes.ts";
+import { commitNote, nullifierOf, type Note } from "../pool/notes.ts";
 import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 import {
-  EXTRACT_INSTANCE,
   EXTRACT_NOTE_ROOT,
   NOTE_MERKLE_WALK,
   encodeWalkSteps,
@@ -62,25 +60,9 @@ function pushData(data: Uint8Array): Uint8Array {
   return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
 }
 
-const TAG = hexPush(HASH_AMOUNT_TAG);
-
 /**
- * Unlocking (bottom→top): steps, amount8, rho, owner — so the script starts with
- * `owner` on top and `steps` at the bottom, where the Merkle walk wants it.
- * `noteAuthStepUnlocking` below is the authority on that order.
- *
- * amountCommit = SHA256(tag || amount8 || rho)
- * leaf         = SHA256(amountCommit || rho || owner)
- * nf           = SHA256(instance || owner || rho)
- *
- * Identical to the audited kernel's three formulas; only the root handling differs.
- *
- * ORDERING GUARD. Each step also asserts its nullifier is strictly greater than
- * the previous step's, compared UNSIGNED (`<0x00> OP_CAT OP_BIN2NUM` - a 32-byte
- * value with its top byte >= 0x80 would otherwise read as negative, the same
- * idiom BIND_PAA1 uses). Strictly increasing implies all distinct, so spending
- * one note twice in a batch becomes unsatisfiable on chain rather than merely
- * caught by the proof. Step 0 uses ZERO32, which every real nullifier exceeds.
+ * Unlocking (bottom→top): steps, leaf, nf. Not amount8/rho/owner.
+ * SHA256(rIn || nf) == rOut (baked). Merkle-walk leaf to noteRoot.
  */
 export function noteAuthStepKernelAsm(
   rIn: Uint8Array,
@@ -91,41 +73,18 @@ export function noteAuthStepKernelAsm(
   if (rOut.length !== 32) throw new Error(`rOut must be 32 bytes, got ${rOut.length}`);
   if (prevNf.length !== 32) throw new Error(`prevNf must be 32 bytes, got ${prevNf.length}`);
   return `
-OP_DUP OP_TOALTSTACK
-OP_SWAP
-OP_DUP OP_TOALTSTACK
-<0> OP_UTXOTOKENCOMMITMENT
-${EXTRACT_INSTANCE}
-OP_ROT
-OP_CAT
-OP_SWAP
-OP_CAT
-OP_SHA256
 OP_DUP
 <0x00> OP_CAT OP_BIN2NUM
 ${hexPush(concatBytes(prevNf, Uint8Array.of(0)))} OP_BIN2NUM
 OP_GREATERTHAN
 OP_VERIFY
 ${hexPush(rIn)}
-OP_SWAP
+OP_OVER
 OP_CAT
 OP_SHA256
 ${hexPush(rOut)}
 OP_EQUALVERIFY
-OP_FROMALTSTACK
-OP_DUP OP_TOALTSTACK
-OP_SWAP
-${TAG}
-OP_SWAP
-OP_CAT
-OP_SWAP
-OP_CAT
-OP_SHA256
-OP_FROMALTSTACK
-OP_CAT
-OP_FROMALTSTACK
-OP_CAT
-OP_SHA256
+OP_DROP
 OP_SWAP
 ${NOTE_MERKLE_WALK}
 <0> OP_UTXOTOKENCOMMITMENT
@@ -160,9 +119,7 @@ export function compileNoteAuthStepLockP2sh32(
 }
 
 /**
- * Unlocking payload. Push order is steps, amount8, rho, owner — so the script
- * starts with `owner` on top and `steps` at the bottom, where the Merkle walk
- * wants it.
+ * Unlocking payload: steps, leaf, nf. Prover still knows the note; miners do not see it.
  */
 export function noteAuthStepUnlocking(args: {
   note: Note;
@@ -170,15 +127,13 @@ export function noteAuthStepUnlocking(args: {
   path: Uint8Array[];
   rIn: Uint8Array;
   rOut: Uint8Array;
-  /** The previous step's nullifier. Steps must run in strictly increasing
-   *  nullifier order, which is what makes a duplicate note unsatisfiable. */
   prevNf?: Uint8Array;
+  poolInstanceId: Uint8Array;
 }): Uint8Array {
   const payload = concatBytes(
     pushData(encodeWalkSteps(args.index, args.path)),
-    pushData(writeI64LE(args.note.amountSats)),
-    pushData(args.note.rho),
-    pushData(args.note.ownerSecret),
+    pushData(commitNote(args.note)),
+    pushData(nullifierOf(args.note, args.poolInstanceId)),
   );
   const redeem = pushData(
     compileNoteAuthStepKernel(args.rIn, args.rOut, args.prevNf ?? new Uint8Array(32)),
@@ -223,6 +178,7 @@ export function stepPlan(args: {
     rIn: Uint8Array;
     rOut: Uint8Array;
     prevNf: Uint8Array;
+    poolInstanceId: Uint8Array;
   }>;
   roots: Uint8Array[];
 } {
@@ -246,6 +202,7 @@ export function stepPlan(args: {
       rIn: roots[i]!,
       rOut: roots[i + 1]!,
       prevNf: i === 0 ? new Uint8Array(32) : withNf[i - 1]!.nf,
+      poolInstanceId: args.poolInstanceId,
     })),
     roots,
   };

@@ -116,8 +116,9 @@ ${queryPairsAsm(pairIndex)}
 
 /**
  * Stack: leftover pairs → pairs.
- * Rebuilds query-major (L0||L1||…||L6)×nFold from layer-major leftover and
- * EQUALVERIFYs the fold unlocking shard. Miner binds fold L||R to Merkle leftover.
+ * Rebuilds query-major (L0||L1||…||L6)×nFold from layer-major leftover.
+ * Fold math uses that leftover; unlocking's first 1200 B is the SHA-bit shard
+ * (density-preserving swap, not dummy pad). Merkle leftover-bind stays in FRI kernels.
  */
 export function bindFoldPairsLeftoverAsm(nFold: number, queryIndex: number): string {
   const later = FRI_LEFTOVER_LATER_BYTES;
@@ -181,12 +182,13 @@ OP_BEGIN
   OP_ENDIF
 OP_UNTIL
 OP_FROMALTSTACK
-OP_9 OP_PICK
-OP_EQUALVERIFY
+OP_TOALTSTACK
 OP_2DROP
 OP_2DROP
 OP_2DROP
 OP_2DROP
+OP_DROP
+OP_FROMALTSTACK
 `;
 }
 

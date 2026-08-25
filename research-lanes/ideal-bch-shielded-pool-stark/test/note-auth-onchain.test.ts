@@ -171,6 +171,8 @@ describe("on-chain note Merkle + nullifier + amount/auth", () => {
       spentPath: d.path,
       createdIndex: d.index,
       createdPath: d.path,
+      poolInstanceId: d.statement.oldState.poolInstanceId,
+      action: "DEPOSIT",
     });
     assert.ok(unlocking.length < 3_000, `note-auth unlocking ${unlocking.length} looks like leftover-fill`);
   });

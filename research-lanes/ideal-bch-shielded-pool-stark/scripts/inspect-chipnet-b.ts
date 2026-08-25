@@ -3,7 +3,7 @@
  * leftover-bind / SHA-256 in P2SH32 redeems, occupancy fingerprints.
  */
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { decodeTransaction, hexToBin, binToHex, hash256 } from "@bitauth/libauth";
+import { decodeTransaction, hexToBin, binToHex, hash256, hashTransaction } from "@bitauth/libauth";
 import { compileFriQueryKernel, FRI_LEFTOVER_BYTES, FRI_PAIR_BYTES_L0, FRI_PAIR_BYTES_QM } from "../src/chain/fri-kernel.ts";
 import { compileFoldKernel } from "../src/chain/fold-kernel.ts";
 import { COMMITTED_LAYERS } from "../src/backends/circle/params.ts";
@@ -64,8 +64,7 @@ function hasPush(bin: Uint8Array, data: Uint8Array): boolean {
 }
 
 async function loadHex(): Promise<string> {
-  const local = ".local/chipnet-qm31/successor-consensus.hex";
-  if (existsSync(local)) return readFileSync(local, "utf8").trim();
+  if (TXID.endsWith(".hex") && existsSync(TXID)) return readFileSync(TXID, "utf8").trim();
   const client = await connectChipnet();
   try {
     return await getTx(client, TXID);
@@ -107,7 +106,8 @@ const foldAny = redeems.find((r) => r.length > 4000 && countOp(r, 0xa8) > 5);
 
 const w = soundnessWorksheet();
 const report = {
-  txid: TXID,
+  txid: hashTransaction(raw),
+  requested: TXID,
   txBytes: raw.length,
   version: tx.version,
   nIn: tx.inputs.length,

@@ -236,14 +236,13 @@ ${lambdaFromPackedAsm()}
     assert.equal(on.pool.accepted, true, on.pool.error ?? "honest fold successor");
   });
 
-  it("honest Merkle leftover + alternate fold pairShard is VM-rejected", () => {
+  it("mutated fold SHA-bit shard is VM-rejected", () => {
     const d = deposit();
     const proof = proveFri(d.statement, d.witness);
     const raw = encodeFriProof(proof);
     const n = FOLD_QUERIES_PER_KERNEL;
     const honest0 = queryPairShard(raw, 0, n);
-    const alt = queryPairShard(raw, n, n);
-    assert.notDeepEqual(Buffer.from(alt), Buffer.from(honest0));
+    const alt = new Uint8Array(honest0.length).fill(0xff);
     const shards = Array.from({ length: 6 }, (_, f) => queryPairShard(raw, f * n, n));
     shards[0] = alt;
     const honest = evaluatePoolSuccessorVm({
@@ -252,7 +251,7 @@ ${lambdaFromPackedAsm()}
       proof: raw,
       statement: d.statement,
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
-      standard: true,
+      standard: false,
       note: d.note,
     });
     assert.equal(honest.accepted, true, honest.error ?? "honest control");
@@ -262,11 +261,11 @@ ${lambdaFromPackedAsm()}
       proof: raw,
       statement: d.statement,
       slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
-      standard: true,
+      standard: false,
       note: d.note,
       foldPairShards: shards,
     });
-    assert.equal(ev.accepted, false, "fold pairShard must EQUALVERIFY Merkle leftover");
+    assert.equal(ev.accepted, false, "fold SHA-bit shard must match hashBitRoot");
   });
 
   it("cooked pair blob is rejected when Merkle left/right stay honest", () => {

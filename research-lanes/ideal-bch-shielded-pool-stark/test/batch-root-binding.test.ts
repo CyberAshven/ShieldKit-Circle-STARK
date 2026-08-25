@@ -40,9 +40,11 @@ import { defaultInternalHash } from "../src/backends/circle/internal-hash.ts";
 import { concatBytes } from "../src/pool/bytes.ts";
 import {
   compileNoteAuthLockP2sh32,
+  noteAuthBindHash,
   noteAuthKernelUnlocking,
+  noteAuthPublicOpens,
 } from "../src/chain/note-auth-kernel.ts";
-import { AIR_PACKED_SIZE, AIR_OFF_CELLS } from "../src/chain/air-cqz.ts";
+import { AIR_PACKED_SIZE, AIR_OFF_CELLS, AIR_OFF_NET } from "../src/chain/air-cqz.ts";
 import { pushData, poolLockP2sh32 } from "../src/chain/covenant-p2s.ts";
 import { encodeLe } from "../src/backends/circle/m31.ts";
 import { decodeTransaction } from "@bitauth/libauth";
@@ -99,6 +101,28 @@ function batchOf(n: number) {
 const withRoot = (state: unknown, nullifierRoot: Uint8Array) =>
   ({ ...(state as object), nullifierRoot }) as ReturnType<typeof emptyState>;
 
+function hopKernel(b: ReturnType<typeof batchOf>, s: { note: Note; index: number; path: Uint8Array[] }) {
+  const args = {
+    note: s.note,
+    spentIndex: s.index,
+    spentPath: s.path,
+    createdIndex: 0,
+    createdPath: [] as Uint8Array[],
+    poolInstanceId: b.statement.oldState.poolInstanceId,
+    action: "WITHDRAW" as const,
+  };
+  return {
+    kernel: noteAuthKernelUnlocking(args),
+    authBind: noteAuthBindHash(
+      noteAuthPublicOpens({
+        note: s.note,
+        action: "WITHDRAW",
+        poolInstanceId: b.statement.oldState.poolInstanceId,
+      }),
+    ),
+  };
+}
+
 /**
  * One tape hop: sibling NFT (carrying R_in) at input 0, note-auth kernel, and the
  * root-pinned tip. Output 0 carries R_out; output 1 is the next tip lock.
@@ -110,10 +134,12 @@ function runHop(args: {
   tipRedeem?: Uint8Array;
   tipLock?: Uint8Array;
   nextLock?: Uint8Array;
+  authBind?: Uint8Array;
 }): string {
   const vm = createVirtualMachineBch2026(true);
   const packed = new Uint8Array(AIR_PACKED_SIZE);
   packed.set(encodeLe(2n), AIR_OFF_CELLS + 3 * 4);
+  if (args.authBind) packed.set(args.authBind, AIR_OFF_NET);
   const tip = args.tipRedeem && args.tipLock;
   const r = vm.verify({
     sourceOutputs: [
@@ -199,16 +225,12 @@ describe("A' — per-hop nullifier-root chain bound to the pool", () => {
   it("each note verifies on its own hop against the audited kernel", () => {
     const b = batchOf(3);
     for (const [i, s] of b.spent.entries()) {
+      const { kernel, authBind } = hopKernel(b, s);
       const res = runHop({
         inState: withRoot(b.statement.oldState, b.roots[i]!),
         outState: withRoot(b.statement.newState, b.roots[i + 1]!),
-        kernel: noteAuthKernelUnlocking({
-          note: s.note,
-          spentIndex: s.index,
-          spentPath: s.path,
-          createdIndex: 0,
-          createdPath: [],
-        }),
+        kernel,
+        authBind,
       });
       assert.equal(res, "ok", `hop ${i}: ${res}`);
     }
@@ -220,17 +242,12 @@ describe("A' — per-hop nullifier-root chain bound to the pool", () => {
     const redeems = tapeTipRedeemChainWithRoots(DIGEST, outRoots);
     const locks = tapeTipLockChainWithRoots(DIGEST, outRoots);
     const s = b.spent[0]!;
-    const kernel = noteAuthKernelUnlocking({
-      note: s.note,
-      spentIndex: s.index,
-      spentPath: s.path,
-      createdIndex: 0,
-      createdPath: [],
-    });
+    const { kernel, authBind } = hopKernel(b, s);
     const honest = runHop({
       inState: withRoot(b.statement.oldState, b.roots[0]!),
       outState: withRoot(b.statement.newState, b.roots[1]!),
       kernel,
+      authBind,
       tipRedeem: redeems[0],
       tipLock: locks[0],
       nextLock: locks[1],
@@ -244,6 +261,7 @@ describe("A' — per-hop nullifier-root chain bound to the pool", () => {
       inState: withRoot(b.statement.oldState, b.roots[0]!),
       outState: withRoot(b.statement.newState, b.roots[2]!),
       kernel,
+      authBind,
       tipRedeem: redeems[0],
       tipLock: locks[0],
       nextLock: locks[1],
@@ -304,18 +322,13 @@ describe("A' — per-hop nullifier-root chain bound to the pool", () => {
     assert.equal(redeems.length, 4, "N hops need N+1 tips");
     assert.equal(locks.length, 4);
     const s = b.spent[0]!;
-    const kernel = noteAuthKernelUnlocking({
-      note: s.note,
-      spentIndex: s.index,
-      spentPath: s.path,
-      createdIndex: 0,
-      createdPath: [],
-    });
+    const { kernel, authBind } = hopKernel(b, s);
     // hop 0 pointing at tip 2 instead of tip 1 must fail
     const skipped = runHop({
       inState: withRoot(b.statement.oldState, b.roots[0]!),
       outState: withRoot(b.statement.newState, b.roots[1]!),
       kernel,
+      authBind,
       tipRedeem: redeems[0],
       tipLock: locks[0],
       nextLock: locks[2],

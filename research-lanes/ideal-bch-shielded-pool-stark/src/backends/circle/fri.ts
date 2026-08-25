@@ -5,6 +5,7 @@ import {
   readU16BE,
   readU32BE,
   readU64BE,
+  sha256,
   writeU16BE,
   writeU32BE,
   writeU64BE,
@@ -28,6 +29,24 @@ import {
   VIEWING_PAD_LEN,
 } from "./witness-mask.ts";
 import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
+import {
+  assertHashTraceConstraints,
+  buildHashBitTrace,
+} from "../../chain/note-auth-air.ts";
+import {
+  buildShaLdeLeaves,
+  decodeShaLdeShards,
+  encodeShaLdeShards,
+  openShaLde,
+  shaLdeVectorRoot,
+  walkShaOpening,
+  SHA_LDE_BUNDLE,
+  SHA_LDE_COMPACT,
+  SHA_LDE_N_LEAVES,
+  SHA_LDE_VALUE_BYTES,
+  type ShaLdeProof,
+} from "../../chain/sha-lde.ts";
+import { noteAuthBindFromStatement, noteAuthOpensFromStatement } from "../../chain/note-auth-bind.ts";
 import { foldPair, foldPairQm31, foldPairSecure } from "./fold.ts";
 import { addPoints, CIRCLE_GEN, scalarMul, type CirclePoint } from "./group.ts";
 import { add, encodeLe, M31, mul, sub, type M31El } from "./m31.ts";
@@ -55,11 +74,13 @@ import {
   algebraicCQuotientLde,
   algebraicC,
   assertSatisfied,
+  authPreimageOpen,
   buildTrace,
   checkAuthRelation,
   checkBatchSpends,
   checkPublicAuthRelation,
   checkPublicConservation,
+  combinedResiduals,
   onChainCells,
   openedNote,
   publicCells,
@@ -96,14 +117,34 @@ export type FriProof = {
   final: QM31El[];
   queries: FriQuery[];
   auth: FriAuth;
+  /** SHA256(leaf‖nf‖amountCommit‖createdLeaf). Miner OP_SHA256 + EQUALVERIFY. */
+  hashRoot?: Uint8Array;
+  /** amountCommit ‖ leaf ‖ nf (96 B). Packed into cells 32–55. */
+  hashLeaves?: Uint8Array;
+  /** Merkle root of 1024 SHA-LDE leaves (prefix‖masked w-mix). */
+  hashBitRoot?: Uint8Array;
+  /** 36 occupancy-query SHA-LDE openings + compact merkle table. */
+  hashBitLde?: ShaLdeProof;
   /** In-memory only. Never written by encodeFriProof. */
   viewingKey?: Uint8Array;
   viewingCommit?: Uint8Array;
   authMasked?: boolean;
 };
 
-export type ProveFriOpts = { hash?: InternalHashId | InternalHash };
+export type ProveFriOpts = {
+  hash?: InternalHashId | InternalHash;
+  hashRoot?: Uint8Array;
+  hashLeaves?: Uint8Array;
+  hashBitRoot?: Uint8Array;
+  hashBitLde?: ShaLdeProof;
+  /** Internal: unique-table cargo retry. */
+  _shaCargoAttempts?: number;
+};
 export type VerifyFriOpts = { viewingKey?: Uint8Array; hash?: InternalHashId | InternalHash };
+
+function prefixEq4(value: Uint8Array, off: number, hash32: Uint8Array): boolean {
+  return value.length >= off + 4 && hash32.length >= 4 && value[off] === hash32[0] && value[off + 1] === hash32[1] && value[off + 2] === hash32[2] && value[off + 3] === hash32[3];
+}
 
 function friHash(opts?: { hash?: InternalHashId | InternalHash }): InternalHash {
   return resolveInternalHash(opts?.hash);
@@ -325,8 +366,10 @@ function queryGrindSeed(
   layerRoots: Uint8Array[],
   even: Uint8Array,
   odd: Uint8Array,
+  authBind: Uint8Array,
+  hashBitRoot: Uint8Array = new Uint8Array(32),
 ): Uint8Array {
-  return hash.digest(concatBytes(digest, traceRoot, ...layerRoots, even, odd));
+  return hash.digest(concatBytes(digest, traceRoot, ...layerRoots, even, odd, authBind, hashBitRoot));
 }
 
 function grindOk(hash: InternalHash, digest: Uint8Array, nonce: number): boolean {
@@ -357,12 +400,32 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
   const hash = friHash(opts);
   const trace = buildTrace(statement, witness, hash);
   assertSatisfied(trace);
+  const opened = openedNote(trace.auth);
+  const hashWit = {
+    amountSats: opened.amountSats,
+    rho: opened.rho,
+    owner: opened.ownerSecret,
+    poolInstanceId: statement.oldState.poolInstanceId,
+    action: statement.action,
+  };
+  assertHashTraceConstraints(buildHashBitTrace(hashWit), hashWit);
+  const hashRoot = noteAuthBindFromStatement(statement, trace.auth);
+  const opens = noteAuthOpensFromStatement(statement, trace.auth);
+  const hashLeaves = concatBytes(opens.amountCommit, opens.leaf, opens.nf);
   const digest = hash.digest(encodeStatement(statement, hash));
   const small = circleDomain(TRACE_LEN);
   const big = circleDomain(FRI_N);
   const viewingKey = freshViewingKey();
   const vCommit = viewingCommit(viewingKey, hash);
-  const { qLde, zLde } = algebraicCQuotientLde(statement, small, big, hash);
+  const shaLeaves = buildShaLdeLeaves({
+    witness: hashWit,
+    small,
+    big,
+    commit: vCommit,
+    hash,
+  }).leaves;
+  const bitRoot = new MerkleTree(shaLeaves, hash).root;
+  const { qLde, zLde } = algebraicCQuotientLde(statement, small, big, hash, trace.auth);
   const onC = openingMaskCoeffs(vCommit, hash, "on");
   const offC = openingMaskCoeffs(vCommit, hash, "off");
   const tLde = qLde.map((q, i) => add(q, add(evalMaskPoly(onC, i), mul(zLde[i]!, evalMaskPoly(offC, i)))));
@@ -372,7 +435,16 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
   const trees = folded.trees;
   const layerRoots = trees.map((t) => t.root);
   const newton = newtonFsBlobs(statement, vCommit, hash);
-  const grindSeed = queryGrindSeed(hash, digest, traceTree.root, layerRoots, newton.even, newton.odd);
+  const grindSeed = queryGrindSeed(
+    hash,
+    digest,
+    traceTree.root,
+    layerRoots,
+    newton.even,
+    newton.odd,
+    hashRoot,
+    bitRoot,
+  );
   const grindNonce = findGrind(hash, grindSeed);
   const qIdx = queryIndices(
     hash,
@@ -384,6 +456,16 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
   const queries = qIdx.map((start) =>
     openQuery(start, tLde, folded.layer0, folded.qmLayers, trees, traceTree),
   );
+  const hashBitLde = openShaLde(shaLeaves, qIdx, hash);
+  try {
+    encodeShaLdeShards(hashBitLde);
+  } catch (err) {
+    const n = opts._shaCargoAttempts ?? 0;
+    if (n < 8 && String(err).includes("sha-lde cargo")) {
+      return proveFri(statement, witness, { ...opts, _shaCargoAttempts: n + 1 });
+    }
+    throw err;
+  }
 
   return {
     version: FRI_VERSION,
@@ -393,6 +475,10 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
     final: folded.final,
     queries,
     auth: trace.auth,
+    hashRoot,
+    hashLeaves,
+    hashBitRoot: bitRoot,
+    hashBitLde,
     viewingKey,
     viewingCommit: vCommit,
     authMasked: false,
@@ -421,7 +507,22 @@ export function proveFromTLde(
   const trees = folded.trees;
   const layerRoots = trees.map((t) => t.root);
   const newton = newtonFsBlobs(statement, vCommit, hash);
-  const grindSeed = queryGrindSeed(hash, digest, traceTree.root, layerRoots, newton.even, newton.odd);
+  const hashRoot =
+    opts.hashRoot && opts.hashRoot.length === 32 ? opts.hashRoot : new Uint8Array(32);
+  const hashLeaves =
+    opts.hashLeaves && opts.hashLeaves.length >= 96 ? opts.hashLeaves.subarray(0, 96) : undefined;
+  const hashBitRoot =
+    opts.hashBitRoot && opts.hashBitRoot.length === 32 ? opts.hashBitRoot : new Uint8Array(32);
+  const grindSeed = queryGrindSeed(
+    hash,
+    digest,
+    traceTree.root,
+    layerRoots,
+    newton.even,
+    newton.odd,
+    hashRoot,
+    hashBitRoot,
+  );
   const grindNonce = findGrind(hash, grindSeed);
   const qIdx = queryIndices(
     hash,
@@ -440,6 +541,10 @@ export function proveFromTLde(
     final: folded.final,
     queries,
     auth,
+    hashRoot: hashRoot.some((b) => b !== 0) ? hashRoot : undefined,
+    hashLeaves,
+    hashBitRoot: hashBitRoot.some((b) => b !== 0) ? hashBitRoot : undefined,
+    hashBitLde: opts.hashBitLde,
     viewingKey,
     viewingCommit: vCommit,
     authMasked: false,
@@ -511,15 +616,53 @@ export function verifyFri(
     if (!batch.ok) return batch;
   }
 
-  const cVec = algebraicC(publicCells(statement, hash), statement, hash);
-  if (cVec.some((r) => r !== 0n)) return { ok: false, reason: "algebraicC" };
-  const { nLde, zLde } = algebraicCQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain(FRI_N), hash);
+  const authOpen = authPreimageOpen(proof.auth, hash) ? proof.auth : undefined;
+  const hashLeaves = proof.hashLeaves && proof.hashLeaves.length >= 96 ? proof.hashLeaves : undefined;
+  const cVec = combinedResiduals(statement, hash, proof.auth, hashLeaves);
+  if (cVec.some((r) => r !== 0n)) return { ok: false, reason: authOpen ? "note-auth residuals" : "algebraicC" };
+  const { nLde, zLde } = algebraicCQuotientLde(
+    statement,
+    circleDomain(TRACE_LEN),
+    circleDomain(FRI_N),
+    hash,
+    proof.auth,
+    hashLeaves,
+  );
 
   const digest = hash.digest(encodeStatement(statement, hash));
   const commit = proof.viewingCommit && proof.viewingCommit.length === 32 ? proof.viewingCommit : new Uint8Array(32);
   const newton = newtonFsBlobs(statement, commit, hash);
-  const grindSeed = queryGrindSeed(hash, digest, proof.traceRoot, proof.layerRoots, newton.even, newton.odd);
+  const grindSeed = queryGrindSeed(
+    hash,
+    digest,
+    proof.traceRoot,
+    proof.layerRoots,
+    newton.even,
+    newton.odd,
+    proof.hashRoot ?? new Uint8Array(32),
+    proof.hashBitRoot ?? new Uint8Array(32),
+  );
   if (!grindOk(hash, grindSeed, proof.grindNonce)) return { ok: false, reason: "grind" };
+  if (proof.hashBitLde) {
+    const lde = proof.hashBitLde;
+    if (proof.hashBitRoot && !eq32(lde.root, proof.hashBitRoot)) return { ok: false, reason: "hash-bit root" };
+    for (const o of lde.openings) {
+      if (!walkShaOpening(o.value, o.compact, lde.table, lde.root, hash)) {
+        return { ok: false, reason: "sha-lde merkle" };
+      }
+    }
+    const amt = statement.action === "DEPOSIT" ? statement.amountCommitOut : statement.amountCommitIn;
+    const leaf =
+      proof.auth && proof.auth.leaf.length === 32 ? proof.auth.leaf : statement.noteCommitment;
+    const nf = statement.nullifier;
+    for (const o of lde.openings) {
+      if (!prefixEq4(o.value, 0, amt)) return { ok: false, reason: "sha-lde amountCommit" };
+      if (!prefixEq4(o.value, 4, leaf)) return { ok: false, reason: "sha-lde leaf" };
+      if (statement.action !== "DEPOSIT" && !prefixEq4(o.value, 8, nf)) {
+        return { ok: false, reason: "sha-lde nf" };
+      }
+    }
+  }
   const expectedIdx = queryIndices(
     hash,
     hash.digest(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries"))),
@@ -703,6 +846,14 @@ export function encodeFriProof(p: FriProof): Uint8Array {
       for (const node of layer.partnerPath) parts.push(node);
     }
   }
+  parts.push(p.hashRoot && p.hashRoot.length === 32 ? p.hashRoot : new Uint8Array(32));
+  parts.push(p.hashLeaves && p.hashLeaves.length >= 96 ? p.hashLeaves.subarray(0, 96) : new Uint8Array(96));
+  parts.push(p.hashBitRoot && p.hashBitRoot.length === 32 ? p.hashBitRoot : new Uint8Array(32));
+  if (p.hashBitLde) {
+    for (const sh of encodeShaLdeShards(p.hashBitLde)) parts.push(sh);
+  } else {
+    parts.push(new Uint8Array(7200));
+  }
   return concatBytes(...parts);
 }
 
@@ -770,6 +921,16 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
     }
     queries.push({ index, layers, traceValue, tracePath });
   }
+  const hashRoot =
+    o + 32 <= bytes.length ? bytes.slice(o, o + 32) : undefined;
+  o += hashRoot ? 32 : 0;
+  const hashLeaves =
+    o + 96 <= bytes.length ? bytes.slice(o, o + 96) : undefined;
+  o += hashLeaves ? 96 : 0;
+  const hashBitRoot = o + 32 <= bytes.length ? bytes.slice(o, o + 32) : undefined;
+  o += hashBitRoot ? 32 : 0;
+  const ldeBlob = o + 7200 <= bytes.length ? bytes.slice(o, o + 7200) : undefined;
+  const hashBitLde = ldeBlob && hashBitRoot ? decodeShaLdeFromBlob(ldeBlob, hashBitRoot) : undefined;
   return {
     version,
     grindNonce,
@@ -778,9 +939,30 @@ export function decodeFriProof(bytes: Uint8Array): FriProof {
     final,
     queries,
     auth,
+    hashRoot: hashRoot && hashRoot.some((b) => b !== 0) ? hashRoot : undefined,
+    hashLeaves: hashLeaves && hashLeaves.some((b) => b !== 0) ? hashLeaves : undefined,
+    hashBitRoot: hashBitRoot && hashBitRoot.some((b) => b !== 0) ? hashBitRoot : undefined,
+    hashBitLde,
     viewingCommit: commit,
     authMasked: true,
   };
+}
+
+function decodeShaLdeFromBlob(blob: Uint8Array, root: Uint8Array): ShaLdeProof | undefined {
+  if (blob.length !== 7200 || !root.some((b) => b !== 0)) return undefined;
+  const shards = Array.from({ length: 6 }, (_, s) => blob.subarray(s * 1200, (s + 1) * 1200));
+  const d = decodeShaLdeShards(shards);
+  const openings = Array.from({ length: FRI_QUERIES }, (_, q) => ({
+    index: 0,
+    value: d.values.subarray(q * SHA_LDE_VALUE_BYTES, (q + 1) * SHA_LDE_VALUE_BYTES),
+    compact: d.compact.subarray(q * SHA_LDE_COMPACT, (q + 1) * SHA_LDE_COMPACT),
+  }));
+  return { root, table: d.table, openings, leaves: d.leaves };
+}
+
+export function hashBitFoldShards(proof: FriProof): Uint8Array[] {
+  if (proof.hashBitLde) return encodeShaLdeShards(proof.hashBitLde);
+  return Array.from({ length: 6 }, () => new Uint8Array(1200));
 }
 
 export function unmaskFriProof(

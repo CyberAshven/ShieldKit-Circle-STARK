@@ -9,7 +9,8 @@
  *   524   FS digest + two public PAA1 cells
  *   812   viewing-commit (32); mask felt derived on-chain
  *   844   payout HASH256 (32), bound to cell 25
- *   876   unused (net is packed cell 2, bound to Newton T)
+ *   876   SHA256(leaf‖nf‖amountCommit‖createdLeaf) note-auth pin
+ *   908   hashBitRoot (SHA256 of 64 bit-packed SHA TRACE rows)
  *   957   Q table (36×4)
  *   1101  FS indices
  *   1173  on-chain cells
@@ -20,6 +21,7 @@ import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitaut
 import { encodeStatement, type PoolStatement } from "../pool/statement.ts";
 import { encodePublicPaa1 } from "../pool/state.ts";
 import { concatBytes, writeU32BE } from "../pool/bytes.ts";
+
 import { algebraicCQuotientLde, onChainCells } from "../backends/circle/air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
@@ -57,8 +59,9 @@ export const AIR_OFF_OPEN_MASK = 812;
 export const AIR_VIEWING_COMMIT_LEN = 32;
 /** HASH256 of the withdraw payout lock (N=1) or of the lock+value set (N>1). */
 export const AIR_OFF_PAYOUT = 844;
-/** 1-byte length then minimally encoded publicAmount script number. */
+/** SHA256(leaf || nf || amountCommit || createdLeaf). Miner-run note-auth pin. */
 export const AIR_OFF_NET = 876;
+export const AIR_OFF_HASHBIT = 908;
 export const AIR_OFF_QTABLE = 957;
 export const AIR_OFF_IDX = 1101;
 export const AIR_OFF_CELLS = 1173;
@@ -276,10 +279,21 @@ export function fiatShamirQueryIndices(
   hash: InternalHash = defaultInternalHash(),
   newtonEven?: Uint8Array,
   newtonOdd?: Uint8Array,
+  authBind?: Uint8Array,
 ): number[] {
   const even = newtonEven ?? new Uint8Array(AIR_NEWTON_BYTES);
   const odd = newtonOdd ?? new Uint8Array(AIR_NEWTON_BYTES);
-  const grindSeed = hash.digest(concatBytes(digest, proof.traceRoot, ...proof.layerRoots, even, odd));
+  const grindSeed = hash.digest(
+    concatBytes(
+      digest,
+      proof.traceRoot,
+      ...proof.layerRoots,
+      even,
+      odd,
+      authBind ?? new Uint8Array(32),
+      proof.hashBitRoot && proof.hashBitRoot.length === 32 ? proof.hashBitRoot : new Uint8Array(32),
+    ),
+  );
   const seed = hash.digest(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries")));
   return uniqueQueryIndices(hash, seed, FRI_N, FRI_QUERIES);
 }
@@ -291,7 +305,15 @@ export function encodeAirPacked(
 ): Uint8Array {
   const p = proof instanceof Uint8Array ? decodeFriProof(proof) : proof;
   const commit = p.viewingCommit && p.viewingCommit.length === 32 ? p.viewingCommit : new Uint8Array(32);
-  const { qLde, nLde, zLde } = algebraicCQuotientLde(statement, smallDomain, bigDomain, hash);
+  const hashLeaves = p.hashLeaves && p.hashLeaves.length >= 96 ? p.hashLeaves : undefined;
+  const { qLde, nLde, zLde } = algebraicCQuotientLde(
+    statement,
+    smallDomain,
+    bigDomain,
+    hash,
+    p.auth,
+    hashLeaves,
+  );
   const digest = hash.digest(encodeStatement(statement, hash));
   const packed = new Uint8Array(AIR_PACKED_SIZE);
   for (let r = 0; r < COMMITTED_LAYERS; r += 1) {
@@ -318,7 +340,17 @@ export function encodeAirPacked(
     statement.payoutLockingDigest.length === 32 ? statement.payoutLockingDigest : new Uint8Array(32),
     AIR_OFF_PAYOUT,
   );
-  const qIdx = fiatShamirQueryIndices(digest, p, hash, evenBlob, oddBlob);
+  const authBind =
+    p.hashRoot && p.hashRoot.length === 32 && p.hashRoot.some((b) => b !== 0)
+      ? p.hashRoot
+      : new Uint8Array(32);
+  packed.set(authBind, AIR_OFF_NET);
+  const hashBitRoot =
+    p.hashBitRoot && p.hashBitRoot.length === 32 && p.hashBitRoot.some((b) => b !== 0)
+      ? p.hashBitRoot
+      : new Uint8Array(32);
+  packed.set(hashBitRoot, AIR_OFF_HASHBIT);
+  const qIdx = fiatShamirQueryIndices(digest, p, hash, evenBlob, oddBlob, authBind);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     const i = qIdx[s]!;
     const r = openingMaskAt(commit, i, hash, zLde[i]!);
@@ -331,6 +363,9 @@ export function encodeAirPacked(
   const full = onChainCells(statement, hash);
   for (const i of [3, 5, 6, 18, 23, 24]) cells[i] = full[i]!;
   packed.set(encodeFeltBlob(cells), AIR_OFF_CELLS);
+  if (hashLeaves) {
+    packed.set(hashLeaves.subarray(0, 96), AIR_OFF_CELLS + HASH_CELL_COMMIT * 4);
+  }
   for (let i = 0; i < FRI_FINAL; i += 1) {
     packed.set(encodeQm31(p.final[i] ?? [0n, 0n, 0n, 0n]), AIR_OFF_FINAL + i * 16);
   }
@@ -683,6 +718,14 @@ OP_CAT
 OP_OVER
 <${AIR_OFF_ODD}> OP_SPLIT OP_NIP
 <${AIR_NEWTON_BYTES}> OP_SPLIT OP_DROP
+OP_CAT
+OP_OVER
+<${AIR_OFF_NET}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_CAT
+OP_OVER
+<${AIR_OFF_HASHBIT}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
 OP_CAT
 OP_SHA256
 `;
@@ -1090,6 +1133,31 @@ export function extractCellAsm(index: number): string {
 OP_BIN2NUM
 `;
 }
+
+/** Packed on top (DUP first). 8×4-byte cells starting at `startCell` → 32-byte blob. No BIN2NUM. */
+export function extractRaw32Asm(startCell: number): string {
+  const first = `
+OP_DUP
+<${AIR_OFF_CELLS + startCell * 4}> OP_SPLIT OP_NIP
+<4> OP_SPLIT
+OP_TOALTSTACK
+`;
+  const next = `
+OP_FROMALTSTACK
+<4> OP_SPLIT
+OP_TOALTSTACK
+OP_CAT
+`;
+  return `${first}${next.repeat(7)}
+OP_FROMALTSTACK
+OP_DROP
+`;
+}
+
+/** Cells 32–55: amountCommit ‖ leaf ‖ nf as raw 4-byte chunks. */
+export const HASH_CELL_COMMIT = 32;
+export const HASH_CELL_LEAF = 40;
+export const HASH_CELL_NF = 48;
 
 /** Stack: packed even odd → same. even/odd interpolate AIR-relevant packed cells + mask. */
 export function bindTToCellsAsm(maskFn = 1, neededCells: readonly number[] = [3, 18, 23, 24]): string {

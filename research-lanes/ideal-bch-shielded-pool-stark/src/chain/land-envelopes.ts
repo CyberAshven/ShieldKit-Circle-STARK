@@ -4,7 +4,9 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { binToHex, hash256, hashTransaction, hexToBin } from "@bitauth/libauth";
+import { binToHex, decodeTransaction, hash256, hashTransaction, hexToBin } from "@bitauth/libauth";
+import { writeI64LE } from "../pool/bytes.ts";
+import type { Note } from "../pool/notes.ts";
 import { loadLabWallet } from "./wallet.ts";
 import { broadcast, connectChipnet, getTx, listUnspent } from "./electrum.ts";
 import { rpcConfigFromEnv } from "./bchn-rpc.ts";
@@ -24,6 +26,7 @@ import {
 } from "./chained.ts";
 import { tapeTipLockChain, tapeTipLockChainWithRoots } from "./tape-tip.ts";
 import { circleFriPlugin } from "../backends/circle/plugin.ts";
+import { encodeFriProof, proveFri } from "../backends/circle/fri.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor, runBatchSuccessor } from "../pool/mix-successor.ts";
 import { encodePublicPaa1, utxoValueFor } from "../pool/state.ts";
 import { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "./air-cqz.ts";
@@ -175,7 +178,7 @@ async function landAB(
     const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);
     step = "successor";
-    const successor = compileCovenantSuccessor({
+    const successorArgs = {
       wallet,
       pool: {
         tx_hash: genesisTxid,
@@ -187,16 +190,67 @@ async function landAB(
       newState: mix.newState,
       proof: mix.proof,
       statement: mix.statement,
-      lockKind: "p2sh32",
+      lockKind: "p2sh32" as const,
       envelope,
       slotKernels: slots,
       kernelUtxos: funded.fri,
       extraKernels: funded.extra,
       note: mix.spent.note,
       change: mix.witness.created?.note,
-    });
+    };
+    let successor = compileCovenantSuccessor(successorArgs);
+    for (let t = 0; t < 24 && successor.txBytes > 100_000; t += 1) {
+      const raw = encodeFriProof(proveFri(mix.statement, mix.witness));
+      const v2 = circleFriPlugin.verify(mix.statement, raw);
+      if (!v2.ok) throw new Error(`reprove: ${v2.reason}`);
+      successor = compileCovenantSuccessor({ ...successorArgs, proof: raw });
+    }
+    if (successor.txBytes > 100_000) {
+      throw new Error(`successor unique-table ${successor.txBytes} > 100000 after retries`);
+    }
     mkdirSync(scratch, { recursive: true });
     writeFileSync(join(scratch, `successor-${envelope}.hex`), binToHex(successor.raw));
+    const decoded = decodeTransaction(successor.raw);
+    const spent = mix.spent.note;
+    const change = mix.witness.created?.note;
+    const preimageScan =
+      typeof decoded === "string"
+        ? { error: decoded }
+        : {
+            unlockingCount: decoded.inputs.length,
+            spentRho: false,
+            spentOwner: false,
+            spentAmount8: false,
+            changeRho: false,
+            changeOwner: false,
+            changeAmount8: false,
+          };
+    if (typeof decoded !== "string") {
+      const hit = (n: Note, field: "rho" | "ownerSecret" | "amount") => {
+        const needle =
+          field === "amount" ? Buffer.from(writeI64LE(n.amountSats)).toString("hex") : Buffer.from(n[field]).toString("hex");
+        return decoded.inputs.some((i) => Buffer.from(i.unlockingBytecode).toString("hex").includes(needle));
+      };
+      preimageScan.spentRho = hit(spent, "rho");
+      preimageScan.spentOwner = hit(spent, "ownerSecret");
+      preimageScan.spentAmount8 = hit(spent, "amount");
+      if (change) {
+        preimageScan.changeRho = hit(change, "rho");
+        preimageScan.changeOwner = hit(change, "ownerSecret");
+        preimageScan.changeAmount8 = hit(change, "amount");
+      }
+    }
+    if (
+      typeof decoded !== "string" &&
+      (preimageScan.spentRho ||
+        preimageScan.spentOwner ||
+        preimageScan.spentAmount8 ||
+        preimageScan.changeRho ||
+        preimageScan.changeOwner ||
+        preimageScan.changeAmount8)
+    ) {
+      throw new Error(`preimage still in unlocking: ${JSON.stringify(preimageScan)}`);
+    }
     const sent = await broadcastRetry(client, successor.raw, successor.txid);
     return {
       envelope,
@@ -209,6 +263,7 @@ async function landAB(
       successor: sent.txid,
       txBytes: successor.txBytes,
       unlockingBytes: successor.unlockingBytes,
+      preimageScan,
       broadcastPath: sent.path,
       explorer: {
         genesis: `https://chipnet.imaginary.cash/tx/${genesisTxid}`,

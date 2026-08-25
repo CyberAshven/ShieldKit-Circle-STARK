@@ -347,8 +347,10 @@ export function algebraicCQuotientLde(
   smallDomain: CirclePoint[],
   bigDomain: CirclePoint[],
   hash: InternalHash = defaultInternalHash(),
+  auth?: FriAuth,
+  hashLeaves?: Uint8Array,
 ): { qLde: M31El[]; nLde: M31El[]; zLde: M31El[] } {
-  const residuals = algebraicC(publicCells(statement, hash), statement, hash);
+  const residuals = combinedResiduals(statement, hash, auth, hashLeaves);
   const { qLde, cLde, zLde } = quotientAtDomain(residuals, smallDomain, bigDomain);
   return { qLde, nLde: cLde, zLde };
 }
@@ -397,6 +399,84 @@ export function publicCells(statement: PoolStatement, hash: InternalHash = defau
   return cells;
 }
 
+export function authPreimageOpen(auth: FriAuth, hash: InternalHash = defaultInternalHash()): boolean {
+  try {
+    return eq32(auth.leaf, commitNote(openedNote(auth), hash));
+  } catch {
+    return false;
+  }
+}
+
+function statementHashTriplet(
+  statement: PoolStatement,
+  auth?: FriAuth,
+): [Uint8Array, Uint8Array, Uint8Array] {
+  const commit =
+    statement.action === "DEPOSIT" ? statement.amountCommitOut : statement.amountCommitIn;
+  const leaf =
+    auth && auth.leaf.length === 32
+      ? auth.leaf
+      : statement.noteCommitment;
+  return [commit, leaf, statement.nullifier];
+}
+
+/** Occupancy algebraicC plus SHA public-out residuals at r[7+]. Missing leaves vs nonzero publics do not vanish. */
+export function combinedResiduals(
+  statement: PoolStatement,
+  hash: InternalHash = defaultInternalHash(),
+  auth?: FriAuth,
+  hashLeaves?: Uint8Array,
+): M31El[] {
+  const r = algebraicC(publicCells(statement, hash), statement, hash);
+  const [expectCommit, expectLeaf, expectNf] = statementHashTriplet(statement, auth);
+  let claimedCommit = new Uint8Array(32);
+  let claimedLeaf = new Uint8Array(32);
+  let claimedNf = new Uint8Array(32);
+  if (hashLeaves && hashLeaves.length >= 96) {
+    claimedCommit = hashLeaves.subarray(0, 32);
+    claimedLeaf = hashLeaves.subarray(32, 64);
+    claimedNf = hashLeaves.subarray(64, 96);
+    if (auth && authPreimageOpen(auth, hash)) {
+      const opened = openedNote(auth);
+      const fromAuth = [
+        commitAmount(opened.amountSats, opened.rho, hash),
+        commitNote(opened, hash),
+        statement.action === "DEPOSIT"
+          ? new Uint8Array(ZERO32)
+          : nullifierOf(opened, statement.oldState.poolInstanceId, hash),
+      ];
+      if (!eq32(fromAuth[0]!, claimedCommit) || !eq32(fromAuth[1]!, claimedLeaf) || !eq32(fromAuth[2]!, claimedNf)) {
+        claimedCommit = fromAuth[0]!;
+        claimedLeaf = fromAuth[1]!;
+        claimedNf = fromAuth[2]!;
+      }
+    }
+  } else if (auth && authPreimageOpen(auth, hash)) {
+    const opened = openedNote(auth);
+    claimedCommit = commitAmount(opened.amountSats, opened.rho, hash);
+    claimedLeaf = commitNote(opened, hash);
+    claimedNf =
+      statement.action === "DEPOSIT"
+        ? new Uint8Array(ZERO32)
+        : nullifierOf(opened, statement.oldState.poolInstanceId, hash);
+  }
+  const pairs: Array<[Uint8Array, Uint8Array]> = [
+    [expectCommit, claimedCommit],
+    [expectLeaf, claimedLeaf],
+    [expectNf, claimedNf],
+  ];
+  let k = 7;
+  for (const [a, b] of pairs) {
+    for (let i = 0; i < 32 && k < TRACE_LEN; i += 2) {
+      const la = BigInt(a[i]!) | (BigInt(a[i + 1]!) << 8n);
+      const lb = BigInt(b[i]!) | (BigInt(b[i + 1]!) << 8n);
+      r[k] = sub(la, lb);
+      k += 1;
+    }
+  }
+  return r;
+}
+
 /** Field-only transition constraints. No Merkle / JS boolean flags. */
 export function algebraicC(
   cells: M31El[],
@@ -440,7 +520,7 @@ export function buildTrace(
   const mem = checkAuthRelation(statement, auth, witness, hash);
   if (!mem.ok) throw new Error(`unsatisfiable pool AIR: ${mem.reason}`);
   const cells = publicCells(statement, hash);
-  const residuals = algebraicC(cells, statement, hash);
+  const residuals = combinedResiduals(statement, hash, auth);
   return { cells, residuals, auth };
 }
 

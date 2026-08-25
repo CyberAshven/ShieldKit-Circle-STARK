@@ -52,7 +52,7 @@ import {
   poolLockP2sFor,
   poolLockP2sh32,
 } from "./covenant-p2s.ts";
-import { decodeFriProof } from "../backends/circle/fri.ts";
+import { decodeFriProof, hashBitFoldShards } from "../backends/circle/fri.ts";
 import { decodeState } from "../pool/state.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import {
@@ -359,6 +359,7 @@ export function compileCovenantSuccessor(args: {
      *  order, which is what makes a duplicate note unsatisfiable on chain.
      *  Build these with `stepPlan`, which sorts and rejects duplicates. */
     prevNf?: Uint8Array;
+    poolInstanceId: Uint8Array;
   }>;
   /**
    * Tape tip lock chain (C-BINDING). When present the tape tip is a P2SH32
@@ -563,16 +564,7 @@ export function compileCovenantSuccessor(args: {
               sequenceNumber: 0xffffffff,
               // Option A': a batch hop supplies its own note's walk, since the
               // published proof's single `auth` covers only the first spent note.
-              unlockingBytecode: args.noteSpent
-                ? noteAuthKernelUnlocking({
-                    note: args.note!,
-                    change: args.change,
-                    spentIndex: args.noteSpent.index,
-                    spentPath: args.noteSpent.path,
-                    createdIndex: 0,
-                    createdPath: [],
-                  })
-                : noteAuthUnlockingFromProof({
+              unlockingBytecode: noteAuthUnlockingFromProof({
                     note: args.note!,
                     change: args.change,
                     proof: args.proof,
@@ -589,7 +581,9 @@ export function compileCovenantSuccessor(args: {
           foldQueriesPerKernel(slotKernels),
           queryStart + f * foldQueriesPerKernel(slotKernels),
           airPacked,
-          queryPairShard(args.proof, queryStart + f * foldQueriesPerKernel(slotKernels), foldQueriesPerKernel(slotKernels)),
+          foldQueriesPerKernel(slotKernels) === 6
+            ? hashBitFoldShards(decoded)[f]!
+            : queryPairShard(args.proof, queryStart + f * foldQueriesPerKernel(slotKernels), foldQueriesPerKernel(slotKernels)),
         ),
       })),
       ...Array.from({ length: slotN }, (_, i) => ({

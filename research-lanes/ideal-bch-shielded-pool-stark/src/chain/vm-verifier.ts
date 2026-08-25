@@ -5,7 +5,7 @@
  */
 import { createTestAuthenticationProgramBch, createVirtualMachineBch2026 } from "@bitauth/libauth";
 import { add, encodeLe, mul } from "../backends/circle/m31.ts";
-import { decodeFriProof, verifyFri, type FriProof } from "../backends/circle/fri.ts";
+import { decodeFriProof, hashBitFoldShards, verifyFri, type FriProof } from "../backends/circle/fri.ts";
 import { FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
 import {
   compileFriMerkleOnlyKernel,
@@ -37,7 +37,9 @@ import { compileAlgebraicCLockP2sh32, algebraicCKernelUnlocking } from "./algebr
 import {
   compileNoteAuthLockP2sh32,
   includeNoteAuth,
+  noteAuthBindHash,
   noteAuthKernelUnlocking,
+  noteAuthPublicOpens,
   noteAuthUnlockingFromProof,
 } from "./note-auth-kernel.ts";
 import type { Note } from "../pool/notes.ts";
@@ -61,6 +63,7 @@ import {
   AIR_OFF_CELLS,
   AIR_OFF_EVEN,
   AIR_OFF_IDX,
+  AIR_OFF_NET,
   AIR_OFF_NTABLE,
   AIR_OFF_QTABLE,
   AIR_PACKED_SIZE,
@@ -282,6 +285,8 @@ export function buildPoolSuccessorTx(args: {
   /** Opened note for the B note-auth kernel. */
   note?: Note;
   change?: Note;
+  /** Override note-auth unlocking (stolen-note tests). */
+  noteAuthUnlocking?: Uint8Array;
 }): {
   transaction: {
     version: number;
@@ -335,12 +340,14 @@ export function buildPoolSuccessorTx(args: {
   const cqzUnlock = cqzKernelUnlocking(cqzCarrier);
   const foldQ = foldQueriesPerKernel(slotKernels);
   const foldLocks = Array.from({ length: foldN }, (_, f) => compileFoldLockP2sh32(foldQ, f * foldQ));
+  const decodedProof = decodeFriProof(args.proof);
+  const hashBitShards = foldQ === 6 ? hashBitFoldShards(decodedProof) : undefined;
   const foldUnlocks = Array.from({ length: foldN }, (_, f) =>
     foldKernelUnlocking(
       foldQ,
       f * foldQ,
       airOnly,
-      args.foldPairShards?.[f] ?? queryPairShard(args.proof, f * foldQ, foldQ),
+      args.foldPairShards?.[f] ?? hashBitShards?.[f] ?? queryPairShard(args.proof, f * foldQ, foldQ),
     ),
   );
   const slotN = slotInputsCount(slotKernels);
@@ -427,6 +434,7 @@ export function buildPoolSuccessorTx(args: {
               outpointIndex: 0,
               sequenceNumber: 0xffffffff,
               unlockingBytecode: (() => {
+                if (args.noteAuthUnlocking) return args.noteAuthUnlocking;
                 if (!args.note) throw new Error("B note-auth kernel needs the opened note");
                 if (!args.statement) throw new Error("B note-auth kernel needs the statement");
                 return noteAuthUnlockingFromProof({
@@ -576,13 +584,36 @@ export function evaluateNoteAuthKernel(args: {
   createdIndex: number;
   createdPath: Uint8Array[];
   change?: Note;
+  /** Packed bind from this note; unlocking still uses `note` unless `unlockOpens` is set. */
+  packedNote?: Note;
+  packedChange?: Note;
+  packedOpens?: import("./note-auth-bind.ts").NoteAuthOpens;
+  unlockOpens?: import("./note-auth-bind.ts").NoteAuthOpens;
+  /** Override packed AIR_OFF_NET (hash residual merkle root). */
+  packedNet?: Uint8Array;
 }): VmEval {
   const vm = createVirtualMachineBch2026(true);
   const carrierLock = Uint8Array.of(0x75, 0x51);
   const category = new Uint8Array(32).fill(0x11);
   const packed = new Uint8Array(AIR_PACKED_SIZE);
   packed.set(encodeLe(args.action), AIR_OFF_CELLS + 3 * 4);
-  const unlocking = noteAuthKernelUnlocking(args);
+  const action = args.action === 1n ? "DEPOSIT" : "WITHDRAW";
+  const packedOpens =
+    args.packedOpens ??
+    noteAuthPublicOpens({
+      note: args.packedNote ?? args.note,
+      change: args.packedChange ?? args.change,
+      action,
+      poolInstanceId: args.oldState.poolInstanceId,
+    });
+  packed.set(args.packedNet ?? noteAuthBindHash(packedOpens), AIR_OFF_NET);
+  packed.set(concatBytes(packedOpens.amountCommit, packedOpens.leaf, packedOpens.nf), AIR_OFF_CELLS + 32 * 4);
+  const unlocking = noteAuthKernelUnlocking({
+    ...args,
+    poolInstanceId: args.oldState.poolInstanceId,
+    action,
+    opens: args.unlockOpens,
+  });
   const value = 100_000n;
   const sourceOutputs = [
     {
