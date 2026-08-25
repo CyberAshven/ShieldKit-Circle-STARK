@@ -1,0 +1,12 @@
+parent: ideal-bch-shielded-pool-stark
+branch: Optimization
+starting-artifact: survey/artifacts/qm31-fri10/
+starting-commit: 008dd6b477bae5081a1bae4781e7bd294ff1759e
+chipnet: 60d186ded18897a50d0a4205ed446ab02339a53eb6d8f4a7043b4e405796edc4 (99043 B)
+fri: 10
+field: QM31 ~124 bits
+live-lock: occupancy skeleton from 008dd6b (SHA-LDE leftover from a598b1f not wired)
+copied: 2026-08-25
+evidence-freeze: survey/artifacts/argument-freeze/ (91 KB B, Chipnet 58b7df7f…, 91598 B)
+prior-for-rules-7: research-lanes/batch-exit-walkin (generic step / walk-in; not this product)
+note: policy 100 KB / Electrum is the sibling’s box. This lane is consensus 1 MB / JSON-RPC.
