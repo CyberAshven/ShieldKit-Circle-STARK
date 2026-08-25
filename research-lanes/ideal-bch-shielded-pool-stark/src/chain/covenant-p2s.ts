@@ -1,11 +1,11 @@
 import { binToHex, cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
-import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
+import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS, FRI_LEFTOVER_BYTES } from "./fri-kernel.ts";
 import { encodeLayerRootsPrefix } from "./fri-openings.ts";
-import { AIR_PACKED_SIZE, compileCqzLockP2sh32, compileSlotsLockP2sh32, SLOT_KERNEL_COUNT, SLOTS_PER_KERNEL } from "./air-cqz.ts";
+import { AIR_PACKED_SIZE, compileCqzLockP2sh32, compileSlotsLockP2sh32, LOAD_AIR_PACKED, SLOT_KERNEL_COUNT, SLOTS_PER_KERNEL } from "./air-cqz.ts";
 import { compileFoldLockP2sh32, foldKernelCount, foldQueriesPerKernel, slotInputsCount } from "./fold-kernel.ts";
 import { compileGrindLockP2sh32 } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "./algebraic-c-kernel.ts";
-import { compileNoteAuthLockP2sh32, includeNoteAuth, prefixExtraKernelCount } from "./note-auth-kernel.ts";
+import { compileNoteAuthLockP2sh32, HASH_BIT_CHECK_ASM, includeNoteAuth, prefixExtraKernelCount } from "./note-auth-kernel.ts";
 import {
   EXTRACT_INSTANCE,
   EXTRACT_RESERVE_NUM,
@@ -337,10 +337,41 @@ OP_TXINPUTCOUNT OP_1SUB OP_UTXOBYTECODE <0x${binToHex(opts.tapeTipLock)}> OP_EQU
     ? `
 <0> OP_OUTPUTTOKENCOMMITMENT <96> OP_SPLIT OP_NIP <0x${binToHex(opts.finalNfRoot)}> OP_EQUALVERIFY`
     : "";
+  const hashBit = includeNoteAuth(slots, opts?.forceNoteAuth ?? false)
+    ? `${HASH_BIT_CHECK_ASM}\n`
+    : "";
   const bin = cashAssemblyToBin(
-    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false, opts?.stepLocks ?? [])}${requireTape}${requireFinalRoot}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
+    `${hashBit}${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false, opts?.stepLocks ?? [])}${requireTape}${requireFinalRoot}\nOP_DROP\n${LOAD_AIR_PACKED}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
   );
   if (typeof bin === "string") throw new Error(`covenant compile: ${bin}`);
+  return bin;
+}
+
+/**
+ * Standard P2S lock (≤201 B): commit hash256(HASH_BIT+pool), DEFINE 0, INVOKE 0.
+ * Unlocking is leftover || body. The UTXO binds HASH_BIT (not anyone-can-spend).
+ * Inner HASH_BIT uses DEFINE 1–3 so it does not clobber the trampoline.
+ */
+export function compilePoolP2sTrampoline(opts?: {
+  slotKernels?: number;
+  forceNoteAuth?: boolean;
+  tapeTipLock?: Uint8Array;
+  finalNfRoot?: Uint8Array;
+  stepLocks?: readonly Uint8Array[];
+}): Uint8Array {
+  const body = compilePoolCovenant(opts);
+  const digest = hash256(body);
+  const bin = cashAssemblyToBin(`
+OP_DUP
+OP_HASH256
+<0x${binToHex(digest)}>
+OP_EQUALVERIFY
+<0>
+OP_DEFINE
+<0>
+OP_INVOKE
+`);
+  if (typeof bin === "string") throw new Error(`p2s trampoline: ${bin}`);
   return bin;
 }
 
@@ -369,6 +400,9 @@ export function poolLockP2sFor(opts?: {
   /** Option B: per-note step-kernel locks. See compilePoolCovenant. */
   stepLocks?: readonly Uint8Array[];
 }): Uint8Array {
+  if (includeNoteAuth(opts?.slotKernels ?? SLOT_KERNEL_COUNT, opts?.forceNoteAuth ?? false)) {
+    return compilePoolP2sTrampoline(opts);
+  }
   return compilePoolCovenant(opts);
 }
 
@@ -377,6 +411,15 @@ function concatPrefix(packed: Uint8Array, pairs: Uint8Array): Uint8Array {
   out.set(packed, 0);
   out.set(pairs, packed.length);
   return out;
+}
+
+/** Input-0 first push is leftover pairs, not packed||leftover. */
+export function leftoverFromCarrier(carrier: Uint8Array): Uint8Array {
+  if (carrier.length >= AIR_PACKED_SIZE + FRI_LEFTOVER_BYTES) {
+    return carrier.subarray(AIR_PACKED_SIZE, AIR_PACKED_SIZE + FRI_LEFTOVER_BYTES);
+  }
+  if (carrier.length === FRI_LEFTOVER_BYTES) return carrier;
+  return carrier.length > AIR_PACKED_SIZE ? carrier.subarray(AIR_PACKED_SIZE) : new Uint8Array(0);
 }
 
 /** Bitcoin script push of `data` (redeem / unlocking payload). */
@@ -456,8 +499,8 @@ export function p2sh32Unlocking(
 ): Uint8Array {
   const redeem = pushData(compilePoolCovenant(opts));
   const prefix =
-    layerRoots instanceof Uint8Array && layerRoots.length >= AIR_PACKED_SIZE
-      ? pushData(layerRoots)
+    layerRoots instanceof Uint8Array
+      ? pushData(leftoverFromCarrier(layerRoots))
       : encodeLayerRootsPrefix(Array.isArray(layerRoots) ? layerRoots : []);
   if (!w) {
     const out = new Uint8Array(prefix.length + redeem.length);
@@ -473,16 +516,35 @@ export function p2sh32Unlocking(
   return out;
 }
 
-export function p2sUnlocking(w?: PoolUnlockWitness, layerRoots?: Uint8Array[] | Uint8Array): Uint8Array {
+export function p2sUnlocking(
+  w?: PoolUnlockWitness,
+  layerRoots?: Uint8Array[] | Uint8Array,
+  opts?: {
+    slotKernels?: number;
+    forceNoteAuth?: boolean;
+    tapeTipLock?: Uint8Array;
+    finalNfRoot?: Uint8Array;
+    stepLocks?: readonly Uint8Array[];
+  },
+): Uint8Array {
   const prefix =
-    layerRoots instanceof Uint8Array && layerRoots.length >= AIR_PACKED_SIZE
-      ? pushData(layerRoots)
+    layerRoots instanceof Uint8Array
+      ? pushData(leftoverFromCarrier(layerRoots))
       : encodeLayerRootsPrefix(Array.isArray(layerRoots) ? layerRoots : []);
-  if (!w) return prefix;
+  const body = includeNoteAuth(opts?.slotKernels ?? SLOT_KERNEL_COUNT, opts?.forceNoteAuth ?? false)
+    ? pushData(compilePoolCovenant(opts))
+    : new Uint8Array();
+  if (!w) {
+    const out = new Uint8Array(prefix.length + body.length);
+    out.set(prefix, 0);
+    out.set(body, prefix.length);
+    return out;
+  }
   const wit = poolWitnessPushes(w);
-  const out = new Uint8Array(prefix.length + wit.length);
+  const out = new Uint8Array(prefix.length + wit.length + body.length);
   out.set(prefix, 0);
   out.set(wit, prefix.length);
+  out.set(body, prefix.length + wit.length);
   return out;
 }
 

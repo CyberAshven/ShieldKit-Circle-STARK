@@ -150,6 +150,12 @@ export function packedWithPairs(packed: Uint8Array, proof?: Uint8Array | FriProo
   return out;
 }
 
+/** Layer-major leftover [L6]…[L0] without the packed AIR prefix. */
+export function leftoverPairs(packed: Uint8Array, proof?: Uint8Array | FriProof): Uint8Array {
+  const full = packedWithPairs(packed, proof);
+  return full.length > AIR_PACKED_SIZE ? full.subarray(AIR_PACKED_SIZE) : new Uint8Array(0);
+}
+
 export function queryPairShard(proof: Uint8Array | FriProof, queryIndex: number, nFold: number): Uint8Array {
   const blob = openingPairsBlob(collectFriOpenings(proof));
   const stride = blob.length / FRI_QUERIES;

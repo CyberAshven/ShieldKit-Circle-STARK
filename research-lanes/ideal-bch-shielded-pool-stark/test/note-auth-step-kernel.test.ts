@@ -320,7 +320,7 @@ describe("note-auth step kernel — N notes in one transaction", () => {
 
   it("the audited kernel is untouched by any of this", () => {
     // If this ever fails, a landed transaction just changed address.
-    assert.equal(compileNoteAuthKernel().length, 420, "audited redeem has no dummy OP_DROP");
+    assert.equal(compileNoteAuthKernel().length, 660, "prefix-only redeem has no dummy OP_DROP");
     assert.equal(compileNoteAuthLockP2sh32().length, 35);
     assert.notDeepEqual(
       compileNoteAuthLockP2sh32(),

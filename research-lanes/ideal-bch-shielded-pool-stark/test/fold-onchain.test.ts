@@ -16,7 +16,7 @@ import { encodeAirPacked, G1024, SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chai
 import { compileFoldPairLock, compileM31InvLock, lambdaFromPackedAsm } from "../src/chain/fold-asm.ts";
 import { compileFirstQueryPairsLock, compileFoldKernel, FOLD_QUERIES_PER_KERNEL, foldKernelAsm } from "../src/chain/fold-kernel.ts";
 import { compileFriQueryKernel } from "../src/chain/fri-kernel.ts";
-import { packedWithPairs, friShardUnlockings, queryPairShard } from "../src/chain/fri-openings.ts";
+import { leftoverPairs, packedWithPairs, friShardUnlockings, queryPairShard } from "../src/chain/fri-openings.ts";
 import { pushData } from "../src/chain/covenant-p2s.ts";
 import {
   evaluateBch2026,
@@ -102,12 +102,12 @@ ${lambdaFromPackedAsm()}
     assert.equal(ev.accepted, true, ev.error ?? "lambda");
   });
 
-  it("reads the first query pair blob from packed||pairs on input 0", () => {
+  it("reads the first query pair blob from leftover-only on input 0", () => {
     const d = deposit();
     const proof = proveFri(d.statement, d.witness);
     const packed = encodeAirPacked(d.statement, proof);
-    const carrier = packedWithPairs(packed, proof);
-    const ev = evaluateBch2026(compileFirstQueryPairsLock(), pushData(carrier));
+    const leftover = leftoverPairs(packed, proof);
+    const ev = evaluateBch2026(compileFirstQueryPairsLock(), pushData(leftover));
     assert.equal(ev.accepted, true, ev.error ?? "first query pairs");
   });
 

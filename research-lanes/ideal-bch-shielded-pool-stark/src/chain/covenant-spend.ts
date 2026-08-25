@@ -198,7 +198,7 @@ export function compileCovenantSpend(args: {
    */
   stepLocks?: readonly Uint8Array[];
 }): MeasuredTx {
-  const lockKind = args.lockKind ?? "p2sh32";
+  const lockKind = args.lockKind ?? (args.envelope === "consensus" ? "p2s" : "p2sh32");
   const slotKernels =
     args.slotKernels ??
     (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
@@ -372,7 +372,7 @@ export function compileCovenantSuccessor(args: {
   /** Terminal tip lock the pool covenant pins (pay hop only). */
   tapeTipLock?: Uint8Array;
 }): MeasuredTx {
-  const lockKind = args.lockKind ?? "p2sh32";
+  const lockKind = args.lockKind ?? (args.envelope === "consensus" ? "p2s" : "p2sh32");
   const slotKernels =
     args.slotKernels ??
     (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
@@ -458,7 +458,13 @@ export function compileCovenantSuccessor(args: {
   const slotN = args.foldQueries !== undefined ? args.foldQueries : slotInputsCount(slotKernels);
   const unlocking = includePool
     ? lockKind === "p2s"
-      ? p2sUnlocking(undefined, carrierPacked)
+      ? p2sUnlocking(undefined, carrierPacked, {
+          slotKernels,
+          forceNoteAuth: args.forceNoteAuth ?? false,
+          tapeTipLock: args.tapeTipLock,
+          finalNfRoot: args.finalNfRoot,
+          stepLocks,
+        })
       : p2sh32Unlocking(undefined, carrierPacked, {
           slotKernels,
           forceNoteAuth: args.forceNoteAuth ?? false,

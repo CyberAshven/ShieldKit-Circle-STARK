@@ -176,6 +176,13 @@ export function openShaLde(
   return { root: tree.root, merkleRoot: tree.root, table, openings, leaves };
 }
 
+export function shaLdeCargoBytes(proof: ShaLdeProof): number {
+  const nTable = proof.table.length / 32;
+  const values = FRI_QUERIES * SHA_LDE_VALUE_BYTES;
+  const compact = FRI_QUERIES * SHA_LDE_COMPACT;
+  return 2 + values + compact + nTable * 32;
+}
+
 export function encodeShaLdeShards(proof: ShaLdeProof): Uint8Array[] {
   const nTable = proof.table.length / 32;
   const values = concatBytes(...proof.openings.map((o) => o.value));

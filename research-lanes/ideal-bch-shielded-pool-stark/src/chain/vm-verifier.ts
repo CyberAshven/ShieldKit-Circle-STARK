@@ -13,6 +13,7 @@ import {
   compileFriQueryKernel,
   compileFriQueryLockP2sh32,
   FRI_KERNEL_INPUTS,
+  FRI_LEFTOVER_BYTES,
   FRI_PAIR_BYTES,
   FRI_QUERY_KERNEL,
 } from "./fri-kernel.ts";
@@ -54,6 +55,7 @@ import {
   dummyFriShardUnlockingsUnbound,
   encodeLayerRootsPrefix,
   friShardUnlockings,
+  leftoverPairs,
   openingPairsBlob,
   packedWithPairs,
   proofShardReport,
@@ -67,6 +69,7 @@ import {
   AIR_OFF_NTABLE,
   AIR_OFF_QTABLE,
   AIR_PACKED_SIZE,
+  PACKED_CARRIER_INPUT,
   encodeAirPacked,
   fiatShamirQueryIndices,
   nqzAt,
@@ -76,7 +79,9 @@ import { COMMITTED_LAYERS } from "../backends/circle/params.ts";
 import {
   compilePoolCovenant,
   FIVE_POINT_PAA1,
+  p2sUnlocking,
   p2sh32Unlocking,
+  poolLockP2sFor,
   poolLockP2sh32,
   pushData,
 } from "./covenant-p2s.ts";
@@ -112,6 +117,23 @@ function concat(parts: Uint8Array[]): Uint8Array {
 
 function push(data: Uint8Array): Uint8Array {
   return pushData(data);
+}
+
+function dummyAnyone(): { lockingBytecode: Uint8Array; valueSatoshis: bigint } {
+  return { lockingBytecode: Uint8Array.of(0x51), valueSatoshis: 1000n };
+}
+
+function dropThen1(): { lockingBytecode: Uint8Array; valueSatoshis: bigint } {
+  return { lockingBytecode: Uint8Array.of(0x75, 0x51), valueSatoshis: 1000n };
+}
+
+function dummyInput(tag: number, unlocking: Uint8Array) {
+  return {
+    outpointTransactionHash: new Uint8Array(32).fill(tag),
+    outpointIndex: 0,
+    sequenceNumber: 0xffffffff,
+    unlockingBytecode: unlocking,
+  };
 }
 
 export { encodeSteps, parentIndexOf };
@@ -205,15 +227,10 @@ export function evaluateFriQueryOpening(args: {
   })();
   // N=1 unlocking consumes the last remaining pair group. Isolated openings
   // carry one 56-byte group; qTable still keys off `slot`.
-  const pairs = new Uint8Array(FRI_PAIR_BYTES);
-  pairs.set(args.left, layer * 8);
-  pairs.set(args.right, layer * 8 + 4);
-  const carrierBody = packed.length >= AIR_PACKED_SIZE
-    ? packed.length === AIR_PACKED_SIZE
-      ? concatBytes(packed.subarray(0, AIR_PACKED_SIZE), pairs)
-      : packed
-    : concatBytes(packed, pairs);
-  const carrierUnlock = pushData(carrierBody.length >= AIR_PACKED_SIZE ? carrierBody : concatBytes(packed, pairs));
+  const leftover = new Uint8Array(FRI_LEFTOVER_BYTES);
+  leftover.set(args.left, leftover.length - (args.left.length + args.right.length));
+  leftover.set(args.right, leftover.length - args.right.length);
+  const air = packed.length >= AIR_PACKED_SIZE ? packed.subarray(0, AIR_PACKED_SIZE) : packed;
   const carrierLock = Uint8Array.of(0x75, 0x51);
   const sourceOutputs = [
     { lockingBytecode: carrierLock, valueSatoshis: 1000n },
@@ -227,7 +244,7 @@ export function evaluateFriQueryOpening(args: {
         outpointTransactionHash: new Uint8Array(32).fill(0x22),
         outpointIndex: 0,
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: carrierUnlock,
+        unlockingBytecode: pushData(leftover),
       },
       {
         outpointTransactionHash: new Uint8Array(32).fill(0x44),
@@ -238,6 +255,12 @@ export function evaluateFriQueryOpening(args: {
     ],
     outputs: [{ lockingBytecode: carrierLock, valueSatoshis: 1000n }],
   };
+  while (sourceOutputs.length < PACKED_CARRIER_INPUT + 1) sourceOutputs.push(dummyAnyone());
+  sourceOutputs[PACKED_CARRIER_INPUT] = dropThen1();
+  while (transaction.inputs.length < PACKED_CARRIER_INPUT + 1) {
+    transaction.inputs.push(dummyInput(0xb0 + transaction.inputs.length, new Uint8Array(0)));
+  }
+  transaction.inputs[PACKED_CARRIER_INPUT] = dummyInput(0xa0, pushData(air));
   const result = vm.verify({ sourceOutputs, transaction });
   return {
     accepted: result === true,
@@ -305,7 +328,8 @@ export function buildPoolSuccessorTx(args: {
 } {
   const slotKernels = args.slotKernels ?? SLOT_KERNEL_COUNT;
   const standard = args.standard ?? slotKernels <= SLOT_KERNEL_COUNT;
-  const poolLock = poolLockP2sh32({ slotKernels });
+  const p2sPool = includeNoteAuth(slotKernels);
+  const poolLock = p2sPool ? poolLockP2sFor({ slotKernels }) : poolLockP2sh32({ slotKernels });
   const category = args.category ?? new Uint8Array(32).fill(0x11);
   const poolValue = utxoValueFor(args.oldState);
   const newValue = args.outputValueSats ?? utxoValueFor(args.newState);
@@ -319,10 +343,10 @@ export function buildPoolSuccessorTx(args: {
   const funderNeed = net > 0n ? net : 0n;
   const funderLock = Uint8Array.of(0x51);
   const foldN = foldKernelCount(slotKernels);
-  const decodedEarly = decodeFriProof(args.proof);
+  const decodedProof = decodeFriProof(args.proof);
   const packedEarly =
     args.airPacked ??
-    (args.statement ? encodeAirPacked(args.statement, decodedEarly) : undefined);
+    (args.statement ? encodeAirPacked(args.statement, decodedProof) : undefined);
   const cqzLock = compileCqzLockP2sh32();
   const airOnly =
     packedEarly instanceof Uint8Array && packedEarly.length >= AIR_PACKED_SIZE
@@ -340,7 +364,6 @@ export function buildPoolSuccessorTx(args: {
   const cqzUnlock = cqzKernelUnlocking(cqzCarrier);
   const foldQ = foldQueriesPerKernel(slotKernels);
   const foldLocks = Array.from({ length: foldN }, (_, f) => compileFoldLockP2sh32(foldQ, f * foldQ));
-  const decodedProof = decodeFriProof(args.proof);
   const hashBitShards = foldQ === 6 ? hashBitFoldShards(decodedProof) : undefined;
   const foldUnlocks = Array.from({ length: foldN }, (_, f) =>
     foldKernelUnlocking(
@@ -383,16 +406,16 @@ export function buildPoolSuccessorTx(args: {
     })),
     ...(funderNeed > 0n ? [{ lockingBytecode: funderLock, valueSatoshis: funderNeed }] : []),
   ];
-  const decoded = decodeFriProof(args.proof);
-  const prefix = args.airPacked
-    ?? (args.statement ? encodeAirPacked(args.statement, decoded) : decoded.layerRoots);
+  const prefix = packedEarly ?? decodedProof.layerRoots;
   const carrier =
     prefix instanceof Uint8Array && prefix.length >= AIR_PACKED_SIZE
       ? prefix.length === AIR_PACKED_SIZE
         ? packedWithPairs(prefix, args.proof)
         : prefix
       : prefix;
-  const poolUnlock = p2sh32Unlocking(undefined, carrier, { slotKernels });
+  const poolUnlock = p2sPool
+    ? p2sUnlocking(undefined, carrier, { slotKernels })
+    : p2sh32Unlocking(undefined, carrier, { slotKernels });
   const transaction = {
     version: 2,
     locktime: 0,
@@ -635,7 +658,7 @@ export function evaluateNoteAuthKernel(args: {
         outpointTransactionHash: new Uint8Array(32).fill(0x11),
         outpointIndex: 0,
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: pushData(packed),
+        unlockingBytecode: Uint8Array.of(0x00),
       },
       {
         outpointTransactionHash: new Uint8Array(32).fill(0xa3),
@@ -656,6 +679,12 @@ export function evaluateNoteAuthKernel(args: {
       },
     ],
   };
+  while (sourceOutputs.length < PACKED_CARRIER_INPUT + 1) sourceOutputs.push(dummyAnyone());
+  sourceOutputs[PACKED_CARRIER_INPUT] = dropThen1();
+  while (transaction.inputs.length < PACKED_CARRIER_INPUT + 1) {
+    transaction.inputs.push(dummyInput(0xb0 + transaction.inputs.length, new Uint8Array(0)));
+  }
+  transaction.inputs[PACKED_CARRIER_INPUT] = dummyInput(0xa0, pushData(packed));
   const result = vm.verify({ sourceOutputs, transaction });
   return {
     accepted: result === true,
@@ -794,7 +823,8 @@ export function evaluateProofOnVm(proof: FriProof | Uint8Array): {
 
 function evaluateFriShard(packed: Uint8Array, unlocking: Uint8Array, layer = 0): VmEval {
   const vm = createVirtualMachineBch2026(true);
-  const carrierUnlock = pushData(packed.length === AIR_PACKED_SIZE ? packed : packed);
+  const leftover = packed.length > AIR_PACKED_SIZE ? packed.subarray(AIR_PACKED_SIZE) : new Uint8Array(FRI_LEFTOVER_BYTES);
+  const air = packed.subarray(0, Math.min(AIR_PACKED_SIZE, packed.length));
   const carrierLock = Uint8Array.of(0x75, 0x51);
   const sourceOutputs = [
     { lockingBytecode: carrierLock, valueSatoshis: 1000n },
@@ -808,7 +838,7 @@ function evaluateFriShard(packed: Uint8Array, unlocking: Uint8Array, layer = 0):
         outpointTransactionHash: new Uint8Array(32).fill(0x22),
         outpointIndex: 0,
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: carrierUnlock,
+        unlockingBytecode: pushData(leftover),
       },
       {
         outpointTransactionHash: new Uint8Array(32).fill(0x44),
@@ -819,6 +849,12 @@ function evaluateFriShard(packed: Uint8Array, unlocking: Uint8Array, layer = 0):
     ],
     outputs: [{ lockingBytecode: carrierLock, valueSatoshis: 1000n }],
   };
+  while (sourceOutputs.length < PACKED_CARRIER_INPUT + 1) sourceOutputs.push(dummyAnyone());
+  sourceOutputs[PACKED_CARRIER_INPUT] = dropThen1();
+  while (transaction.inputs.length < PACKED_CARRIER_INPUT + 1) {
+    transaction.inputs.push(dummyInput(0xb0 + transaction.inputs.length, new Uint8Array(0)));
+  }
+  transaction.inputs[PACKED_CARRIER_INPUT] = dummyInput(0xa0, pushData(air));
   const result = vm.verify({ sourceOutputs, transaction });
   return {
     accepted: result === true,
@@ -1080,7 +1116,7 @@ export function evaluateFoldKernelOnly(args: {
     args.queryIndex ?? (args.sourceInput !== undefined ? args.sourceInput - 1 : 0);
   const vm = createVirtualMachineBch2026(true);
   const packed = encodeAirPacked(args.statement, args.proof);
-  const carrier = packedWithPairs(packed, args.proof);
+  const carrier = leftoverPairs(packed, args.proof);
   const foldLock = compileFoldLockP2sh32(nFold, queryIndex);
   const foldUnlock = foldKernelUnlocking(
     nFold,
@@ -1112,6 +1148,12 @@ export function evaluateFoldKernelOnly(args: {
     ],
     outputs: [{ lockingBytecode: carrierLock, valueSatoshis: 1000n }],
   };
+  while (sourceOutputs.length < PACKED_CARRIER_INPUT + 1) sourceOutputs.push(dummyAnyone());
+  sourceOutputs[PACKED_CARRIER_INPUT] = dropThen1();
+  while (transaction.inputs.length < PACKED_CARRIER_INPUT + 1) {
+    transaction.inputs.push(dummyInput(0xb0 + transaction.inputs.length, new Uint8Array(0)));
+  }
+  transaction.inputs[PACKED_CARRIER_INPUT] = dummyInput(0xa0, pushData(packed));
   const result = vm.verify({ sourceOutputs, transaction });
   return {
     accepted: result === true,

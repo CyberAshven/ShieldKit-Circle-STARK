@@ -43,6 +43,17 @@ import { decodeFeltBlob, encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31
 import { slotRCqzAsm, slotRCqzBodyAsm } from "./r-kernel.ts";
 
 export const AIR_PACKED_SIZE = 1704;
+/** Packed AIR lives on CQZ (pool + 7 FRI kernels). Input 0 unlocking is leftover-only. */
+export const PACKED_CARRIER_INPUT = 8;
+/** First unlocking push of CQZ is packed||tail (PUSHDATA2). */
+export const LOAD_AIR_PACKED = `
+<${PACKED_CARRIER_INPUT}> OP_INPUTBYTECODE
+<1> OP_SPLIT OP_NIP
+<2> OP_SPLIT OP_NIP
+<${AIR_PACKED_SIZE}>
+OP_SPLIT
+OP_DROP
+`;
 export const AIR_OFF_ROOTS = 0;
 export const AIR_OFF_TRACE = 224;
 export const AIR_OFF_NONCE = 256;
@@ -475,9 +486,7 @@ function defineNewtonFn(): string {
 /** Packed viewing-commit → mask felt. Matches openingMaskFelt for SHA-256. */
 function maskCFromInput0Asm(): string {
   return `
-<0> OP_INPUTBYTECODE
-<1> OP_SPLIT OP_NIP
-<2> OP_SPLIT OP_NIP
+${LOAD_AIR_PACKED}
 <${AIR_OFF_OPEN_MASK}> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP
 ${hexPush(VIEWING_TAG)} OP_SWAP OP_CAT
@@ -1462,24 +1471,23 @@ function pushRedeem(data: Uint8Array): Uint8Array {
 
 /** Q table + FS indices + on-chain cells + N table (bind-T witness; density for unique-orbit verify). */
 export const BIND_T_QIDX_BYTES = AIR_OFF_NTABLE + FRI_QUERIES * 4 - AIR_OFF_QTABLE;
-/** Same-tx bind tail: packed || leftover[:CQZ_BIND_TAIL], hashed against input 0. */
+/** Same-tx bind tail: CQZ packed||leftover[:CQZ_BIND_TAIL] vs leftover-only input 0. */
 export const CQZ_BIND_TAIL = 288;
 
 export const BIND_T_KERNEL = `
 ${defineNewtonFn()}
 ${defineMaskCFn(4)}
-OP_SHA256
-OP_TOALTSTACK
+${packedMagicAsm()}
+OP_DUP
+<${AIR_PACKED_SIZE}>
+OP_SPLIT
+OP_NIP
 <0> OP_INPUTBYTECODE
 <1> OP_SPLIT OP_NIP
 <2> OP_SPLIT OP_NIP
-${packedMagicAsm()}
-OP_DUP
-<${AIR_PACKED_SIZE + CQZ_BIND_TAIL}>
+<${CQZ_BIND_TAIL}>
 OP_SPLIT
 OP_DROP
-OP_SHA256
-OP_FROMALTSTACK
 OP_EQUALVERIFY
 <${AIR_PACKED_SIZE}>
 OP_SPLIT
@@ -1515,15 +1523,11 @@ export const SLOT_KERNEL_COUNT_CONSENSUS = FRI_QUERIES / SLOTS_PER_KERNEL;
 /** Unlocking: <dummy> <slot> <redeem>. Redeem is compiled for that slot (Velma ≤ 10 KB). */
 export function slotsCqzAsm(slot = 0, n = 1): string {
   const extra = Array.from({ length: Math.max(0, n - 1) }, (_, j) => `
-<0> OP_INPUTBYTECODE
-<1> OP_SPLIT OP_NIP
-<2> OP_SPLIT OP_NIP
+${LOAD_AIR_PACKED}
 ${slotRCqzBodyAsm(slot + 1 + j)}
 `).join("\n");
   return `
-<0> OP_INPUTBYTECODE
-<1> OP_SPLIT OP_NIP
-<2> OP_SPLIT OP_NIP
+${LOAD_AIR_PACKED}
 ${bindPackedStmtToPaa1Asm()}
 ${slotCqzAsm(slot)}
 ${extra}
@@ -1664,11 +1668,6 @@ function oneHotEval(k: number, p: CirclePoint): M31El {
   return add(newtonEvalJs(interp.even, p.x), mul(p.y, newtonEvalJs(interp.odd, p.x)));
 }
 
-/** First unlocking item is the packed AIR blob (PUSHDATA2). */
-export const LOAD_AIR_PACKED = `
-<0> OP_INPUTBYTECODE
-<1> OP_SPLIT OP_NIP
-<2> OP_SPLIT OP_NIP
-`;
+
 
 export { smallDomain, bigDomain, addPoints, scalarMul, CIRCLE_GEN };

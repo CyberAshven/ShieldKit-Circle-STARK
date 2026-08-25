@@ -1,7 +1,7 @@
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { COMMITTED_LAYERS, FRI_LOG_N, FRI_QUERIES, FRI_VERSION, VK_ID } from "../backends/circle/params.ts";
 import { sha256 } from "../pool/bytes.ts";
-import { AIR_OFF_QTABLE, AIR_PACKED_SIZE } from "./air-cqz.ts";
+import { AIR_OFF_QTABLE, LOAD_AIR_PACKED } from "./air-cqz.ts";
 
 /** One layer-major compact Merkle kernel per committed FRI layer. */
 export const FRI_KERNEL_INPUTS = COMMITTED_LAYERS;
@@ -117,9 +117,6 @@ OP_OVER
 OP_CAT
 <0> OP_INPUTBYTECODE
 ${FIRST_PUSH_BODY}
-<${AIR_PACKED_SIZE}>
-OP_SPLIT
-OP_NIP
 OP_FROMALTSTACK
 OP_SPLIT
 OP_NIP
@@ -868,9 +865,8 @@ OP_TOALTSTACK`;
   return `
 <0> OP_INPUTBYTECODE
 ${FIRST_PUSH_BODY}
-<${AIR_PACKED_SIZE}>
-OP_SPLIT
 OP_TOALTSTACK
+${LOAD_AIR_PACKED}
 ${trimLeftoverAsm(layer)}
 ${rootExtract}
 OP_BEGIN

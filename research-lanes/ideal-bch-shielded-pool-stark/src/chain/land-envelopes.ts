@@ -148,7 +148,7 @@ async function landAB(
       utxo: picked,
       state: mix.oldState,
       proof: mix.proof,
-      lockKind: "p2sh32",
+      lockKind: envelope === "consensus" ? "p2s" : "p2sh32",
       envelope,
       slotKernels: slots,
     });
@@ -190,7 +190,7 @@ async function landAB(
       newState: mix.newState,
       proof: mix.proof,
       statement: mix.statement,
-      lockKind: "p2sh32" as const,
+      lockKind: envelope === "consensus" ? ("p2s" as const) : ("p2sh32" as const),
       envelope,
       slotKernels: slots,
       kernelUtxos: funded.fri,

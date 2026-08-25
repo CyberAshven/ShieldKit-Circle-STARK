@@ -14,9 +14,9 @@ import {
   SLOT_KERNEL_COUNT,
   AIR_OFF_NET,
   AIR_OFF_HASHBIT,
-  AIR_PACKED_SIZE,
+  LOAD_AIR_PACKED,
 } from "./air-cqz.ts";
-import { FIRST_PUSH_BODY, COMPACT_PATH_STRIDE } from "./fri-kernel.ts";
+import { COMPACT_PATH_STRIDE, FIRST_PUSH_BODY, PUSH_BODY_KEEP_REST } from "./fri-kernel.ts";
 import {
   SHA_LDE_COMPACT,
   SHA_LDE_PATH_DEPTH,
@@ -50,8 +50,37 @@ function pushData(data: Uint8Array): Uint8Array {
 
 const ZERO32_PUSH = hexPush(ZERO32);
 /** Consensus 18-input skeleton: pool + 7 FRI + cqz + grind + algebraicC + note-auth + 6 fold. */
+export const NOTE_AUTH_INPUT = 11;
 export const NOTE_AUTH_FOLD_INPUT0 = 12;
 
+/** Stack out: L N A (32-byte bodies from note-auth unlocking). */
+function noteAuthLanAsm(): string {
+  const skipVar = `${PUSH_BODY_KEEP_REST}\nOP_NIP`;
+  const take32 = `
+<1> OP_SPLIT
+OP_NIP
+<32> OP_SPLIT
+`;
+  return `
+<${NOTE_AUTH_INPUT}> OP_INPUTBYTECODE
+${skipVar}
+${skipVar}
+${take32}
+OP_SWAP
+OP_TOALTSTACK
+${take32}
+OP_SWAP
+OP_TOALTSTACK
+${take32}
+OP_DROP
+OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_SWAP
+OP_ROT
+`;
+}
+
+/** DEFINE 1: peel one fold unlocking to the 1200 B SHA shard. Trampoline occupies DEFINE 0. */
 function foldPeelFnAsm(): string {
   const body = cashAssemblyToBin(`
 ${FIRST_PUSH_BODY}
@@ -60,17 +89,55 @@ OP_SPLIT
 OP_DROP
 `);
   if (typeof body === "string") throw new Error(`fold-peel: ${body}`);
-  return `${hexPush(body)}\n<0>\nOP_DEFINE`;
+  return `${hexPush(body)}\n<1>\nOP_DEFINE`;
 }
 
 function foldChunkAsm(inputIndex: number): string {
   return `
 <${inputIndex}> OP_INPUTBYTECODE
-<0> OP_INVOKE
+<1> OP_INVOKE
 `;
 }
 
-/** Compact merkle walk. Stack in: table compact value root. Isolated `_walk-sha` KAT. */
+/**
+ * DEFINE 3: nTable-bounded explode (BEGIN/UNTIL exactly n 32-byte SPLITs, drop pad).
+ * Stack in: tablePad nTable. Stack out: table of nTable×32. Control stack 1.
+ */
+function explodeTableFnAsm(): string {
+  const body = cashAssemblyToBin(`
+OP_SWAP
+OP_DUP
+<0>
+OP_SPLIT
+OP_DROP
+OP_SWAP
+OP_BEGIN
+  OP_2 OP_PICK
+  OP_0
+  OP_GREATERTHAN
+  OP_IF
+    <32>
+    OP_SPLIT
+    OP_TOALTSTACK
+    OP_CAT
+    OP_FROMALTSTACK
+    OP_ROT
+    OP_1SUB
+    OP_ROT
+    OP_ROT
+    OP_0
+  OP_ELSE
+    OP_DROP
+    OP_NIP
+    OP_1
+  OP_ENDIF
+OP_UNTIL
+`);
+  if (typeof body === "string") throw new Error(`explode-table: ${body}`);
+  return `${hexPush(body)}\n<3>\nOP_DEFINE`;
+}
+
+/** Compact merkle walk. Stack in: table compact value root. DEFINE 2; blob lookup MUL 32. */
 function shaWalkFnAsm(): string {
   const step = `
 <${COMPACT_PATH_STRIDE}> OP_SPLIT
@@ -105,20 +172,99 @@ OP_FROMALTSTACK
 OP_EQUALVERIFY
 `);
   if (typeof body === "string") throw new Error(`sha-walk: ${body}`);
-  return `${hexPush(body)}\n<1>\nOP_DEFINE`;
+  return `${hexPush(body)}\n<2>\nOP_DEFINE`;
 }
 
 const SHA_LDE_VALUES_LEN = FRI_QUERIES * SHA_LDE_VALUE_BYTES;
 const SHA_LDE_COMPACT_LEN = FRI_QUERIES * SHA_LDE_COMPACT;
 
 /**
- * Miner-run SHA-LDE: 36 occupancy-query openings, compact merkle vs hashBitRoot,
- * prefix vs unlocking A/L/N. TRACE w is not in unlocking.
- * Stack in/out: S C L N A Cr.
+ * Miner-run SHA-LDE on the pool redeem (input 0): 36 occupancy-query openings,
+ * compact merkle vs grind-bound hashBitRoot, prefix vs note-auth A/L/N.
+ * Peels the same fold blob note-auth prefixes. TRACE w is not in unlocking.
+ * Stack in/out: leftover.
  */
 export const HASH_BIT_CHECK_ASM = `
 ${foldPeelFnAsm()}
 ${shaWalkFnAsm()}
+${explodeTableFnAsm()}
+${noteAuthLanAsm()}
+${foldChunkAsm(NOTE_AUTH_FOLD_INPUT0)}
+${Array.from({ length: SHA_LDE_SHARD_COUNT - 1 }, (_, i) => `${foldChunkAsm(NOTE_AUTH_FOLD_INPUT0 + 1 + i)}\nOP_CAT`).join("\n")}
+<2> OP_SPLIT
+OP_SWAP
+<1> OP_SPLIT
+OP_SWAP
+OP_CAT
+<0x00>
+OP_CAT
+OP_BIN2NUM
+OP_TOALTSTACK
+<${SHA_LDE_VALUES_LEN}>
+OP_SPLIT
+<${SHA_LDE_COMPACT_LEN}>
+OP_SPLIT
+OP_FROMALTSTACK
+<3> OP_INVOKE
+OP_2 OP_PICK
+<${SHA_LDE_PREFIX}>
+OP_SPLIT
+OP_DROP
+<4> OP_SPLIT
+OP_SWAP
+OP_5 OP_PICK
+<4> OP_SPLIT
+OP_DROP
+OP_EQUALVERIFY
+<4> OP_SPLIT
+OP_SWAP
+OP_7 OP_PICK
+<4> OP_SPLIT
+OP_DROP
+OP_EQUALVERIFY
+OP_5 OP_PICK
+<4> OP_SPLIT
+OP_DROP
+OP_DUP
+${ZERO32_PUSH}
+<4> OP_SPLIT
+OP_DROP
+OP_EQUAL
+OP_IF
+  OP_2DROP
+OP_ELSE
+  OP_EQUALVERIFY
+OP_ENDIF
+${LOAD_AIR_PACKED}
+<${AIR_OFF_HASHBIT}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_SIZE
+<32>
+OP_NUMEQUALVERIFY
+OP_DUP
+OP_0NOTEQUAL
+OP_VERIFY
+${Array.from({ length: FRI_QUERIES }, (_, k) => `
+OP_1 OP_PICK
+OP_3 OP_PICK
+${k === 0 ? "" : `<${k * SHA_LDE_COMPACT}>\nOP_SPLIT\nOP_NIP\n`}<${SHA_LDE_COMPACT}> OP_SPLIT OP_DROP
+OP_5 OP_PICK
+${k === 0 ? "" : `<${k * SHA_LDE_VALUE_BYTES}>\nOP_SPLIT\nOP_NIP\n`}<${SHA_LDE_VALUE_BYTES}> OP_SPLIT OP_DROP
+OP_3 OP_PICK
+<2> OP_INVOKE
+`).join("\n")}
+OP_2DROP
+OP_2DROP
+OP_2DROP
+OP_DROP
+`;
+
+/**
+ * Note-auth prefix of opening 0 vs stack A/L/N. Same fold peel as HASH_BIT_CHECK.
+ * TXINPUTCOUNT skip is only for isolated 2-input KATs — the 18-input successor runs it.
+ */
+export const HASH_BIT_PREFIX_ASM = `
+${foldPeelFnAsm()}
 OP_TXINPUTCOUNT
 <18>
 OP_GREATERTHANOREQUAL
@@ -161,30 +307,8 @@ OP_IF
 OP_ELSE
   OP_EQUALVERIFY
 OP_ENDIF
-<0> OP_INPUTBYTECODE
-${FIRST_PUSH_BODY}
-<${AIR_PACKED_SIZE}>
-OP_SPLIT
+OP_2DROP
 OP_DROP
-<${AIR_OFF_HASHBIT}> OP_SPLIT OP_NIP
-<32> OP_SPLIT OP_DROP
-OP_SIZE
-<32>
-OP_NUMEQUALVERIFY
-OP_DUP
-OP_0NOTEQUAL
-OP_VERIFY
-${Array.from({ length: FRI_QUERIES }, (_, k) => `
-OP_1 OP_PICK
-OP_3 OP_PICK
-${k === 0 ? "" : `<${k * SHA_LDE_COMPACT}>\nOP_SPLIT\nOP_NIP\n`}<${SHA_LDE_COMPACT}> OP_SPLIT OP_DROP
-OP_5 OP_PICK
-${k === 0 ? "" : `<${k * SHA_LDE_VALUE_BYTES}>\nOP_SPLIT\nOP_NIP\n`}<${SHA_LDE_VALUE_BYTES}> OP_SPLIT OP_DROP
-OP_3 OP_PICK
-<1> OP_INVOKE
-`).join("\n")}
-OP_2DROP
-OP_2DROP
 OP_FROMALTSTACK
 OP_ENDIF
 `;
@@ -197,10 +321,8 @@ OP_ENDIF
  * Packed input-0 prefix is PUSHDATA2 (1+2). Bind = packed[AIR_OFF_NET:][0:32].
  */
 export const NOTE_AUTH_KERNEL_ASM = `
-${HASH_BIT_CHECK_ASM}
-<0> OP_INPUTBYTECODE
-<1> OP_SPLIT OP_NIP
-<2> OP_SPLIT OP_NIP
+${HASH_BIT_PREFIX_ASM}
+${LOAD_AIR_PACKED}
 OP_DUP
 <${AIR_OFF_NET}> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP
@@ -220,9 +342,7 @@ OP_SWAP
 OP_FROMALTSTACK
 OP_EQUALVERIFY
 OP_TOALTSTACK
-<0> OP_INPUTBYTECODE
-<1> OP_SPLIT OP_NIP
-<2> OP_SPLIT OP_NIP
+${LOAD_AIR_PACKED}
 ${extractRaw32Asm(HASH_CELL_COMMIT)}
 OP_3 OP_PICK
 OP_EQUALVERIFY

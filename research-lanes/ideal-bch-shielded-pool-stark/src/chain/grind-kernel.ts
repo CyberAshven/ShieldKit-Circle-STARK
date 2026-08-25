@@ -4,7 +4,7 @@
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { GRIND_BITS } from "../backends/circle/params.ts";
-import { AIR_OFF_DIGEST, AIR_OFF_NONCE, AIR_PACKED_SIZE, grindSeedFromPackedAsm } from "./air-cqz.ts";
+import { AIR_OFF_DIGEST, AIR_OFF_NONCE, LOAD_AIR_PACKED, grindSeedFromPackedAsm } from "./air-cqz.ts";
 
 
 const extraBits = GRIND_BITS - 16;
@@ -13,12 +13,7 @@ const thirdByteMax = 1 << (8 - extraBits);
 
 export const GRIND_KERNEL_ASM = `
 OP_TOALTSTACK
-<0> OP_INPUTBYTECODE
-<1> OP_SPLIT OP_NIP
-<2> OP_SPLIT OP_NIP
-<${AIR_PACKED_SIZE}>
-OP_SPLIT
-OP_DROP
+${LOAD_AIR_PACKED}
 OP_DUP
 <${AIR_OFF_DIGEST}> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP

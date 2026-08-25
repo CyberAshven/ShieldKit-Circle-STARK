@@ -8,7 +8,7 @@ import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitaut
 import { addPoints, scalarMul } from "../backends/circle/group.ts";
 import { encodeLe, inv, neg } from "../backends/circle/m31.ts";
 import { COMMITTED_LAYERS, FRI_N, FRI_QUERIES, FRI_VERSION, RULES_SHA256, SECURE_FIELD_BIT_LENGTH } from "../backends/circle/params.ts";
-import { AIR_OFF_IDX, AIR_PACKED_SIZE, G1024, SLOT_KERNEL_COUNT } from "./air-cqz.ts";
+import { AIR_OFF_IDX, AIR_PACKED_SIZE, G1024, LOAD_AIR_PACKED, SLOT_KERNEL_COUNT } from "./air-cqz.ts";
 
 import {
   FRI_KERNEL_INPUTS,
@@ -88,9 +88,6 @@ export function foldInvsBlob(packed: Uint8Array, queryIndex: number, nFold: numb
 function queryPairsFromBodyAsm(pairIndex = 0): string {
   const l0 = 8;
   return `
-<${AIR_PACKED_SIZE}>
-OP_SPLIT
-OP_NIP
 <${pairIndex * l0}>
 OP_SPLIT
 OP_NIP
@@ -210,13 +207,10 @@ ${foldDefinesAsm()}
 <${nFold * PAIR_BYTES}>
 OP_SPLIT
 OP_SWAP
+${LOAD_AIR_PACKED}
+OP_SWAP
 <0> OP_INPUTBYTECODE
 ${FIRST_PUSH_BODY}
-<${AIR_PACKED_SIZE}>
-OP_SPLIT
-OP_TOALTSTACK
-OP_SWAP
-OP_FROMALTSTACK
 ${bindFoldPairsLeftoverAsm(nFold, queryIndex)}
 OP_SWAP
 ${foldQueriesAsm(nFold, queryIndex)}
