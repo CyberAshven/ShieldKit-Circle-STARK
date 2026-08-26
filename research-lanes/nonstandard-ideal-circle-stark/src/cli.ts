@@ -24,6 +24,7 @@ import {
   type TxEnvelope,
 } from "./chain/envelope.ts";
 import { chainedShape, compileChainedWithdraw } from "./chain/chained.ts";
+import { SLOT_KERNEL_COUNT_CONSENSUS } from "./chain/air-cqz.ts";
 import {
   BATCH_EXIT_WINDOW_MAX_SECONDS_DEFAULT,
   BATCH_EXIT_WINDOW_MIN_SECONDS_DEFAULT,
@@ -592,6 +593,7 @@ async function main(): Promise<void> {
               statement: w.statement,
               lockKind: "p2sh32",
               envelope: env,
+              slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
               extraPayouts: payouts,
               note: held.note,
               change: w.change,
@@ -749,7 +751,6 @@ async function main(): Promise<void> {
     const sizes = measureGenesisAndSuccessor(d.machine.state, w.machine.state, proof);
     const { compileCovenantSuccessor } = await import("./chain/covenant-spend.ts");
     const { encodePublicPaa1, utxoValueFor } = await import("./pool/state.ts");
-    const { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } = await import("./chain/air-cqz.ts");
     const pool = {
       tx_hash: "11".repeat(32),
       tx_pos: 0,
@@ -757,13 +758,30 @@ async function main(): Promise<void> {
       category: new Uint8Array(32).fill(0x11),
       commitment: encodePublicPaa1(d.machine.state),
     };
+    const dummyWallet = createLabWallet();
+    const occA = compileCovenantSuccessor({
+      wallet: dummyWallet,
+      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 2_000_000 },
+      pool,
+      newState: w.machine.state,
+      proof,
+      statement: w.statement,
+      lockKind: "p2sh32",
+      envelope: "standard",
+      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+      note,
+      change: w.created?.note,
+    });
     const cons = compileCovenantSuccessor({
+      wallet: dummyWallet,
+      feeUtxo: { tx_hash: "33".repeat(32), tx_pos: 0, value: 2_000_000 },
       pool,
       newState: w.machine.state,
       proof,
       statement: w.statement,
       lockKind: "p2sh32",
       envelope: "consensus",
+      slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
       note,
       change: w.created?.note,
     });
@@ -787,10 +805,12 @@ async function main(): Promise<void> {
       unlockingLimit: 10_000,
       txLimit: 100_000,
       consensusTxLimit: 1_000_000,
-      slotKernelsStandard: SLOT_KERNEL_COUNT,
+      slotKernelsStandard: SLOT_KERNEL_COUNT_CONSENSUS,
       slotKernelsConsensus: SLOT_KERNEL_COUNT_CONSENSUS,
-      foldKernelsStandard: foldKernelCount(SLOT_KERNEL_COUNT),
+      foldKernelsStandard: foldKernelCount(SLOT_KERNEL_COUNT_CONSENSUS),
       foldKernelsConsensus: foldKernelCount(SLOT_KERNEL_COUNT_CONSENSUS),
+      occupancyA: { txBytes: occA.txBytes, unlockingBytes: occA.unlockingBytes, queries: 36 },
+      occupancyB: { txBytes: cons.txBytes, unlockingBytes: cons.unlockingBytes, queries: 36 },
       consensusSuccessor: { txBytes: cons.txBytes, unlockingBytes: cons.unlockingBytes },
       genesisP2sh32: {
         txBytes: sizes.genesisP2sh32.txBytes,

@@ -648,7 +648,7 @@ export function compileCovenantSuccessor(args: {
       ...(boolN > 0
         ? occupancyBoolUnlockings(
             {
-              note: args.note!,
+              note: args.note ?? stepSpends[0]!.note,
               statement: args.statement!,
               packed: airPacked ?? encodeAirPacked(args.statement!, decoded),
             },
@@ -664,7 +664,10 @@ export function compileCovenantSuccessor(args: {
         outpointIndex: extras[prefixN + foldN + slotN + boolN + i]!.tx_pos,
         outpointTransactionHash: hexToBin(extras[prefixN + foldN + slotN + boolN + i]!.tx_hash),
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: noteAuthStepUnlocking(sp),
+        unlockingBytecode: noteAuthStepUnlocking({
+          ...sp,
+          poolInstanceId: args.statement?.oldState.poolInstanceId,
+        }),
       })),
       ...(userFee && args.feeUtxo && c && data
         ? [

@@ -41,16 +41,15 @@
  * is an audit call.
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
-import { HASH_AMOUNT_TAG } from "../amounts/hash-commit.ts";
-import { writeI64LE, concatBytes, sha256 } from "../pool/bytes.ts";
+import { concatBytes, sha256 } from "../pool/bytes.ts";
 import { nullifierOf, type Note } from "../pool/notes.ts";
 import { defaultInternalHash, type InternalHash } from "../backends/circle/internal-hash.ts";
 import {
-  EXTRACT_INSTANCE,
   EXTRACT_NOTE_ROOT,
   NOTE_MERKLE_WALK,
   encodeWalkSteps,
 } from "./note-merkle.ts";
+import { noteAuthPublicOpens } from "./note-auth-bind.ts";
 
 function hexPush(data: Uint8Array): string {
   return `<0x${Buffer.from(data).toString("hex")}>`;
@@ -62,18 +61,9 @@ function pushData(data: Uint8Array): Uint8Array {
   return Uint8Array.of(0x4d, data.length & 0xff, (data.length >> 8) & 0xff, ...data);
 }
 
-const TAG = hexPush(HASH_AMOUNT_TAG);
-
 /**
- * Unlocking (bottom→top): steps, amount8, rho, owner — so the script starts with
- * `owner` on top and `steps` at the bottom, where the Merkle walk wants it.
- * `noteAuthStepUnlocking` below is the authority on that order.
- *
- * amountCommit = SHA256(tag || amount8 || rho)
- * leaf         = SHA256(amountCommit || rho || owner)
- * nf           = SHA256(instance || owner || rho)
- *
- * Identical to the audited kernel's three formulas; only the root handling differs.
+ * Unlocking (bottom→top): steps, leaf, nf, amountCommit — same public tuple as
+ * the audited kernel. Rho / owner / amount8 stay off the chain.
  *
  * ORDERING GUARD. Each step also asserts its nullifier is strictly greater than
  * the previous step's, compared UNSIGNED (`<0x00> OP_CAT OP_BIN2NUM` - a 32-byte
@@ -91,16 +81,7 @@ export function noteAuthStepKernelAsm(
   if (rOut.length !== 32) throw new Error(`rOut must be 32 bytes, got ${rOut.length}`);
   if (prevNf.length !== 32) throw new Error(`prevNf must be 32 bytes, got ${prevNf.length}`);
   return `
-OP_DUP OP_TOALTSTACK
-OP_SWAP
-OP_DUP OP_TOALTSTACK
-<0> OP_UTXOTOKENCOMMITMENT
-${EXTRACT_INSTANCE}
-OP_ROT
-OP_CAT
-OP_SWAP
-OP_CAT
-OP_SHA256
+OP_DROP
 OP_DUP
 <0x00> OP_CAT OP_BIN2NUM
 ${hexPush(concatBytes(prevNf, Uint8Array.of(0)))} OP_BIN2NUM
@@ -112,20 +93,6 @@ OP_CAT
 OP_SHA256
 ${hexPush(rOut)}
 OP_EQUALVERIFY
-OP_FROMALTSTACK
-OP_DUP OP_TOALTSTACK
-OP_SWAP
-${TAG}
-OP_SWAP
-OP_CAT
-OP_SWAP
-OP_CAT
-OP_SHA256
-OP_FROMALTSTACK
-OP_CAT
-OP_FROMALTSTACK
-OP_CAT
-OP_SHA256
 OP_SWAP
 ${NOTE_MERKLE_WALK}
 <0> OP_UTXOTOKENCOMMITMENT
@@ -173,12 +140,18 @@ export function noteAuthStepUnlocking(args: {
   /** The previous step's nullifier. Steps must run in strictly increasing
    *  nullifier order, which is what makes a duplicate note unsatisfiable. */
   prevNf?: Uint8Array;
+  poolInstanceId?: Uint8Array;
 }): Uint8Array {
+  const opens = noteAuthPublicOpens({
+    note: args.note,
+    action: "WITHDRAW",
+    poolInstanceId: args.poolInstanceId ?? new Uint8Array(32),
+  });
   const payload = concatBytes(
     pushData(encodeWalkSteps(args.index, args.path)),
-    pushData(writeI64LE(args.note.amountSats)),
-    pushData(args.note.rho),
-    pushData(args.note.ownerSecret),
+    pushData(opens.leaf),
+    pushData(opens.nf),
+    pushData(opens.amountCommit),
   );
   const redeem = pushData(
     compileNoteAuthStepKernel(args.rIn, args.rOut, args.prevNf ?? new Uint8Array(32)),

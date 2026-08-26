@@ -21,6 +21,8 @@ import { FRI_N, FRI_QUERIES, FRI_VERSION, GRIND_BITS, TRACE_LEN } from "../src/b
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { compileChainedWithdraw } from "../src/chain/chained.ts";
 import { booleanityKernelCount } from "../src/chain/booleanity-kernel.ts";
+import { slotRCqzBodyBlobAsm } from "../src/chain/r-kernel.ts";
+import { bindPackedNfAndIdAsm } from "../src/chain/air-cqz.ts";
 import { SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
 import { foldKernelCount, foldQueriesPerKernel } from "../src/chain/fold-kernel.ts";
 import {
@@ -74,6 +76,10 @@ describe("envelope A/B/C occupancy gating", () => {
     assert.equal(foldQueriesPerKernel(SLOT_KERNEL_COUNT_CONSENSUS), 6);
     assert.equal(booleanityKernelCount(SLOT_KERNEL_COUNT_CONSENSUS, false), 0);
     assert.equal(booleanityKernelCount(SLOT_KERNEL_COUNT_CONSENSUS, true), 3);
+    const fused = slotRCqzBodyBlobAsm(1, 7, 0);
+    assert.ok(fused.includes("OP_0"), "fused leftover still N=0 (nTable bind overflowed fold stack)");
+    const nfBind = bindPackedNfAndIdAsm();
+    assert.ok(nfBind.includes("<96>"), "cqz binds packed nullifierRoot beyond noteRoot");
   });
 
   it(

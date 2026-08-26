@@ -75,40 +75,37 @@ describe("what a walked note reveals on chain", () => {
     assert.equal(u.includes(hex(writeI64LE(sp.note.amountSats))), false, "amount is not in unlocking");
   });
 
-  it("the STEP kernel publishes the same three fields — no better, no worse", () => {
+  it("the STEP kernel does not publish amount, rho or owner", () => {
     const { b } = pool(4, 1);
     const plan = stepPlan({
       oldNfRoot: b.statement.oldState.nullifierRoot,
       poolInstanceId: b.statement.oldState.poolInstanceId,
       spends: b.spent.map((s) => ({ note: s.note, index: s.index, path: s.path })),
     });
-    const u = hex(noteAuthStepUnlocking(plan.spends[0]!));
+    const u = hex(
+      noteAuthStepUnlocking({ ...plan.spends[0]!, poolInstanceId: b.statement.oldState.poolInstanceId }),
+    );
     const n = plan.spends[0]!.note;
-    assert.ok(u.includes(hex(n.rho)), "rho is on chain");
-    assert.ok(u.includes(hex(n.ownerSecret)), "owner is on chain");
-    assert.ok(u.includes(hex(writeI64LE(n.amountSats))), "amount is on chain");
+    assert.equal(u.includes(hex(n.rho)), false, "rho is not in unlocking");
+    assert.equal(u.includes(hex(n.ownerSecret)), false, "owner is not in unlocking");
+    assert.equal(u.includes(hex(writeI64LE(n.amountSats))), false, "amount is not in unlocking");
   });
 
-  it("so a walked note links to its exact deposit: anonymity set 1", () => {
-    const { deposits, b } = pool(6, 2);
+  it("a walked note's unlocking does not contain rho/owner to match the deposit", () => {
+    const { b } = pool(6, 2);
     const plan = stepPlan({
       oldNfRoot: b.statement.oldState.nullifierRoot,
       poolInstanceId: b.statement.oldState.poolInstanceId,
       spends: b.spent.map((s) => ({ note: s.note, index: s.index, path: s.path })),
     });
-    let linked = 0;
     for (const sp of plan.spends) {
-      // An observer parses the literal pushes out of the unlocking, rebuilds the
-      // note, recomputes the leaf, and matches it against the public deposit leaves.
-      const leaf = commitNote(sp.note, H);
-      const match = deposits.findIndex((d) => hex(d.leaf) === hex(leaf));
-      assert.notEqual(match, -1, "the recomputed leaf must match a published deposit");
-      linked += 1;
+      const u = hex(noteAuthStepUnlocking({ ...sp, poolInstanceId: b.statement.oldState.poolInstanceId }));
+      assert.equal(u.includes(hex(sp.note.rho)), false);
+      assert.equal(u.includes(hex(sp.note.ownerSecret)), false);
     }
-    assert.equal(linked, 2, "every walked note is linkable");
   });
 
-  it("batching multiplies the exposure: N walked notes reveal N owners", () => {
+  it("batching does not put N owners into N unlockings", () => {
     for (const n of [1, 3]) {
       const { b } = pool(6, n);
       const plan = stepPlan({
@@ -116,12 +113,12 @@ describe("what a walked note reveals on chain", () => {
         poolInstanceId: b.statement.oldState.poolInstanceId,
         spends: b.spent.map((s) => ({ note: s.note, index: s.index, path: s.path })),
       });
-      const owners = new Set(plan.spends.map((s) => hex(s.note.ownerSecret)));
-      assert.equal(owners.size, n, `${n} walked notes have ${n} distinct owners`);
       for (const s of plan.spends) {
-        assert.ok(
-          hex(noteAuthStepUnlocking(s)).includes(hex(s.note.ownerSecret)),
-          "and each owner is literally present in its own unlocking",
+        assert.equal(
+          hex(noteAuthStepUnlocking({ ...s, poolInstanceId: b.statement.oldState.poolInstanceId })).includes(
+            hex(s.note.ownerSecret),
+          ),
+          false,
         );
       }
     }

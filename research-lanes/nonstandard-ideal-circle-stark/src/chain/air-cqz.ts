@@ -694,6 +694,40 @@ OP_EQUALVERIFY
 `;
 }
 
+/** Packed PAA1 nullifierRoot + poolInstanceId vs NFT (tape/pay cqz, not pool redeem). */
+export function bindPackedNfAndIdAsm(): string {
+  return `
+OP_DUP
+<${AIR_OFF_PUB_NEW + 96}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+<0> OP_OUTPUTTOKENCOMMITMENT
+<96> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
+OP_DUP
+<${AIR_OFF_PUB_OLD + 96}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+<0> OP_UTXOTOKENCOMMITMENT
+<96> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
+OP_DUP
+<${AIR_OFF_PUB_NEW + 32}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+<0> OP_OUTPUTTOKENCOMMITMENT
+<32> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
+OP_DUP
+<${AIR_OFF_PUB_OLD + 32}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+<0> OP_UTXOTOKENCOMMITMENT
+<32> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
+`;
+}
+
 /** Stack: packed → packed, grindSeed. SHA256(digest || trace || layerRoots || even || odd). */
 export function grindSeedFromPackedAsm(): string {
   return `
@@ -1490,6 +1524,7 @@ ${bindTToCellsAsm(4, [3, 5, 6])}
 OP_TOALTSTACK
 OP_TOALTSTACK
 ${bindPackedStmtToPaa1Asm()}
+${bindPackedNfAndIdAsm()}
 ${bindCellsToStatementAsm()}
 OP_FROMALTSTACK
 OP_FROMALTSTACK

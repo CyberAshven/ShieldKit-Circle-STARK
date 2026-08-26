@@ -14,7 +14,8 @@ import {
   SLOT_KERNEL_COUNT_CONSENSUS,
   SLOTS_PER_KERNEL,
 } from "./air-cqz.ts";
-import { compileFoldLockP2sh32, foldKernelCount, foldQueriesPerKernel } from "./fold-kernel.ts";
+import { compileFoldLockP2sh32, foldKernelCount, foldQueriesPerKernel, slotInputsCount } from "./fold-kernel.ts";
+import { booleanityKernelCount } from "./booleanity-kernel.ts";
 import { compileGrindLockP2sh32 } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "./algebraic-c-kernel.ts";
 import { createLabWallet, p2pkhLockingOf } from "./wallet.ts";
@@ -66,7 +67,12 @@ export function compileBatchExitSuccessor(args: {
     compileNoteAuthStepLockP2sh32(s.rIn, s.rOut, s.prevNf),
   );
   const finalNfRoot = plan.roots[stepSpends.length]!;
-  const nExtras = 3 + folds + slotKernels + stepSpends.length;
+  const nExtras =
+    3 +
+    folds +
+    slotInputsCount(slotKernels) +
+    booleanityKernelCount(slotKernels, envelope === "consensus") +
+    stepSpends.length;
   const measured = compileCovenantSuccessor({
     pool: {
       tx_hash: POOL,
