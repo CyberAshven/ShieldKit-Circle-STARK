@@ -120,7 +120,7 @@ export async function broadcast(client: ElectrumClient, rawHex: string): Promise
   const bytes = rawHex.length / 2;
   // 90 s was not enough for an 83 KB tape hop: the run reported a timeout while
   // the same tx broadcast fine on a direct 150 s attempt. Give big pushes room.
-  const timeoutMs = bytes > 100_000 ? 240_000 : bytes > 20_000 ? 240_000 : 30_000;
+  const timeoutMs = bytes > 4_000 ? 240_000 : 30_000;
   return (await client.request("blockchain.transaction.broadcast", [rawHex], timeoutMs)) as string;
 }
 

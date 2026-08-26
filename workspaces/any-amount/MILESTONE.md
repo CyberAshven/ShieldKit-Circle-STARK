@@ -16,14 +16,29 @@ Three envelopes, size not the identity ([`ENVELOPES.md`](ENVELOPES.md)):
 | **B** | Completeness, consensus size allowed (FRI9 36-fold+36-slot land `81bb2cef…` / 498398 B). | this workspace `--envelope b` |
 | **C** | Same as B, multi-tx standard hops, counted-tip bind. | this workspace `--envelope c` |
 
-**Chipnet explorer (FRI9 lands, 2026-08-21).** These are the landed txs, not occupancy FRI11. Melroy [BCH Explorer](https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) (`bchexplorer.cash/chipnet`); also [Paytaca Chipnet](https://chipnet.bchexplorer.info/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024). Occupancy A/B/C has **no** Chipnet land on its vk yet.
+**Chipnet explorer.** Melroy [BCH Explorer](https://bchexplorer.cash/chipnet/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41) (`bchexplorer.cash/chipnet`); also [Paytaca Chipnet](https://chipnet.bchexplorer.info/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41). FRI9 2026-08-21 txs stay below; they are **not** occupancy.
+
+### Occupancy FRI11 lands (2026-08-26)
+
+36q / 20 grind / TRACE 64. **A** Electrum. **B** JSON-RPC (146168 B is the ~147 KB successor). **C** 19 Electrum hops.
 
 | Envelope | Land | Bytes | Melroy | Paytaca Chipnet |
 | --- | --- | ---: | --- | --- |
-| **A** | successor | 87470 | [614b7077…](https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) | [614b7077…](https://chipnet.bchexplorer.info/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) |
-| **B** | successor | 498398 | [81bb2cef…](https://bchexplorer.cash/chipnet/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) | [81bb2cef…](https://chipnet.bchexplorer.info/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) |
-| **C** | pay hop (19-tx chain) | 89354 | [06a6078a…](https://bchexplorer.cash/chipnet/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) | [06a6078a…](https://chipnet.bchexplorer.info/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) |
-| **C** | tape hop 0 | 82996 | [c7e001a6…](https://bchexplorer.cash/chipnet/tx/c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d) | [c7e001a6…](https://chipnet.bchexplorer.info/tx/c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d) |
+| **A** occupancy | successor | 97632 | [0ce65254…](https://bchexplorer.cash/chipnet/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41) | [0ce65254…](https://chipnet.bchexplorer.info/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41) |
+| **B** occupancy | successor | 146168 | [62c1d6b9…](https://bchexplorer.cash/chipnet/tx/62c1d6b956f2bf431a56622c0c2b96180bb1a5d80c9488920807f2af3a2f6541) | [62c1d6b9…](https://chipnet.bchexplorer.info/tx/62c1d6b956f2bf431a56622c0c2b96180bb1a5d80c9488920807f2af3a2f6541) |
+| **C** occupancy | pay hop | 92011 | [cbfe3e19…](https://bchexplorer.cash/chipnet/tx/cbfe3e19720e92a92cfab00a641a25ee6c5a333e0fd776fe37630f48fd20e19c) | [cbfe3e19…](https://chipnet.bchexplorer.info/tx/cbfe3e19720e92a92cfab00a641a25ee6c5a333e0fd776fe37630f48fd20e19c) |
+| **C** occupancy | tape hop 0 | 80134 | [59575bc8…](https://bchexplorer.cash/chipnet/tx/59575bc8cf5899148a8320ef13f3d2ba4fdd3b103a732a0aacdca0ca67c6ab55) | [59575bc8…](https://chipnet.bchexplorer.info/tx/59575bc8cf5899148a8320ef13f3d2ba4fdd3b103a732a0aacdca0ca67c6ab55) |
+
+A genesis [`106ac450…`](https://bchexplorer.cash/chipnet/tx/106ac45061772a37542c6c2fdb27663c8af0513b03833f1ca2ed7d5eddd0a55c). B genesis [`a6a46438…`](https://bchexplorer.cash/chipnet/tx/a6a46438f025462b5c54df8edbb214d135df91eb3e1cdc9e3e7429144f3e7e78). C genesis [`c8da5fd1…`](https://bchexplorer.cash/chipnet/tx/c8da5fd18e598d1ac416b403a941195c44d88c8f29038464f5e763cf4f4b1984).
+
+### FRI9 lands (2026-08-21) — not occupancy
+
+| Envelope | Land | Bytes | Melroy | Paytaca Chipnet |
+| --- | --- | ---: | --- | --- |
+| **A** FRI9 | successor | 87470 | [614b7077…](https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) | [614b7077…](https://chipnet.bchexplorer.info/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) |
+| **B** FRI9 | successor | 498398 | [81bb2cef…](https://bchexplorer.cash/chipnet/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) | [81bb2cef…](https://chipnet.bchexplorer.info/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) |
+| **C** FRI9 | pay hop (19-tx chain) | 89354 | [06a6078a…](https://bchexplorer.cash/chipnet/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) | [06a6078a…](https://chipnet.bchexplorer.info/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) |
+| **C** FRI9 | tape hop 0 | 82996 | [c7e001a6…](https://bchexplorer.cash/chipnet/tx/c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d) | [c7e001a6…](https://chipnet.bchexplorer.info/tx/c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d) |
 
 | Knob | Live | Notes |
 | --- | --- | --- |

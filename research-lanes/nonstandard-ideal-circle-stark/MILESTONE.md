@@ -1,16 +1,17 @@
 # Chipnet milestones (copied parent log — not this lane’s product)
 
-This lane has no Chipnet land on its vk yet. Old txids below are parent/sibling evidence. They are not relabeled.
+Occupancy FRI11 Chipnet lands **2026-08-26**. FRI9 2026-08-21 txs below are parent evidence and are not relabeled.
 
-FRI9 envelope lands (2026-08-21), Melroy Chipnet explorer — **not** occupancy FRI11:
+| Envelope | Bytes | Path | Melroy |
+| --- | ---: | --- | --- |
+| **A** successor | 97632 | Electrum | [0ce65254…](https://bchexplorer.cash/chipnet/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41) |
+| **B** successor | 146168 | JSON-RPC | [62c1d6b9…](https://bchexplorer.cash/chipnet/tx/62c1d6b956f2bf431a56622c0c2b96180bb1a5d80c9488920807f2af3a2f6541) |
+| **C** pay hop | 92011 | Electrum | [cbfe3e19…](https://bchexplorer.cash/chipnet/tx/cbfe3e19720e92a92cfab00a641a25ee6c5a333e0fd776fe37630f48fd20e19c) |
+| **C** tape hop 0 | 80134 | Electrum | [59575bc8…](https://bchexplorer.cash/chipnet/tx/59575bc8cf5899148a8320ef13f3d2ba4fdd3b103a732a0aacdca0ca67c6ab55) |
 
-| Envelope | Bytes | Explorer |
-| --- | ---: | --- |
-| **A** successor | 87470 | [614b7077…](https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) |
-| **B** successor | 498398 | [81bb2cef…](https://bchexplorer.cash/chipnet/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) |
-| **C** pay hop | 89354 | [06a6078a…](https://bchexplorer.cash/chipnet/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) |
+B is the ~147 KB occupancy completeness successor (not FRI9 `81bb2cef…` / 498398 B). Public Electrum will not show B until the lab miner includes it.
 
-Full hop table: [`workspaces/any-amount/MILESTONE.md`](../../workspaces/any-amount/MILESTONE.md).
+Full tables: [`workspaces/any-amount/MILESTONE.md`](../../workspaces/any-amount/MILESTONE.md).
 
 # Chipnet milestones
 

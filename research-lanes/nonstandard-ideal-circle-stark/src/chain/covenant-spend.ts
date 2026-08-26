@@ -873,6 +873,8 @@ export function compileFundVerifierKernels(
    *  are present the audited note-auth carrier is NOT funded, matching what the
    *  covenant expects (requireFriInputsAsm drops it for a batch). */
   stepLocks: readonly Uint8Array[] = [],
+  /** Occupancy envelope A: 6 fused folds, no note-auth, no booleanity kernels. */
+  occupancyA = false,
 ): {
   raw: Uint8Array;
   txid: string;
@@ -889,11 +891,13 @@ export function compileFundVerifierKernels(
   const data = { keys: { privateKeys: { key: privateKeyOf(wallet) } } };
   const foldN = foldKernelCount(slotKernels);
   const batched = stepLocks.length > 0;
+  const wantNote = !batched && includeNoteAuth(slotKernels, forceNoteAuth, occupancyA);
+  const boolN = occupancyA ? 0 : booleanityKernelCount(slotKernels);
   const extraCount =
-    (batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth)) +
+    (batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth, occupancyA)) +
     foldN +
     slotInputsCount(slotKernels) +
-    booleanityKernelCount(slotKernels) +
+    boolN +
     stepLocks.length;
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
@@ -929,14 +933,14 @@ export function compileFundVerifierKernels(
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
       { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: BigInt(kernelSats) },
-      ...(!batched && includeNoteAuth(slotKernels, forceNoteAuth)
+      ...(!batched && wantNote
         ? [{ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: BigInt(kernelSats) }]
         : []),
       ...Array.from({ length: foldN }, (_, f) => ({
         lockingBytecode: compileFoldLockP2sh32(
           foldQueriesPerKernel(slotKernels),
           f * foldQueriesPerKernel(slotKernels),
-          booleanityKernelCount(slotKernels) > 0 && f === 0,
+          boolN > 0 && f === 0,
         ),
         valueSatoshis: BigInt(kernelSats),
       })),
@@ -947,7 +951,7 @@ export function compileFundVerifierKernels(
         ),
         valueSatoshis: BigInt(kernelSats),
       })),
-      ...compileBooleanityLocks().slice(0, booleanityKernelCount(slotKernels)).map((lockingBytecode) => ({
+      ...compileBooleanityLocks().slice(0, boolN).map((lockingBytecode) => ({
         lockingBytecode,
         valueSatoshis: BigInt(kernelSats),
       })),

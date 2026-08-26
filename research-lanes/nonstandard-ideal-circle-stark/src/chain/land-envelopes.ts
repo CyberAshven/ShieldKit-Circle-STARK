@@ -24,6 +24,7 @@ import {
 } from "./chained.ts";
 import { tapeTipLockChain, tapeTipLockChainWithRoots } from "./tape-tip.ts";
 import { circleFriPlugin } from "../backends/circle/plugin.ts";
+import { decodeFriProof, verifyFri } from "../backends/circle/fri.ts";
 import { mixChangedRootsAndReserve, runMixSuccessor, runBatchSuccessor } from "../pool/mix-successor.ts";
 import { encodePublicPaa1, utxoValueFor } from "../pool/state.ts";
 import { SLOT_KERNEL_COUNT, SLOT_KERNEL_COUNT_CONSENSUS } from "./air-cqz.ts";
@@ -106,7 +107,7 @@ async function landAB(
 ): Promise<Record<string, unknown>> {
   const mix = runMixSuccessor({ depositCount: 6, withdrawSats: 1_000n });
   if (!mixChangedRootsAndReserve(mix)) throw new Error("mix did not update roots");
-  const v = circleFriPlugin.verify(mix.statement, mix.proof);
+  const v = verifyFri(mix.statement, decodeFriProof(mix.proof), mix.witness);
   if (!v.ok) throw new Error(`verify: ${v.reason}`);
   const wallet = await loadLabWallet();
   const client = await connectChipnet();
@@ -171,6 +172,9 @@ async function landAB(
       1_000,
       slots,
       successorFeeCoinSats(envelope),
+      false,
+      [],
+      envelope === "standard" && slots > SLOT_KERNEL_COUNT,
     );
     const kernelTxid = (await broadcastRetry(client, funded.raw, funded.txid)).txid;
     await waitForTxid(client, kernelTxid);
@@ -211,9 +215,9 @@ async function landAB(
       unlockingBytes: successor.unlockingBytes,
       broadcastPath: sent.path,
       explorer: {
-        genesis: `https://chipnet.imaginary.cash/tx/${genesisTxid}`,
-        kernels: `https://chipnet.imaginary.cash/tx/${kernelTxid}`,
-        successor: `https://chipnet.imaginary.cash/tx/${sent.txid}`,
+        genesis: `https://bchexplorer.cash/chipnet/tx/${genesisTxid}`,
+        kernels: `https://bchexplorer.cash/chipnet/tx/${kernelTxid}`,
+        successor: `https://bchexplorer.cash/chipnet/tx/${sent.txid}`,
       },
       verify: v,
     };
@@ -253,7 +257,9 @@ async function landC(
   // value is the new state's root either way.
   const roots = batched ? [...batched.roots] : [];
   while (batched && roots.length < tapeHopsC + 1) roots.push(roots[roots.length - 1]!);
-  const v = circleFriPlugin.verify(statement, proof);
+  const v = mix
+    ? verifyFri(statement, decodeFriProof(proof), mix.witness)
+    : circleFriPlugin.verify(statement, proof);
   if (!v.ok) throw new Error(`verify: ${v.reason}`);
   const wallet = await loadLabWallet();
   const client = await connectChipnet();
@@ -478,8 +484,8 @@ async function landC(
       },
       successor: pay.txid,
       explorer: {
-        genesis: `https://chipnet.imaginary.cash/tx/${genesisTxid}`,
-        pay: `https://chipnet.imaginary.cash/tx/${pay.txid}`,
+        genesis: `https://bchexplorer.cash/chipnet/tx/${genesisTxid}`,
+        pay: `https://bchexplorer.cash/chipnet/tx/${pay.txid}`,
       },
       verify: v,
     };
@@ -515,7 +521,7 @@ export async function landChipnetEnvelopes(args: {
     }
   };
   if (args.which === "all" || args.which === "standard") {
-    await run("standard", () => landAB("standard", SLOT_KERNEL_COUNT, args.scratch));
+    await run("standard", () => landAB("standard", SLOT_KERNEL_COUNT_CONSENSUS, args.scratch));
   }
   if (args.which === "all" || args.which === "consensus") {
     await run("consensus", () => landAB("consensus", SLOT_KERNEL_COUNT_CONSENSUS, args.scratch));

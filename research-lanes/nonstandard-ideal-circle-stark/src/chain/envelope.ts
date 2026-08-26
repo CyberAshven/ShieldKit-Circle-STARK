@@ -32,10 +32,10 @@ export const STANDARD_SUCCESSOR_FEE_SATS = 100_000n;
  * Relay floor is 1 sat/byte, so this must exceed the successor's byte count.
  * Consensus B in this lane may be up to 1 MB. Relay floor is 1 sat/byte,
  * so the fee must exceed the successor’s byte count (fee == size rejects).
- * Occupancy-sized silent successors are ~99 KB; 120_000 covers that with margin.
- * Raise this when a compile grows.
+ * Occupancy B is ~147 KB; fee must exceed byte count (1 sat/byte floor).
+ * 200_000 covers 147 KB with margin. Raise this when a compile grows.
  */
-export const CONSENSUS_SUCCESSOR_FEE_SATS = 120_000n;
+export const CONSENSUS_SUCCESSOR_FEE_SATS = 200_000n;
 
 export function successorFeeSats(envelope: TxEnvelope = "standard"): bigint {
   return envelope === "consensus" ? CONSENSUS_SUCCESSOR_FEE_SATS : STANDARD_SUCCESSOR_FEE_SATS;
