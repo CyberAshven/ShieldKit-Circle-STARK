@@ -2,6 +2,16 @@
 
 This lane has no Chipnet land on its vk yet. Old txids below are parent/sibling evidence. They are not relabeled.
 
+FRI9 envelope lands (2026-08-21), Melroy Chipnet explorer — **not** occupancy FRI11:
+
+| Envelope | Bytes | Explorer |
+| --- | ---: | --- |
+| **A** successor | 87470 | [614b7077…](https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) |
+| **B** successor | 498398 | [81bb2cef…](https://bchexplorer.cash/chipnet/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) |
+| **C** pay hop | 89354 | [06a6078a…](https://bchexplorer.cash/chipnet/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) |
+
+Full hop table: [`workspaces/any-amount/MILESTONE.md`](../../workspaces/any-amount/MILESTONE.md).
+
 # Chipnet milestones
 
 **Network:** BCH Chipnet only. Never mainnet.  

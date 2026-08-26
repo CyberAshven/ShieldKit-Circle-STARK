@@ -16,6 +16,15 @@ Three envelopes, size not the identity ([`ENVELOPES.md`](ENVELOPES.md)):
 | **B** | Completeness, consensus size allowed (FRI9 36-fold+36-slot land `81bb2cef…` / 498398 B). | this workspace `--envelope b` |
 | **C** | Same as B, multi-tx standard hops, counted-tip bind. | this workspace `--envelope c` |
 
+**Chipnet explorer (FRI9 lands, 2026-08-21).** These are the landed txs, not occupancy FRI11. Melroy [BCH Explorer](https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) (`bchexplorer.cash/chipnet`); also [Paytaca Chipnet](https://chipnet.bchexplorer.info/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024). Occupancy A/B/C has **no** Chipnet land on its vk yet.
+
+| Envelope | Land | Bytes | Melroy | Paytaca Chipnet |
+| --- | --- | ---: | --- | --- |
+| **A** | successor | 87470 | [614b7077…](https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) | [614b7077…](https://chipnet.bchexplorer.info/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) |
+| **B** | successor | 498398 | [81bb2cef…](https://bchexplorer.cash/chipnet/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) | [81bb2cef…](https://chipnet.bchexplorer.info/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) |
+| **C** | pay hop (19-tx chain) | 89354 | [06a6078a…](https://bchexplorer.cash/chipnet/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) | [06a6078a…](https://chipnet.bchexplorer.info/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) |
+| **C** | tape hop 0 | 82996 | [c7e001a6…](https://bchexplorer.cash/chipnet/tx/c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d) | [c7e001a6…](https://chipnet.bchexplorer.info/tx/c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d) |
+
 | Knob | Live | Notes |
 | --- | --- | --- |
 | `--envelope a` / `b` / `c` | Product CLI here is still FRI9 4-slot A / 36-slot B / 19-hop C. Occupancy A runs from the sha-in-occupancy-c lane. | Dummy cargo is not the verifier. Unlocking 10 KB **per input** — chunk kernels. |
@@ -61,14 +70,15 @@ Compile size proof (not a land): A **87611 B** (unlock 2685), B **498398 B** (un
 **A — standard, Electrum, 87470 B** (unlock 2685). First land of these kernels on
 `FRI_VERSION` 9.
 
-| | |
-| --- | --- |
-| Successor | `614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024` |
-| Kernels | `834f8ca14ded7e15d3380678ce902f7cf7c16be53a9c9ec6fc3f1c8ab17d03a2` |
-| Genesis | `b08420db6850ea725d7d852c95804edc67d27db5c07411fdd8abf407650eb6b7` |
-| Prep | `c50663208b83e9b3eeaa472fabd2e3ee487e6e26468976df4bd0e6308a5f2a5e` |
+| | txid | Melroy |
+| --- | --- | --- |
+| Successor | `614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024` | [explorer](https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024) |
+| Kernels | `834f8ca14ded7e15d3380678ce902f7cf7c16be53a9c9ec6fc3f1c8ab17d03a2` | [explorer](https://bchexplorer.cash/chipnet/tx/834f8ca14ded7e15d3380678ce902f7cf7c16be53a9c9ec6fc3f1c8ab17d03a2) |
+| Genesis | `b08420db6850ea725d7d852c95804edc67d27db5c07411fdd8abf407650eb6b7` | [explorer](https://bchexplorer.cash/chipnet/tx/b08420db6850ea725d7d852c95804edc67d27db5c07411fdd8abf407650eb6b7) |
+| Prep | `c50663208b83e9b3eeaa472fabd2e3ee487e6e26468976df4bd0e6308a5f2a5e` | [explorer](https://bchexplorer.cash/chipnet/tx/c50663208b83e9b3eeaa472fabd2e3ee487e6e26468976df4bd0e6308a5f2a5e) |
 
-https://chipnet.imaginary.cash/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024
+https://bchexplorer.cash/chipnet/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024  
+https://chipnet.bchexplorer.info/tx/614b7077a768ae7ed1d7aa34d5efe53dea337eff1a7bc5bed4284d1d68323024
 
 **B — consensus, 498398 B** (unlock 5405, 36 folds + 36 R-slots + note-auth).
 Accepted by the Start9 BCHN via JSON-RPC `sendrawtransaction` through `nsenter`
@@ -77,42 +87,45 @@ node, which is the bar for a consensus-size land here — same as `b6818bd2…`.
 Public Electrum does **not** carry the successor (>100000 B does not relay);
 it appears publicly once the lab miner includes it. Prep/genesis/kernels are public.
 
-| | |
+| | txid | Melroy |
 | --- | --- |
-| Successor | `81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83` |
-| Kernels | `008eb3f70c16b1a1b350f75ee92caef585c657c2c64c9992d14496a1819cacf1` |
-| Genesis | `8a0349efca9560fe50ef8bef1573deb270ffddc4cb1e06f51f2201d3f99b5aac` |
-| Prep | `0e9c3de9dabe6ada2b382a953c5f7210e4054601af98827c5c8e235b1358385d` |
+| Successor | `81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83` | [explorer](https://bchexplorer.cash/chipnet/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83) |
+| Kernels | `008eb3f70c16b1a1b350f75ee92caef585c657c2c64c9992d14496a1819cacf1` | [explorer](https://bchexplorer.cash/chipnet/tx/008eb3f70c16b1a1b350f75ee92caef585c657c2c64c9992d14496a1819cacf1) |
+| Genesis | `8a0349efca9560fe50ef8bef1573deb270ffddc4cb1e06f51f2201d3f99b5aac` | [explorer](https://bchexplorer.cash/chipnet/tx/8a0349efca9560fe50ef8bef1573deb270ffddc4cb1e06f51f2201d3f99b5aac) |
+| Prep | `0e9c3de9dabe6ada2b382a953c5f7210e4054601af98827c5c8e235b1358385d` | [explorer](https://bchexplorer.cash/chipnet/tx/0e9c3de9dabe6ada2b382a953c5f7210e4054601af98827c5c8e235b1358385d) |
+
+https://bchexplorer.cash/chipnet/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83  
+https://chipnet.bchexplorer.info/tx/81bb2cefe40233f096f7a69c2f3b98aa60bf6e3fb969d2b9bb5f3f82f3ecdf83
 
 Needed `CONSENSUS_SUCCESSOR_FEE_SATS` 400000 → 600000: relay floor is 1 sat/byte
 and the FRI 9 successor is 498398 B, so 400000 drew `min relay fee not met (code 66)`.
 
 **C — 19 chunked standard txs, all on public Electrum, with the binding covenant.**
 18 tape hops + pay hop, total **1662420 B**, every hop under the 100000 relay
-gate. Genesis `a8b3b679d8185911ede709ab24c18fa7d24d01fcd30c54b25055b33a6616359d`
+gate. Genesis [`a8b3b679…`](https://bchexplorer.cash/chipnet/tx/a8b3b679d8185911ede709ab24c18fa7d24d01fcd30c54b25055b33a6616359d)
 (pool + change + 18 sibling NFTs).
 
-| Hop | Role | Bytes | Txid |
-| --- | --- | --- | --- |
-| 0 | tape | 82996 | `c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d` |
-| 1 | tape | 86006 | `6051141ca2fc73fcf3ec05f06545e19586262a575c8a9f944a75be559b8da114` |
-| 2 | tape | 87754 | `89cbc6db3b2d1ee94944db9bbb6f94579a29e680c469ab6914debfc12488841f` |
-| 3 | tape | 87754 | `ac74990535afdaf32dcabeaaa1a4e3015289f09111b56faf8938587a5a43cbf4` |
-| 4 | tape | 87754 | `a042ac38ef3ec87ad5f8c0517efb089f5dd9089297f726597d25188620ec5e57` |
-| 5 | tape | 87754 | `1eb3e61354b5ccb27944fe0a5242433ac7ffe99c21addfd6c0289b6353d571d3` |
-| 6 | tape | 87754 | `5ef54bd9ee92c8f2afcb4824c7fa15b3b91cb8cc29d15a80feceb6e8914d3e12` |
-| 7 | tape | 87754 | `09f8b80d2705fe2e49c4802bb09eee118bb19fcdae45b5723a782299766bfdc6` |
-| 8 | tape | 87754 | `7510b501d95b1694dc1613fcc7fc7e1788c9f27a830cb09a33295713c68948f8` |
-| 9 | tape | 87754 | `aa05dc7d3f29c1f6375fed0130fe6e3a923598f7a2770d4706d82297984a8c5b` |
-| 10 | tape | 87754 | `edcf357644934a95603d2e5b20af98216430bdf5a5fa4c2e244cc1c258ba404d` |
-| 11 | tape | 87754 | `5abc066b16ff3b315ad9a3a879e5d79a09327567e6f69d242a4fe579fcbac937` |
-| 12 | tape | 87754 | `c5c3bcb3c26eeff3f579543a71c20993be03a7f08f72270af75256a98e29dee2` |
-| 13 | tape | 87754 | `033ec00308bf12a55bfe2377fbd09d73aa6324a3ffdd8e10291abe381ca48c7c` |
-| 14 | tape | 87754 | `50c9a328d37b50a1ff1e56ea5da0307280cf3fa967c6aa3bcc83f4a0ced23e7b` |
-| 15 | tape | 87754 | `56efb46ac132db40ee8651c57b66b1ba8b8c8937d37edf56702b9b4670721638` |
-| 16 | tape | 87754 | `9e2dd016adca9844c718ac135575082a5a85ab3b1a527a9bb9af69e0a974364b` |
-| 17 | tape | 87754 | `1ef3edbacc5dc9ee8cdd39317e6717465f00c6ac75d480f1d2e17f0e2e4c41ef` |
-| 18 | **pay** | 89354 | `06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0` |
+| Hop | Role | Bytes | Txid (Melroy Chipnet) |
+| --- | --- | ---: | --- |
+| 0 | tape | 82996 | [c7e001a6…](https://bchexplorer.cash/chipnet/tx/c7e001a63e27fde6f085b53439fac3138c8e5baba999b368d25ec006b115b22d) |
+| 1 | tape | 86006 | [6051141c…](https://bchexplorer.cash/chipnet/tx/6051141ca2fc73fcf3ec05f06545e19586262a575c8a9f944a75be559b8da114) |
+| 2 | tape | 87754 | [89cbc6db…](https://bchexplorer.cash/chipnet/tx/89cbc6db3b2d1ee94944db9bbb6f94579a29e680c469ab6914debfc12488841f) |
+| 3 | tape | 87754 | [ac749905…](https://bchexplorer.cash/chipnet/tx/ac74990535afdaf32dcabeaaa1a4e3015289f09111b56faf8938587a5a43cbf4) |
+| 4 | tape | 87754 | [a042ac38…](https://bchexplorer.cash/chipnet/tx/a042ac38ef3ec87ad5f8c0517efb089f5dd9089297f726597d25188620ec5e57) |
+| 5 | tape | 87754 | [1eb3e613…](https://bchexplorer.cash/chipnet/tx/1eb3e61354b5ccb27944fe0a5242433ac7ffe99c21addfd6c0289b6353d571d3) |
+| 6 | tape | 87754 | [5ef54bd9…](https://bchexplorer.cash/chipnet/tx/5ef54bd9ee92c8f2afcb4824c7fa15b3b91cb8cc29d15a80feceb6e8914d3e12) |
+| 7 | tape | 87754 | [09f8b80d…](https://bchexplorer.cash/chipnet/tx/09f8b80d2705fe2e49c4802bb09eee118bb19fcdae45b5723a782299766bfdc6) |
+| 8 | tape | 87754 | [7510b501…](https://bchexplorer.cash/chipnet/tx/7510b501d95b1694dc1613fcc7fc7e1788c9f27a830cb09a33295713c68948f8) |
+| 9 | tape | 87754 | [aa05dc7d…](https://bchexplorer.cash/chipnet/tx/aa05dc7d3f29c1f6375fed0130fe6e3a923598f7a2770d4706d82297984a8c5b) |
+| 10 | tape | 87754 | [edcf3576…](https://bchexplorer.cash/chipnet/tx/edcf357644934a95603d2e5b20af98216430bdf5a5fa4c2e244cc1c258ba404d) |
+| 11 | tape | 87754 | [5abc066b…](https://bchexplorer.cash/chipnet/tx/5abc066b16ff3b315ad9a3a879e5d79a09327567e6f69d242a4fe579fcbac937) |
+| 12 | tape | 87754 | [c5c3bcb3…](https://bchexplorer.cash/chipnet/tx/c5c3bcb3c26eeff3f579543a71c20993be03a7f08f72270af75256a98e29dee2) |
+| 13 | tape | 87754 | [033ec003…](https://bchexplorer.cash/chipnet/tx/033ec00308bf12a55bfe2377fbd09d73aa6324a3ffdd8e10291abe381ca48c7c) |
+| 14 | tape | 87754 | [50c9a328…](https://bchexplorer.cash/chipnet/tx/50c9a328d37b50a1ff1e56ea5da0307280cf3fa967c6aa3bcc83f4a0ced23e7b) |
+| 15 | tape | 87754 | [56efb46a…](https://bchexplorer.cash/chipnet/tx/56efb46ac132db40ee8651c57b66b1ba8b8c8937d37edf56702b9b4670721638) |
+| 16 | tape | 87754 | [9e2dd016…](https://bchexplorer.cash/chipnet/tx/9e2dd016adca9844c718ac135575082a5a85ab3b1a527a9bb9af69e0a974364b) |
+| 17 | tape | 87754 | [1ef3edba…](https://bchexplorer.cash/chipnet/tx/1ef3edbacc5dc9ee8cdd39317e6717465f00c6ac75d480f1d2e17f0e2e4c41ef) |
+| 18 | **pay** | 89354 | [06a6078a…](https://bchexplorer.cash/chipnet/tx/06a6078a1d85ed68233e44a3a22a07d1b6a89774e1b0b7ff69799ac727b603c0) |
 
 **The tape is bound by consensus, not by convention.** Each hop's tip is
 `L(d, i)` — a P2SH32 whose redeem embeds `d = hash256(proof)` and requires output
@@ -139,30 +152,30 @@ These txs landed **before** grind/algebraicC kernels. `b6818bd2…` is the 479 K
 
 | | |
 | --- | --- |
-| Successor | `05f17bf1374f8bab5718bc7e929abe991cc709d1f2c0e881ab0f05bacb28b55c` |
-| Genesis | `dd3894fc1a5daf8620bbe36867b1674ef43bdb2d772a881f54b6546f45ddbfb5` |
-| Kernels | `7b1e321be30309cab3a36c9e7eb6c2334d065c1cc88136cc298992b87f2738e9` |
-| Prep | `c1c0f26d24be919211bd09a5ca94c43af0c48e62fb549cebcc7634d54b1ac09b` |
+| Successor | [`05f17bf1…`](https://bchexplorer.cash/chipnet/tx/05f17bf1374f8bab5718bc7e929abe991cc709d1f2c0e881ab0f05bacb28b55c) |
+| Genesis | [`dd3894fc…`](https://bchexplorer.cash/chipnet/tx/dd3894fc1a5daf8620bbe36867b1674ef43bdb2d772a881f54b6546f45ddbfb5) |
+| Kernels | [`7b1e321b…`](https://bchexplorer.cash/chipnet/tx/7b1e321be30309cab3a36c9e7eb6c2334d065c1cc88136cc298992b87f2738e9) |
+| Prep | [`c1c0f26d…`](https://bchexplorer.cash/chipnet/tx/c1c0f26d24be919211bd09a5ca94c43af0c48e62fb549cebcc7634d54b1ac09b) |
 
-https://chipnet.imaginary.cash/tx/05f17bf1374f8bab5718bc7e929abe991cc709d1f2c0e881ab0f05bacb28b55c
+https://bchexplorer.cash/chipnet/tx/05f17bf1374f8bab5718bc7e929abe991cc709d1f2c0e881ab0f05bacb28b55c
 
 **B — consensus, JSON-RPC mempool, 479356 B, 84 vin**
 
 | | |
 | --- | --- |
-| Successor | `b6818bd260a9fff6803195fcd14d276116eedc25a36686b2eaba5655d788b002` |
+| Successor | [`b6818bd2…`](https://bchexplorer.cash/chipnet/tx/b6818bd260a9fff6803195fcd14d276116eedc25a36686b2eaba5655d788b002) |
 | Path | local BCHN `sendrawtransaction` (`acceptnonstdtxn=1`). Public Electrum will not show it. |
 
 **C — chained tape + last-hop pay (pre-pack land)**
 
 | Hop | Role | Bytes | Payouts | Txid |
 | --- | --- | --- | --- | --- |
-| 0 | tape | 267 | 0 | `6d242fee88f61ee22af83902dccdb204d6d37a39a741376d416a5ab48a51d967` |
-| 1 | tape | 267 | 0 | `ec4cd5b3a10a23ebc4b82786a1d06dc71bfffce5fdb5a81f2be2080d03df9601` |
-| 2 | pay | 82506 | 1 | `6f9fd1d07594674cf3ec3d5c83312ee5e77a0df6597ddd97ae3f423486970b57` |
+| 0 | tape | 267 | 0 | [6d242fee…](https://bchexplorer.cash/chipnet/tx/6d242fee88f61ee22af83902dccdb204d6d37a39a741376d416a5ab48a51d967) |
+| 1 | tape | 267 | 0 | [ec4cd5b3…](https://bchexplorer.cash/chipnet/tx/ec4cd5b3a10a23ebc4b82786a1d06dc71bfffce5fdb5a81f2be2080d03df9601) |
+| 2 | pay | 82506 | 1 | [6f9fd1d0…](https://bchexplorer.cash/chipnet/tx/6f9fd1d07594674cf3ec3d5c83312ee5e77a0df6597ddd97ae3f423486970b57) |
 
-Genesis `5f9701e4f52c3e0c74bc07c405b5c0cb75080f774b465ef7b5917d656c5060d3`.  
-https://chipnet.imaginary.cash/tx/6f9fd1d07594674cf3ec3d5c83312ee5e77a0df6597ddd97ae3f423486970b57
+Genesis [`5f9701e4…`](https://bchexplorer.cash/chipnet/tx/5f9701e4f52c3e0c74bc07c405b5c0cb75080f774b465ef7b5917d656c5060d3).  
+https://bchexplorer.cash/chipnet/tx/6f9fd1d07594674cf3ec3d5c83312ee5e77a0df6597ddd97ae3f423486970b57
 
 CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 
@@ -211,11 +224,11 @@ CLI: `pool land --envelope a|b|c|all`. C is not a 5-tx Core package.
 kernel. 12 is the ceiling for envelope A: 99063 B against the 100000 B standard
 limit, and N=13 measures 100014 B - fourteen bytes over. ~951 B per extra note.
 
-| | txid | bytes |
-| --- | --- | --- |
-| genesis | `ee9f46c0dea8b7a81a628b48c44ee0de7ca99bea718f4e87f4f5a1f05bb6516d` | 392 |
-| kernels | `638c55f2eadab2876c7882968bf3284e5d6fd5ebbd9c49efe46cd0b258b428e6` | 1505 |
-| successor | `ce421f056a05680b44345ec92ecae3e26fb501d949a6f554a4e73200c128b981` | 99063 |
+| | txid | bytes | Melroy |
+| --- | --- | ---: | --- |
+| genesis | `ee9f46c0dea8b7a81a628b48c44ee0de7ca99bea718f4e87f4f5a1f05bb6516d` | 392 | [explorer](https://bchexplorer.cash/chipnet/tx/ee9f46c0dea8b7a81a628b48c44ee0de7ca99bea718f4e87f4f5a1f05bb6516d) |
+| kernels | `638c55f2eadab2876c7882968bf3284e5d6fd5ebbd9c49efe46cd0b258b428e6` | 1505 | [explorer](https://bchexplorer.cash/chipnet/tx/638c55f2eadab2876c7882968bf3284e5d6fd5ebbd9c49efe46cd0b258b428e6) |
+| successor | `ce421f056a05680b44345ec92ecae3e26fb501d949a6f554a4e73200c128b981` | 99063 | [explorer](https://bchexplorer.cash/chipnet/tx/ce421f056a05680b44345ec92ecae3e26fb501d949a6f554a4e73200c128b981) |
 
 32 inputs (1 pool + 10 FRI + cqz/grind/algebraicC + 1 fold + 4 slots + **12 steps**
 + 1 funder) and 14 outputs (pool + 12 payouts + change - BIND_PAA1 requires
@@ -223,9 +236,9 @@ limit, and N=13 measures 100014 B - fourteen bytes over. ~951 B per extra note.
 No audited note-auth kernel: a batch drops it.
 
 An earlier 3-note run landed the same way: genesis
-`938336c4af01412c2d9e87af708934635b1d2bc7e21d5d520677977f4c727cfa`, kernels
-`fff91c85fff28b6061d5dd5d409ad94838e1e29e5892f0194724c686d490bdb4`, successor
-`0c669205e84ba0bf109e182e85779ef61ec7dd31c7b7e713884c0e373f3e284f` (90504 B).
+[`938336c4…`](https://bchexplorer.cash/chipnet/tx/938336c4af01412c2d9e87af708934635b1d2bc7e21d5d520677977f4c727cfa), kernels
+[`fff91c85…`](https://bchexplorer.cash/chipnet/tx/fff91c85fff28b6061d5dd5d409ad94838e1e29e5892f0194724c686d490bdb4), successor
+[`0c669205…`](https://bchexplorer.cash/chipnet/tx/0c669205e84ba0bf109e182e85779ef61ec7dd31c7b7e713884c0e373f3e284f) (90504 B).
 
 **Envelope B is not landed.** It compiles, pre-flights clean and verifies on the VM
 at 499665 B, but that is non-standard and electrum will not relay it - it needs a
@@ -247,14 +260,14 @@ direct node RPC (`BCHN_RPC_URL`). A transport limit, not a validity one.
 
 | When | What | Tx / commit |
 | --- | --- | --- |
-| 2026-08-19 | Post-plugin standard **79525 B** + consensus **283992 B** | `23fd1b7dae7c10ac692113cf3e3bc3776cd42d4e6780d916032342fc73faaf59` / `9362df54203c560a34e105ec3a11442a2a50c750e82938191811f1bda3edc833` |
-| 2026-08-19 | Hash-knob + Q/N pack, standard **79436 B** | `f14bff7baae1befc2f8becba04b968788b4e8bec65bc336b514a8d5977075671` |
-| 2026-08-19 | Intermediate standard **99742 B** (T still interpolated cells+c) | `c40f49480997ecb00354766d4d31e4ec3d5811b61b8d66620ad3c321b12b87ad` |
-| 2026-08-17 | Opening-mask standard **98979 B** + consensus **383031 B** | `617b102276fb79122bdd7ca36f902ad65e753845fddb168c0bb1aeb97bbb2ccc` / `b3ea8a75db4badfa1690bd9d8e98ce08565b360ddf8098e5ffade053adf643a3` |
-| 2026-08-16 | Consensus **36-fold** **382203 B** @ 319402 | `b1415fafdc65e76d106956064667f94bc988a38da69e63c06acef1e8a1b9cb29` |
-| 2026-08-16 | Standard 1-fold + 6 C=QZ **98831 B** | `2acb1196589b32fb1179f57dafc402dcb747f2698f364633d90dec180ab446e0` |
-| 2026-08-16 | 10-fold consensus **301279 B** @ 319278 | `18c74b49731c1914425ba10804233bb208c524e5af943c8bafc55751b007f3e6` |
-| 2026-08-16 | 36-slot **no-fold** **270251 B** | `356630bd10c6bf9b3d4bbd6d1835ed3baed430641f168c2ad1e1f534a3080898` |
+| 2026-08-19 | Post-plugin standard **79525 B** + consensus **283992 B** | [23fd1b7d…](https://bchexplorer.cash/chipnet/tx/23fd1b7dae7c10ac692113cf3e3bc3776cd42d4e6780d916032342fc73faaf59) / [9362df54…](https://bchexplorer.cash/chipnet/tx/9362df54203c560a34e105ec3a11442a2a50c750e82938191811f1bda3edc833) |
+| 2026-08-19 | Hash-knob + Q/N pack, standard **79436 B** | [f14bff7b…](https://bchexplorer.cash/chipnet/tx/f14bff7baae1befc2f8becba04b968788b4e8bec65bc336b514a8d5977075671) |
+| 2026-08-19 | Intermediate standard **99742 B** (T still interpolated cells+c) | [c40f4948…](https://bchexplorer.cash/chipnet/tx/c40f49480997ecb00354766d4d31e4ec3d5811b61b8d66620ad3c321b12b87ad) |
+| 2026-08-17 | Opening-mask standard **98979 B** + consensus **383031 B** | [617b1022…](https://bchexplorer.cash/chipnet/tx/617b102276fb79122bdd7ca36f902ad65e753845fddb168c0bb1aeb97bbb2ccc) / [b3ea8a75…](https://bchexplorer.cash/chipnet/tx/b3ea8a75db4badfa1690bd9d8e98ce08565b360ddf8098e5ffade053adf643a3) |
+| 2026-08-16 | Consensus **36-fold** **382203 B** @ 319402 | [b1415faf…](https://bchexplorer.cash/chipnet/tx/b1415fafdc65e76d106956064667f94bc988a38da69e63c06acef1e8a1b9cb29) |
+| 2026-08-16 | Standard 1-fold + 6 C=QZ **98831 B** | [2acb1196…](https://bchexplorer.cash/chipnet/tx/2acb1196589b32fb1179f57dafc402dcb747f2698f364633d90dec180ab446e0) |
+| 2026-08-16 | 10-fold consensus **301279 B** @ 319278 | [18c74b49…](https://bchexplorer.cash/chipnet/tx/18c74b49731c1914425ba10804233bb208c524e5af943c8bafc55751b007f3e6) |
+| 2026-08-16 | 36-slot **no-fold** **270251 B** | [356630bd…](https://bchexplorer.cash/chipnet/tx/356630bd10c6bf9b3d4bbd6d1835ed3baed430641f168c2ad1e1f534a3080898) |
 
 `18c74b49…` stays the 10-fold land. `356630bd…` stays no-fold.
 
