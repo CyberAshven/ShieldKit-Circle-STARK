@@ -2,6 +2,7 @@ import { encodeStatement, type PoolStatement } from "../../pool/statement.ts";
 import { IncrementalMerkle, commitNote, nullifierOf, type Note } from "../../pool/notes.ts";
 import { eq32, isZero32, ZERO32 } from "../../pool/bytes.ts";
 import { commitAmount } from "../../amounts/hash-commit.ts";
+import { shaStatementResiduals, type HashBitTrace } from "../../chain/note-auth-air.ts";
 import { defaultInternalHash, type InternalHash } from "./internal-hash.ts";
 import { add, el, inv, mul, sub, type M31El } from "./m31.ts";
 import { bytesToFelt4 } from "./felt-hash.ts";
@@ -349,8 +350,11 @@ export function algebraicCQuotientLde(
   hash: InternalHash = defaultInternalHash(),
   auth?: FriAuth,
   hashLeaves?: Uint8Array,
+  shaResiduals?: M31El[],
+  shaTrace?: HashBitTrace,
+  occupancyOnly = false,
 ): { qLde: M31El[]; nLde: M31El[]; zLde: M31El[] } {
-  const residuals = combinedResiduals(statement, hash, auth, hashLeaves);
+  const residuals = combinedResiduals(statement, hash, auth, hashLeaves, shaResiduals, shaTrace, occupancyOnly);
   const { qLde, cLde, zLde } = quotientAtDomain(residuals, smallDomain, bigDomain);
   return { qLde, nLde: cLde, zLde };
 }
@@ -407,74 +411,45 @@ export function authPreimageOpen(auth: FriAuth, hash: InternalHash = defaultInte
   }
 }
 
-function statementHashTriplet(
-  statement: PoolStatement,
-  auth?: FriAuth,
-): [Uint8Array, Uint8Array, Uint8Array] {
-  const commit =
-    statement.action === "DEPOSIT" ? statement.amountCommitOut : statement.amountCommitIn;
-  const leaf =
-    auth && auth.leaf.length === 32
-      ? auth.leaf
-      : statement.noteCommitment;
-  return [commit, leaf, statement.nullifier];
+function mixSha(r: M31El[], sha: M31El[]): M31El[] {
+  const out = r.slice();
+  for (let i = 0; i < TRACE_LEN; i += 1) out[i] = add(out[i]!, sha[i] ?? 0n);
+  return out;
 }
 
-/** Occupancy algebraicC plus SHA public-out residuals at r[7+]. Missing leaves vs nonzero publics do not vanish. */
+/** Statement-bound SHA mix. Cargo/auth-vs-hashLeaves is not the relation. */
+export function shaMixForOccupancyC(
+  statement: PoolStatement,
+  _hash: InternalHash = defaultInternalHash(),
+  auth?: FriAuth,
+  _shaResiduals?: M31El[],
+  hashLeaves?: Uint8Array,
+  shaTrace?: HashBitTrace,
+  occupancyOnly = false,
+): M31El[] {
+  return shaStatementResiduals(
+    statement,
+    shaTrace,
+    hashLeaves,
+    auth && auth.leaf.length === 32 ? auth.leaf : undefined,
+    occupancyOnly,
+  );
+}
+
+/** Occupancy algebraicC plus SHA residuals, mixed before quotient. */
 export function combinedResiduals(
   statement: PoolStatement,
   hash: InternalHash = defaultInternalHash(),
   auth?: FriAuth,
   hashLeaves?: Uint8Array,
+  shaResiduals?: M31El[],
+  shaTrace?: HashBitTrace,
+  occupancyOnly = false,
 ): M31El[] {
   const r = algebraicC(publicCells(statement, hash), statement, hash);
-  const [expectCommit, expectLeaf, expectNf] = statementHashTriplet(statement, auth);
-  let claimedCommit = new Uint8Array(32);
-  let claimedLeaf = new Uint8Array(32);
-  let claimedNf = new Uint8Array(32);
-  if (hashLeaves && hashLeaves.length >= 96) {
-    claimedCommit = hashLeaves.subarray(0, 32);
-    claimedLeaf = hashLeaves.subarray(32, 64);
-    claimedNf = hashLeaves.subarray(64, 96);
-    if (auth && authPreimageOpen(auth, hash)) {
-      const opened = openedNote(auth);
-      const fromAuth = [
-        commitAmount(opened.amountSats, opened.rho, hash),
-        commitNote(opened, hash),
-        statement.action === "DEPOSIT"
-          ? new Uint8Array(ZERO32)
-          : nullifierOf(opened, statement.oldState.poolInstanceId, hash),
-      ];
-      if (!eq32(fromAuth[0]!, claimedCommit) || !eq32(fromAuth[1]!, claimedLeaf) || !eq32(fromAuth[2]!, claimedNf)) {
-        claimedCommit = fromAuth[0]!;
-        claimedLeaf = fromAuth[1]!;
-        claimedNf = fromAuth[2]!;
-      }
-    }
-  } else if (auth && authPreimageOpen(auth, hash)) {
-    const opened = openedNote(auth);
-    claimedCommit = commitAmount(opened.amountSats, opened.rho, hash);
-    claimedLeaf = commitNote(opened, hash);
-    claimedNf =
-      statement.action === "DEPOSIT"
-        ? new Uint8Array(ZERO32)
-        : nullifierOf(opened, statement.oldState.poolInstanceId, hash);
-  }
-  const pairs: Array<[Uint8Array, Uint8Array]> = [
-    [expectCommit, claimedCommit],
-    [expectLeaf, claimedLeaf],
-    [expectNf, claimedNf],
-  ];
-  let k = 7;
-  for (const [a, b] of pairs) {
-    for (let i = 0; i < 32 && k < TRACE_LEN; i += 2) {
-      const la = BigInt(a[i]!) | (BigInt(a[i + 1]!) << 8n);
-      const lb = BigInt(b[i]!) | (BigInt(b[i + 1]!) << 8n);
-      r[k] = sub(la, lb);
-      k += 1;
-    }
-  }
-  return r;
+  if (occupancyOnly) return r;
+  const sha = shaMixForOccupancyC(statement, hash, auth, shaResiduals, hashLeaves, shaTrace, false);
+  return mixSha(r, sha);
 }
 
 /** Field-only transition constraints. No Merkle / JS boolean flags. */
@@ -520,7 +495,7 @@ export function buildTrace(
   const mem = checkAuthRelation(statement, auth, witness, hash);
   if (!mem.ok) throw new Error(`unsatisfiable pool AIR: ${mem.reason}`);
   const cells = publicCells(statement, hash);
-  const residuals = combinedResiduals(statement, hash, auth);
+  const residuals = combinedResiduals(statement, hash, auth, undefined, undefined, undefined, true);
   return { cells, residuals, auth };
 }
 

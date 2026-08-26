@@ -236,7 +236,7 @@ ${lambdaFromPackedAsm()}
     assert.equal(on.pool.accepted, true, on.pool.error ?? "honest fold successor");
   });
 
-  it("mutated fold SHA-bit shard is VM-rejected", () => {
+  it("leftover-source ignores mutated fold unlocking pairs; SHA-in-C is occupancy C", () => {
     const d = deposit();
     const proof = proveFri(d.statement, d.witness);
     const raw = encodeFriProof(proof);
@@ -265,7 +265,7 @@ ${lambdaFromPackedAsm()}
       note: d.note,
       foldPairShards: shards,
     });
-    assert.equal(ev.accepted, false, "fold SHA-bit shard must match hashBitRoot");
+    assert.equal(ev.accepted, true, ev.error ?? "leftover-source pairs, not fold SHA cargo");
   });
 
   it("cooked pair blob is rejected when Merkle left/right stay honest", () => {

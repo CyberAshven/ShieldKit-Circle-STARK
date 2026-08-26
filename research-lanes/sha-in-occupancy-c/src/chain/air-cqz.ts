@@ -23,6 +23,7 @@ import { encodePublicPaa1 } from "../pool/state.ts";
 import { concatBytes, writeU32BE } from "../pool/bytes.ts";
 
 import { algebraicCQuotientLde, onChainCells } from "../backends/circle/air.ts";
+import { shaTraceAcc, statementShaOpens } from "./note-auth-air.ts";
 import { decodeFriProof, type FriProof } from "../backends/circle/fri.ts";
 import { interpolateCircle } from "../backends/circle/interpolate.ts";
 import { addPoints, CIRCLE_GEN, CIRCLE_ONE, scalarMul, type CirclePoint } from "../backends/circle/group.ts";
@@ -42,7 +43,10 @@ import { uniqueQueryIndices } from "../backends/circle/query-sample.ts";
 import { decodeFeltBlob, encodeFeltBlob, M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
 import { slotRCqzAsm, slotRCqzBodyAsm } from "./r-kernel.ts";
 
-export const AIR_PACKED_SIZE = 1704;
+export const AIR_PACKED_SIZE = 1848;
+/** 36 batched SHA TRACE openings (one felt per occupancy query). */
+export const AIR_OFF_SHA_C = 1704;
+export const AIR_SHA_C_BYTES = FRI_QUERIES * 4;
 /** Packed AIR lives on CQZ (pool + 7 FRI kernels). Input 0 unlocking is leftover-only. */
 export const PACKED_CARRIER_INPUT = 8;
 /** First unlocking push of CQZ is packed||tail (PUSHDATA2). */
@@ -323,7 +327,10 @@ export function encodeAirPacked(
     bigDomain,
     hash,
     p.auth,
-    hashLeaves,
+    undefined,
+    undefined,
+    p.shaTrace,
+    false,
   );
   const digest = hash.digest(encodeStatement(statement, hash));
   const packed = new Uint8Array(AIR_PACKED_SIZE);
@@ -356,11 +363,11 @@ export function encodeAirPacked(
       ? p.hashRoot
       : new Uint8Array(32);
   packed.set(authBind, AIR_OFF_NET);
-  const hashBitRoot =
+  const grindRoot =
     p.hashBitRoot && p.hashBitRoot.length === 32 && p.hashBitRoot.some((b) => b !== 0)
       ? p.hashBitRoot
       : new Uint8Array(32);
-  packed.set(hashBitRoot, AIR_OFF_HASHBIT);
+  packed.set(grindRoot, AIR_OFF_HASHBIT);
   const qIdx = fiatShamirQueryIndices(digest, p, hash, evenBlob, oddBlob, authBind);
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     const i = qIdx[s]!;
@@ -374,9 +381,10 @@ export function encodeAirPacked(
   const full = onChainCells(statement, hash);
   for (const i of [3, 5, 6, 18, 23, 24]) cells[i] = full[i]!;
   packed.set(encodeFeltBlob(cells), AIR_OFF_CELLS);
-  if (hashLeaves) {
-    packed.set(hashLeaves.subarray(0, 96), AIR_OFF_CELLS + HASH_CELL_COMMIT * 4);
-  }
+  const pubs = statementShaOpens(statement, p.auth && p.auth.leaf.length === 32 ? p.auth.leaf : undefined);
+  packed.set(concatBytes(pubs.amountCommit, pubs.leaf, pubs.nf), AIR_OFF_CELLS + HASH_CELL_COMMIT * 4);
+  const open = p.shaTrace ? shaTraceAcc(p.shaTrace, statement.action) : 0n;
+  for (let s = 0; s < FRI_QUERIES; s += 1) packed.set(encodeLe(open), AIR_OFF_SHA_C + s * 4);
   for (let i = 0; i < FRI_FINAL; i += 1) {
     packed.set(encodeQm31(p.final[i] ?? [0n, 0n, 0n, 0n]), AIR_OFF_FINAL + i * 16);
   }
@@ -410,7 +418,17 @@ export function nqzAt(
   index: number,
   hash: InternalHash = defaultInternalHash(),
 ): { n: M31El; z: M31El; q: M31El } {
-  const { nLde, zLde, qLde } = algebraicCQuotientLde(statement, smallDomain, bigDomain, hash);
+  const { nLde, zLde, qLde } = algebraicCQuotientLde(
+    statement,
+    smallDomain,
+    bigDomain,
+    hash,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+  );
   return { n: nLde[index]!, z: zLde[index]!, q: qLde[index]! };
 }
 

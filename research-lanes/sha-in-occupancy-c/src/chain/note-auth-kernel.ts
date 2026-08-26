@@ -321,7 +321,6 @@ OP_ENDIF
  * Packed input-0 prefix is PUSHDATA2 (1+2). Bind = packed[AIR_OFF_NET:][0:32].
  */
 export const NOTE_AUTH_KERNEL_ASM = `
-${HASH_BIT_PREFIX_ASM}
 ${LOAD_AIR_PACKED}
 OP_DUP
 <${AIR_OFF_NET}> OP_SPLIT OP_NIP

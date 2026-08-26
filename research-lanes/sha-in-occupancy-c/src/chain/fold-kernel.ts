@@ -114,8 +114,7 @@ ${queryPairsAsm(pairIndex)}
 /**
  * Stack: leftover pairs → pairs.
  * Rebuilds query-major (L0||L1||…||L6)×nFold from layer-major leftover.
- * Fold math uses that leftover; unlocking's first 1200 B is the SHA-bit shard
- * (density-preserving swap, not dummy pad). Merkle leftover-bind stays in FRI kernels.
+ * Fold math uses that leftover. SHA-in-C is occupancy C, not a 1200 B fold shard.
  */
 export function bindFoldPairsLeftoverAsm(nFold: number, queryIndex: number): string {
   const later = FRI_LEFTOVER_LATER_BYTES;
@@ -195,7 +194,11 @@ function fusedRAsm(nFold: number, queryIndex: number): string {
   void queryIndex;
   return `
 ${fusedRPrepAsm()}
+<0>
+OP_TOALTSTACK
 ${Array.from({ length: nFold }, (_, i) => one(i)).join("\n")}
+OP_FROMALTSTACK
+OP_DROP
 OP_2DROP
 OP_DROP
 `;

@@ -4,14 +4,29 @@
  * Does not evaluate R. Note Merkle / nullifier are a separate B kernel.
  */
 import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
-import { AIR_OFF_DIGEST, extractCellAsm, LOAD_AIR_PACKED, packedMagicAsm } from "./air-cqz.ts";
+import {
+  AIR_OFF_DIGEST,
+  AIR_OFF_HASHBIT,
+  AIR_OFF_SHA_C,
+  AIR_SHA_C_BYTES,
+  extractCellAsm,
+  LOAD_AIR_PACKED,
+  packedMagicAsm,
+} from "./air-cqz.ts";
 import { M31_ADD, M31_P, M31_SUB } from "./m31-asm.ts";
 import { STATE_BASE_SATS } from "../pool/state.ts";
-
 
 export const ALGEBRAIC_C_KERNEL_ASM = `
 ${LOAD_AIR_PACKED}
 ${packedMagicAsm()}
+OP_DUP
+<${AIR_OFF_SHA_C}> OP_SPLIT OP_NIP
+<${AIR_SHA_C_BYTES}> OP_SPLIT OP_DROP
+OP_SHA256
+OP_OVER
+<${AIR_OFF_HASHBIT}> OP_SPLIT OP_NIP
+<32> OP_SPLIT OP_DROP
+OP_EQUALVERIFY
 OP_DUP
 <${AIR_OFF_DIGEST}> OP_SPLIT OP_NIP
 <32> OP_SPLIT OP_DROP

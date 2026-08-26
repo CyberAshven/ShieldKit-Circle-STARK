@@ -1,7 +1,7 @@
 /**
  * On-chain R_on(i) + Z(i)·R_off(i). Slot kernels check (qTable−R)·Z against
- * C(z) of the algebraicC residual interpolant (FRI_VERSION 9) — not nTable.
- * Honest C is the zero polynomial.
+ * leftover SHA-in-C vanish (N = 0). Leftover FRI is occupancy+SHA interpolant
+ * at the same 36 queries (DEEP / column-batching). Not shaPubsAcc of packed cells.
  */
 import { cashAssemblyToBin } from "@bitauth/libauth";
 import {
@@ -12,9 +12,11 @@ import {
 } from "../backends/circle/witness-mask.ts";
 import { M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
 import {
+  AIR_OFF_CELLS,
   AIR_OFF_IDX,
   AIR_OFF_OPEN_MASK,
   AIR_OFF_QTABLE,
+  AIR_OFF_SHA_C,
   BE16_UNSIGNED,
   G1024,
   SCALAR_MUL_FAST,
@@ -313,11 +315,55 @@ ${M31_ADD}
 `;
 }
 
+/** Stack: blob96 → acc of 48 u16 LE limbs mod M31. Alt-free (Z may already sit on alt). */
+export function shaPubsAccFrom96Asm(): string {
+  return `
+<0>
+OP_SWAP
+OP_BEGIN
+  OP_SIZE
+  OP_IF
+    <2> OP_SPLIT
+    OP_ROT
+    OP_SWAP
+    OP_ROT
+    <0x00>
+    OP_CAT
+    OP_BIN2NUM
+    OP_ROT
+    OP_SWAP
+    ${M31_ADD}
+    OP_SWAP
+    OP_0
+  OP_ELSE
+    OP_DROP
+    OP_1
+  OP_ENDIF
+OP_UNTIL
+`;
+}
+
+/** Stack: packed → packed N. N = shaPubsAcc(cells 32–55) − opening[0]. */
+export function shaNFromPackedAsm(): string {
+  return `
+OP_DUP
+<${AIR_OFF_CELLS + 32 * 4}> OP_SPLIT OP_NIP
+<96> OP_SPLIT OP_DROP
+${shaPubsAccFrom96Asm()}
+OP_OVER
+<${AIR_OFF_SHA_C}> OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
+<0x00>
+OP_CAT
+OP_BIN2NUM
+${M31_SUB}
+`;
+}
+
 /**
  * Requires OP_DEFINE smulDef=fast, vanishDef=vanish.
  * Stack: packed i → packed i N Z
- * FRI_VERSION 9: N = C(z) of the algebraicC residual interpolant.
- * Honest residuals vanish ⇒ C is the zero polynomial ⇒ N = 0.
+ * N = leftover SHA-in-C C(z). Honest occupancy+SHA vanish ⇒ N = 0.
  */
 export function nAndZFromPackedIAsm(smulDef = 2, vanishDef = 3): string {
   return `
@@ -342,8 +388,8 @@ ${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
 }
 
 /**
- * One FS slot: (qTable[slot] − R(i)) · Z([i]G) equals C(z).
- * Honest C = 0 (FRI_VERSION 9 residual interpolant). Independent of nTable.
+ * One FS slot: (qTable[slot] − R(i)) · Z([i]G) equals leftover SHA-in-C C(z).
+ * Honest occupancy+SHA vanish ⇒ N = 0. Independent of nTable.
  */
 export function slotRCqzBodyAsm(slot = 0, smulDef = 2, vanishDef = 3): string {
   const qOff = AIR_OFF_QTABLE + slot * 4;
@@ -406,7 +452,9 @@ OP_ROT
 `;
 }
 
-/** Stack: i → i N Z. Same as nAndZFromPackedI without a dummy packed under i. */
+/**
+ * Stack: i → i N Z. N is leftover SHA-in-C vanish (0) parked on alt.
+ */
 function nAndZFromIAsm(smulDef = 2, vanishDef = 3): string {
   return `
 OP_DUP
@@ -417,13 +465,17 @@ OP_OVER
 <${vanishDef}> OP_INVOKE
 OP_TOALTSTACK
 OP_2DROP
-<0>
 OP_FROMALTSTACK
+OP_FROMALTSTACK
+OP_DUP
+OP_TOALTSTACK
+OP_SWAP
 `;
 }
 
 /**
- * Fused R: blob q24 idx12 slot → blob q24 idx12.
+ * Fused R: blob q24 idx12 slot → blob q24 idx12. Alt holds N = leftover SHA-in-C vanish.
+ * Checks (qTable − R) · Z == N (Z = 0 requires q = R and N = 0).
  */
 export function slotRCqzBodyBlobAsm(smulDef = 2, vanishDef = 3): string {
   return `
@@ -449,22 +501,35 @@ OP_NIP
 OP_SPLIT
 OP_DROP
 OP_BIN2NUM
-OP_TOALTSTACK
+OP_SWAP
 ${nAndZFromIAsm(smulDef, vanishDef)}
-OP_DROP
-OP_4 OP_PICK
-OP_2 OP_PICK
+OP_6 OP_PICK
+OP_3 OP_PICK
 OP_2 OP_PICK
 ${openingMaskAtBlobAsm()}
+OP_TOALTSTACK
+OP_3 OP_PICK
 OP_FROMALTSTACK
-OP_SWAP
 ${M31_SUB}
 OP_1 OP_PICK
-${M31_MUL}
 OP_0
-OP_NUMEQUALVERIFY
-OP_DROP
-OP_DROP
+OP_NUMEQUAL
+OP_IF
+  OP_0
+  OP_NUMEQUALVERIFY
+  OP_1 OP_PICK
+  OP_0
+  OP_NUMEQUALVERIFY
+  OP_2DROP
+  OP_2DROP
+OP_ELSE
+  OP_1 OP_PICK
+  ${M31_MUL}
+  OP_2 OP_PICK
+  OP_NUMEQUALVERIFY
+  OP_2DROP
+  OP_2DROP
+OP_ENDIF
 `;
 }
 
@@ -575,7 +640,7 @@ OP_NUMEQUAL
   );
 }
 
-/** Isolated N = C(z) at FS slot 0. Unlocking: packed. Honest C(z) = 0. */
+/** Isolated N = leftover SHA-in-C vanish at FS slot 0. Unlocking: packed. Honest N = 0. */
 export function compileNFromTSlot0Lock(expected: bigint): Uint8Array {
   return compileOrThrow(
     `

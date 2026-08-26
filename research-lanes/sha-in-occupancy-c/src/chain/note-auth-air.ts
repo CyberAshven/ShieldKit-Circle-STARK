@@ -236,6 +236,155 @@ export function noteAuthResidualsVanish(w: NoteAuthWitness, pubs: NoteAuthOpens)
   return noteAuthResiduals(w, pubs).every((x) => x === 0n);
 }
 
+/** Statement publics the SHA AIR is bound to — never auth vs hashLeaves. */
+export type ShaStatementPubs = {
+  action: "DEPOSIT" | "WITHDRAW";
+  amountCommitIn: Uint8Array;
+  amountCommitOut: Uint8Array;
+  noteCommitment: Uint8Array;
+  nullifier: Uint8Array;
+};
+
+export function statementShaOpens(statement: ShaStatementPubs, spentLeaf?: Uint8Array): NoteAuthOpens {
+  const amountCommit =
+    statement.action === "DEPOSIT" ? statement.amountCommitOut : statement.amountCommitIn;
+  const leaf =
+    statement.action === "DEPOSIT"
+      ? statement.noteCommitment
+      : spentLeaf && spentLeaf.length === 32
+        ? spentLeaf
+        : statement.noteCommitment;
+  return {
+    amountCommit: amountCommit.length === 32 ? amountCommit : new Uint8Array(32),
+    leaf: leaf.length === 32 ? leaf : new Uint8Array(32),
+    nf: statement.nullifier.length === 32 ? statement.nullifier : new Uint8Array(32),
+    createdLeaf: statement.action === "DEPOSIT" ? statement.noteCommitment : new Uint8Array(32),
+  };
+}
+
+export function shaPubsAcc(pubs: { amountCommit: Uint8Array; leaf: Uint8Array; nf: Uint8Array }): M31El {
+  let s = 0n;
+  for (const h of [pubs.amountCommit, pubs.leaf, pubs.nf]) {
+    if (h.length !== 32) continue;
+    for (const limb of hashLimbs(h)) s = (s + limb) % 2147483647n;
+  }
+  return s;
+}
+
+export function shaTraceAcc(shaTrace: HashBitTrace, action: "DEPOSIT" | "WITHDRAW"): M31El {
+  const rows = hashBitRows(shaTrace);
+  const msgs = messagesFromHashBitRows(rows);
+  const amountCommit = sha256(msgs.amountCommitMsg);
+  const leaf = sha256(msgs.leafMsg);
+  const nf = action === "DEPOSIT" ? new Uint8Array(32) : sha256(msgs.nfMsg);
+  return shaPubsAcc({ amountCommit, leaf, nf });
+}
+
+/** N at occupancy query i: statement pubs minus one batched TRACE opening. Missing opening fail-closed. */
+export function shaCAtQuery(
+  statement: ShaStatementPubs,
+  batchedOpening: M31El | undefined,
+  _i: number,
+  spentLeaf?: Uint8Array,
+): M31El {
+  const acc = shaPubsAcc(statementShaOpens(statement, spentLeaf));
+  if (batchedOpening === undefined) return acc === 0n ? 1n : acc;
+  return (acc - batchedOpening + 2147483647n) % 2147483647n;
+}
+
+function emptyShaTrace(): HashBitTrace {
+  return hashBitTraceFromRows(Array.from({ length: TRACE_LEN }, () => new Uint8Array(HASH_BIT_ROW_BYTES)));
+}
+
+function limbDiffResiduals(expect: Uint8Array[], claimed: Uint8Array[]): M31El[] {
+  const r: M31El[] = Array.from({ length: TRACE_LEN }, () => 0n);
+  let k = 0;
+  for (let p = 0; p < expect.length; p += 1) {
+    const la = hashLimbs(expect[p]!);
+    const lb = hashLimbs(claimed[p]!);
+    for (let i = 0; i < 16; i += 1) {
+      r[k] = (la[i]! - lb[i]! + 2147483647n) % 2147483647n;
+      k += 1;
+    }
+  }
+  return r;
+}
+
+function bitsToU32(columns: M31El[][], base: number, row: number): number {
+  let x = 0;
+  for (let b = 0; b < 32; b += 1) {
+    if (columns[base + b]![row] === 1n) x |= 1 << b;
+  }
+  return x >>> 0;
+}
+
+/**
+ * Occupancy-C mix: SHA output limbs vs publics, plus booleanity and round
+ * match of the 576-col TRACE against the witness SHA. Honest vanishes.
+ * Mixed publics (victim witness + attacker tags) do not.
+ */
+export function shaAirResiduals(w: NoteAuthWitness, pubs: NoteAuthOpens): M31El[] {
+  const r = noteAuthResiduals(w, pubs);
+  const trace = buildHashBitTrace(w);
+  const msgs = witnessMessages(w);
+  const commit = sha256Blocks(msgs.amountCommitMsg);
+  const leaf = sha256Blocks(msgs.leafMsg);
+  const nf =
+    w.action === "DEPOSIT"
+      ? { rounds: [emptyRounds(), emptyRounds()] }
+      : sha256Blocks(msgs.nfMsg);
+  const groups = [
+    commit.rounds[0] ?? emptyRounds(),
+    commit.rounds[1] ?? emptyRounds(),
+    leaf.rounds[0] ?? emptyRounds(),
+    leaf.rounds[1] ?? emptyRounds(),
+    nf.rounds[0] ?? emptyRounds(),
+    nf.rounds[1] ?? emptyRounds(),
+  ];
+  let boolAcc = 0n;
+  let roundAcc = 0n;
+  for (let g = 0; g < HASH_COMPRESSIONS; g += 1) {
+    const base = g * BITS_PER_GROUP;
+    const rounds = groups[g]!;
+    for (let t = 0; t < TRACE_LEN; t += 1) {
+      for (let b = 0; b < BITS_PER_GROUP; b += 1) {
+        const bit = trace.columns[base + b]![t]!;
+        boolAcc = (boolAcc + ((bit * ((bit + 2147483646n) % 2147483647n)) % 2147483647n)) % 2147483647n;
+      }
+      const row = rounds[t]!;
+      const a = bitsToU32(trace.columns, base, t);
+      const e = bitsToU32(trace.columns, base + 32, t);
+      const ww = bitsToU32(trace.columns, base + 64, t);
+      const da = (BigInt(a ^ row.a) + 2147483647n) % 2147483647n;
+      const de = (BigInt(e ^ row.e) + 2147483647n) % 2147483647n;
+      const dw = (BigInt(ww ^ row.w) + 2147483647n) % 2147483647n;
+      roundAcc = (roundAcc + da + de + dw) % 2147483647n;
+    }
+  }
+  r[62] = boolAcc;
+  r[63] = roundAcc;
+  return r;
+}
+
+export function encodeShaResiduals(r: M31El[]): Uint8Array {
+  const out = new Uint8Array(TRACE_LEN * 4);
+  for (let i = 0; i < TRACE_LEN; i += 1) out.set(encodeLe(r[i] ?? 0n), i * 4);
+  return out;
+}
+
+export function decodeShaResiduals(bytes: Uint8Array): M31El[] {
+  const r: M31El[] = Array.from({ length: TRACE_LEN }, () => 0n);
+  if (bytes.length < TRACE_LEN * 4) return r;
+  for (let i = 0; i < TRACE_LEN; i += 1) {
+    let n = 0n;
+    for (let k = 0; k < 4; k += 1) n |= BigInt(bytes[i * 4 + k]!) << (8n * BigInt(k));
+    r[i] = n % 2147483647n;
+  }
+  return r;
+}
+
+export const SHA_RESIDUAL_BYTES = TRACE_LEN * 4;
+
 /** 64×4-byte LE leaves: residual+public u16 limbs. Honest residual is 0. */
 export function encodeHashLeaves(w: NoteAuthWitness, pubs: NoteAuthOpens): Uint8Array {
   const r = noteAuthResiduals(w, pubs);
@@ -373,6 +522,39 @@ export function packHashBitRow(columns: M31El[][], row: number): Uint8Array {
   return out;
 }
 
+export function unpackHashBitRow(row: Uint8Array): M31El[] {
+  const cols: M31El[] = Array.from({ length: HASH_BIT_COLUMNS }, () => 0n);
+  for (let c = 0; c < HASH_BIT_COLUMNS; c += 1) {
+    if ((row[c >> 3]! >> (c & 7)) & 1) cols[c] = 1n;
+  }
+  return cols;
+}
+
+/** Rebuild SHA TRACE from packed rows (encoded proof). Groups from a/e/w bits. */
+export function hashBitTraceFromRows(rows: Uint8Array[]): HashBitTrace {
+  if (rows.length !== TRACE_LEN) throw new Error("hash-bit rows");
+  const columns: M31El[][] = Array.from({ length: HASH_BIT_COLUMNS }, () =>
+    Array.from({ length: TRACE_LEN }, () => 0n),
+  );
+  for (let r = 0; r < TRACE_LEN; r += 1) {
+    const bits = unpackHashBitRow(rows[r]!);
+    for (let c = 0; c < HASH_BIT_COLUMNS; c += 1) columns[c]![r] = bits[c]!;
+  }
+  const groups: ShaRound[][] = [];
+  for (let g = 0; g < HASH_COMPRESSIONS; g += 1) {
+    const base = g * BITS_PER_GROUP;
+    const rounds: ShaRound[] = [];
+    for (let t = 0; t < TRACE_LEN; t += 1) {
+      const a = bitsToU32(columns, base, t);
+      const e = bitsToU32(columns, base + 32, t);
+      const w = bitsToU32(columns, base + 64, t);
+      rounds.push({ a, e, w, h: [a, 0, 0, 0, e, 0, 0, 0] });
+    }
+    groups.push(rounds);
+  }
+  return { columns, publics: { leaf: new Uint8Array(32), nf: new Uint8Array(32), amountCommit: new Uint8Array(32), createdLeaf: new Uint8Array(32) }, groups };
+}
+
 export function hashBitRows(trace: HashBitTrace): Uint8Array[] {
   return Array.from({ length: TRACE_LEN }, (_, r) => packHashBitRow(trace.columns, r));
 }
@@ -421,6 +603,47 @@ export function messagesFromHashBitRows(rows: Uint8Array[]): {
     leafMsg: messageFromRows(rows, 2, HASH_MSG_LEAF_LEN),
     nfMsg: messageFromRows(rows, 4, HASH_MSG_NF_LEN),
   };
+}
+
+/**
+ * Statement-bound SHA residuals mixed into occupancy C.
+ * TRACE present: SHA-256 of reconstructed W-schedule vs statement pubs.
+ * Missing TRACE is empty rows (fail-closed vs a real statement) unless occupancyOnly.
+ */
+export function shaStatementResiduals(
+  statement: ShaStatementPubs,
+  shaTrace?: HashBitTrace,
+  _hashLeaves?: Uint8Array,
+  spentLeaf?: Uint8Array,
+  occupancyOnly = false,
+): M31El[] {
+  if (occupancyOnly) return Array.from({ length: TRACE_LEN }, () => 0n);
+  const pubs = statementShaOpens(
+    statement,
+    spentLeaf ?? (shaTrace && shaTrace.publics.leaf.length === 32 ? shaTrace.publics.leaf : undefined),
+  );
+  if (!shaTrace) return shaStatementResiduals(statement, emptyShaTrace(), _hashLeaves, spentLeaf, false);
+  const rows = hashBitRows(shaTrace);
+  const msgs = messagesFromHashBitRows(rows);
+  const gotCommit = sha256(msgs.amountCommitMsg);
+  const gotLeaf = sha256(msgs.leafMsg);
+  const gotNf = statement.action === "DEPOSIT" ? new Uint8Array(32) : sha256(msgs.nfMsg);
+  const r = limbDiffResiduals(
+    [gotCommit, gotLeaf, gotNf],
+    [pubs.amountCommit, pubs.leaf, pubs.nf],
+  );
+  let boolAcc = 0n;
+  for (let g = 0; g < HASH_COMPRESSIONS; g += 1) {
+    const base = g * BITS_PER_GROUP;
+    for (let t = 0; t < TRACE_LEN; t += 1) {
+      for (let b = 0; b < BITS_PER_GROUP; b += 1) {
+        const bit = shaTrace.columns[base + b]![t]!;
+        boolAcc = (boolAcc + ((bit * ((bit + 2147483646n) % 2147483647n)) % 2147483647n)) % 2147483647n;
+      }
+    }
+  }
+  r[62] = boolAcc;
+  return r;
 }
 
 /** Six 1200-byte fold shards. Concat 64×72 rows, then hashBitRoot copies. */

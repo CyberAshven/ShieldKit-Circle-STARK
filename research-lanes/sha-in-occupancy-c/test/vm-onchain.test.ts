@@ -125,7 +125,7 @@ describe("2026 VM runs pool covenant + STARK verify", () => {
       createdLeaf: fakeLeaf,
       createdIndex: w.created?.index ?? 0,
       createdPath: w.created?.path ?? [],
-    });
+    }, { occupancyOnly: true });
     const badPool = evaluatePoolSuccessorVm({
       oldState: w.statement.oldState,
       newState: w.statement.newState,

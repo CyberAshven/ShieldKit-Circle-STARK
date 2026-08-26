@@ -84,7 +84,7 @@ const forced = proveFromTLde(fakeNf, publicEvals(fakeNf, circleDomain(TRACE_LEN)
   createdLeaf: new Uint8Array(32),
   createdIndex: 0,
   createdPath: [],
-});
+}, { occupancyOnly: true });
 const forcedV = circleFriPlugin.verify(fakeNf, encodeFriProof(forced));
 const forcedFri = verifyFri(fakeNf, forced);
 
@@ -144,7 +144,7 @@ const forcedMem = proveFromTLde(fakeStmt, publicEvals(fakeStmt, circleDomain(TRA
   createdLeaf: fakeLeaf,
   createdIndex: w.created?.index ?? 0,
   createdPath: w.created?.path ?? [],
-});
+}, { occupancyOnly: true });
 const fakeMem = evaluatePoolSuccessorVm({
   oldState: w.statement.oldState,
   newState: w.statement.newState,

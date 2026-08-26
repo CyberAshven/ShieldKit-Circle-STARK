@@ -5,7 +5,7 @@ import { AIR_PACKED_SIZE, compileCqzLockP2sh32, compileSlotsLockP2sh32, LOAD_AIR
 import { compileFoldLockP2sh32, foldKernelCount, foldQueriesPerKernel, slotInputsCount } from "./fold-kernel.ts";
 import { compileGrindLockP2sh32 } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "./algebraic-c-kernel.ts";
-import { compileNoteAuthLockP2sh32, HASH_BIT_CHECK_ASM, includeNoteAuth, prefixExtraKernelCount } from "./note-auth-kernel.ts";
+import { compileNoteAuthLockP2sh32, includeNoteAuth, prefixExtraKernelCount } from "./note-auth-kernel.ts";
 import {
   EXTRACT_INSTANCE,
   EXTRACT_RESERVE_NUM,
@@ -337,20 +337,16 @@ OP_TXINPUTCOUNT OP_1SUB OP_UTXOBYTECODE <0x${binToHex(opts.tapeTipLock)}> OP_EQU
     ? `
 <0> OP_OUTPUTTOKENCOMMITMENT <96> OP_SPLIT OP_NIP <0x${binToHex(opts.finalNfRoot)}> OP_EQUALVERIFY`
     : "";
-  const hashBit = includeNoteAuth(slots, opts?.forceNoteAuth ?? false)
-    ? `${HASH_BIT_CHECK_ASM}\n`
-    : "";
   const bin = cashAssemblyToBin(
-    `${hashBit}${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false, opts?.stepLocks ?? [])}${requireTape}${requireFinalRoot}\nOP_DROP\n${LOAD_AIR_PACKED}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
+    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false, opts?.stepLocks ?? [])}${requireTape}${requireFinalRoot}\nOP_DROP\n${LOAD_AIR_PACKED}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
   );
   if (typeof bin === "string") throw new Error(`covenant compile: ${bin}`);
   return bin;
 }
 
 /**
- * Standard P2S lock (≤201 B): commit hash256(HASH_BIT+pool), DEFINE 0, INVOKE 0.
- * Unlocking is leftover || body. The UTXO binds HASH_BIT (not anyone-can-spend).
- * Inner HASH_BIT uses DEFINE 1–3 so it does not clobber the trampoline.
+ * Standard P2S lock (≤201 B): commit hash256(pool body), DEFINE 0, INVOKE 0.
+ * Unlocking is leftover || body. SHA-in-C lives in occupancy C, not HASH_BIT walks.
  */
 export function compilePoolP2sTrampoline(opts?: {
   slotKernels?: number;

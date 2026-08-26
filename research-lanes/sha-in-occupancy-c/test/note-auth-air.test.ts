@@ -9,12 +9,17 @@ import {
   hashAir36InputBytes,
   hashBitRootOf,
   hashBitRows,
+  hashBitTraceFromRows,
   messagesFromHashBitRows,
   HASH_BIT_COLUMNS,
   HASH_BIT_ROW_BYTES,
   HASH_BIT_SHARD_BYTES,
   noteAuthPublicsFromWitness,
   noteAuthResidualsVanish,
+  shaAirResiduals,
+  shaCAtQuery,
+  shaStatementResiduals,
+  shaTraceAcc,
   witnessMessages,
   sha256Blocks,
   sha256Pad,
@@ -70,10 +75,61 @@ describe("note-auth SHA-256 AIR", () => {
     );
     const mixed = { ...pubs, nf: rnd32(), amountCommit: rnd32() };
     assert.equal(noteAuthResidualsVanish(w, mixed), false);
+    assert.ok(shaAirResiduals(w, pubs).every((x) => x === 0n), "honest SHA-in-C vanishes");
+    assert.ok(shaAirResiduals(w, mixed).some((x) => x !== 0n), "mixed publics do not vanish in SHA-in-C");
+    const stmt = {
+      action: w.action,
+      amountCommitIn: pubs.amountCommit,
+      amountCommitOut: pubs.amountCommit,
+      noteCommitment: pubs.leaf,
+      nullifier: pubs.nf,
+    };
     const trace = buildHashBitTrace(w);
+    assert.ok(
+      shaStatementResiduals(stmt, trace, undefined, pubs.leaf).every((x) => x === 0n),
+      "honest statement+TRACE SHA residuals vanish",
+    );
+    assert.ok(
+      shaStatementResiduals(
+        { ...stmt, nullifier: rnd32(), amountCommitIn: rnd32() },
+        trace,
+        undefined,
+        pubs.leaf,
+      ).some((x) => x !== 0n),
+      "mixed statement + victim TRACE do not vanish",
+    );
+    const fromRows = hashBitTraceFromRows(hashBitRows(trace));
+    assert.ok(
+      shaStatementResiduals(stmt, fromRows, undefined, pubs.leaf).every((x) => x === 0n),
+      "encoded TRACE rows recompute SHA vs honest statement",
+    );
+    assert.ok(
+      shaStatementResiduals(
+        { ...stmt, nullifier: rnd32(), amountCommitIn: rnd32() },
+        fromRows,
+        undefined,
+        pubs.leaf,
+      ).some((x) => x !== 0n),
+      "encoded TRACE rows vs mixed statement do not vanish",
+    );
     assertHashTraceConstraints(trace, w);
     assert.equal(trace.columns.length, HASH_BIT_COLUMNS);
     assert.equal(trace.columns[0]!.length, 64);
+    const opening = shaTraceAcc(trace, w.action);
+    assert.equal(shaCAtQuery(stmt, opening, 0, pubs.leaf), 0n);
+    assert.notEqual(
+      shaCAtQuery({ ...stmt, nullifier: rnd32(), amountCommitIn: rnd32() }, opening, 0, pubs.leaf),
+      0n,
+    );
+    assert.notEqual(shaCAtQuery(stmt, undefined, 0, pubs.leaf), 0n, "missing opening fail-closed");
+    assert.ok(
+      shaStatementResiduals(stmt, undefined, undefined, pubs.leaf).some((x) => x !== 0n),
+      "missing TRACE is empty rows, not occupancy-only zeros",
+    );
+    assert.ok(
+      shaStatementResiduals(stmt, undefined, undefined, pubs.leaf, true).every((x) => x === 0n),
+      "occupancyOnly skips SHA",
+    );
   });
 
   it("deposit nf is zero and still satisfies the AIR", () => {

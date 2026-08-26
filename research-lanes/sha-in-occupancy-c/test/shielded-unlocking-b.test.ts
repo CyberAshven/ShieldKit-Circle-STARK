@@ -10,12 +10,24 @@ import {
   VK_ID,
 } from "../src/backends/circle/params.ts";
 import { soundnessWorksheet } from "../src/backends/circle/soundness.ts";
-import { algebraicCQuotientLde } from "../src/backends/circle/air.ts";
-import { circleDomain, encodeFriProof, proveFri, proveFromTLde, verifyFri, wWithdraw } from "../src/backends/circle/fri.ts";
+import { algebraicCQuotientLde, quotientAtDomain, shaMixForOccupancyC } from "../src/backends/circle/air.ts";
+import { HASH_BIT_ROWS_BYTES, shaPubsAcc, shaStatementResiduals, statementShaOpens } from "../src/chain/note-auth-air.ts";
+import { add, encodeLe, mul, sub } from "../src/backends/circle/m31.ts";
+import { openingMaskAt } from "../src/backends/circle/witness-mask.ts";
+import { circleDomain, decodeFriProof, encodeFriProof, proveFri, proveFromTLde, verifyFri, wWithdraw } from "../src/backends/circle/fri.ts";
 import { FRI_N } from "../src/backends/circle/params.ts";
 import { compileCovenantSuccessor } from "../src/chain/covenant-spend.ts";
 import { compilePoolCovenant, compilePoolP2sTrampoline } from "../src/chain/covenant-p2s.ts";
-import { SLOT_KERNEL_COUNT_CONSENSUS } from "../src/chain/air-cqz.ts";
+import {
+  AIR_OFF_HASHBIT,
+  AIR_OFF_IDX,
+  AIR_OFF_NTABLE,
+  AIR_OFF_OPEN_MASK,
+  AIR_OFF_QTABLE,
+  AIR_OFF_SHA_C,
+  encodeAirPacked,
+  SLOT_KERNEL_COUNT_CONSENSUS,
+} from "../src/chain/air-cqz.ts";
 import { createLabWallet } from "../src/chain/wallet.ts";
 import { evaluateNoteAuthKernel, evaluatePoolSuccessorVm, evaluateSuccessorInputMeters } from "../src/chain/vm-verifier.ts";
 import { noteAuthBindHash, noteAuthKernelUnlocking, noteAuthPublicOpens } from "../src/chain/note-auth-kernel.ts";
@@ -34,6 +46,7 @@ import {
   encodeShaLdeShards,
   openShaLde,
 } from "../src/chain/sha-lde.ts";
+
 import type { FriProof } from "../src/backends/circle/fri.ts";
 import type { FriAuth } from "../src/backends/circle/air.ts";
 import type { PoolStatement } from "../src/pool/statement.ts";
@@ -67,6 +80,23 @@ function lastPush(u: Uint8Array): Uint8Array {
     } else i += 1;
   }
   return last;
+}
+
+/** Occupancy-only qTable/nTable on packed AIR (SHA mix stripped). Attack packed. */
+function recookOccupancyPacked(statement: PoolStatement, packed: Uint8Array): Uint8Array {
+  const out = new Uint8Array(packed);
+  const hash = defaultInternalHash();
+  const small = circleDomain(TRACE_LEN);
+  const big = circleDomain(FRI_N);
+  const occ = algebraicCQuotientLde(statement, small, big, hash, undefined, undefined, undefined, undefined, true);
+  const commit = out.subarray(AIR_OFF_OPEN_MASK, AIR_OFF_OPEN_MASK + 32);
+  for (let s = 0; s < FRI_QUERIES; s += 1) {
+    const i = (out[AIR_OFF_IDX + s * 2]! << 8) | out[AIR_OFF_IDX + s * 2 + 1]!;
+    const r = openingMaskAt(commit, i, hash, occ.zLde[i]!);
+    out.set(encodeLe(add(occ.qLde[i]!, r)), AIR_OFF_QTABLE + s * 4);
+    out.set(encodeLe(add(occ.nLde[i]!, mul(r, occ.zLde[i]!))), AIR_OFF_NTABLE + s * 4);
+  }
+  return out;
 }
 
 /** Recooked junk merkle of mixed-prefix leaves. Retry uniqueness until encodeFriProof cargo fits; never a 1-leaf degenerate tree. */
@@ -220,7 +250,7 @@ describe("shielded unlocking envelope-B successor", () => {
       assert.ok(measured.txBytes <= 100000, String(measured.txBytes));
       const tx = decodeTransaction(measured.raw);
       if (typeof tx === "string") throw new Error(tx);
-      assert.equal(tx.inputs.length, 18, "18-input successor runs HASH_BIT_CHECK");
+      assert.equal(tx.inputs.length, 18, "18-input successor");
       const body = compilePoolCovenant({ slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
       const trampoline = compilePoolP2sTrampoline({ slotKernels: SLOT_KERNEL_COUNT_CONSENSUS });
       const bodyHash = hash256(body);
@@ -228,18 +258,14 @@ describe("shielded unlocking envelope-B successor", () => {
       assert.ok(vm.lockingBytes <= 201, `input 0 scriptPubKey ${vm.lockingBytes} ≤ 201`);
       assert.ok(
         Buffer.from(trampoline).includes(Buffer.from(bodyHash)),
-        "P2S lock commits hash256(HASH_BIT+pool)",
+        "P2S lock commits hash256(pool body)",
       );
       assert.equal(measured.lockKind, "p2s");
       const in0 = tx.inputs[0]!.unlockingBytecode;
       assert.ok(in0.length <= 10000, `input 0 unlocking ${in0.length}`);
       assert.equal(firstPushLen(in0), FRI_LEFTOVER_BYTES, "leftover-only first push");
       const in0Body = lastPush(in0);
-      assert.deepEqual(Buffer.from(hash256(in0Body)), Buffer.from(bodyHash), "unlocking body matches the committed HASH_BIT+pool");
-      assert.ok(in0Body.includes(0xa8), "committed body runs OP_SHA256 walks");
-      for (let i = 12; i < 18; i += 1) {
-        assert.ok(firstPushLen(tx.inputs[i]!.unlockingBytecode) >= SHA_LDE_SHARD_BYTES, `fold ${i} SHA cargo slot`);
-      }
+      assert.deepEqual(Buffer.from(hash256(in0Body)), Buffer.from(bodyHash), "unlocking body matches the committed pool");
       const meters = evaluateSuccessorInputMeters({
         oldState: w.statement.oldState,
         newState: w.statement.newState,
@@ -252,8 +278,8 @@ describe("shielded unlocking envelope-B successor", () => {
       });
       assert.equal(meters.standardTxAccepted, true, meters.standardTxError ?? "meters");
       assert.ok(
-        (meters.inputs[0]?.hashDigestIterations ?? 0) >= 252,
-        `input 0 runs 36 walks, hash ${meters.inputs[0]?.hashDigestIterations}`,
+        (meters.inputs[0]?.hashDigestIterations ?? 0) < 252,
+        `input 0 is not HASH_BIT walks, hash ${meters.inputs[0]?.hashDigestIterations}`,
       );
       const maxUnlock = Math.max(...tx.inputs.map((i) => i.unlockingBytecode.length));
       assert.ok(maxUnlock <= 10000, String(maxUnlock));
@@ -342,6 +368,15 @@ describe("shielded unlocking envelope-B successor", () => {
       const w = applyWithdraw(d.machine, note, d.index, LAB_PAYOUT_DIGEST, 7_777n);
       const wit = wWithdraw(note, d.index, w.path, w.created);
       const proved = proveFri(w.statement, wit);
+      const authVictim: FriAuth = {
+        ...proved.auth,
+        leaf: new Uint8Array(proved.auth.leaf),
+        nullifier: new Uint8Array(proved.auth.nullifier),
+        amountCommit: new Uint8Array(proved.auth.amountCommit),
+        rho: new Uint8Array(proved.auth.rho),
+        owner: new Uint8Array(proved.auth.owner),
+        createdLeaf: new Uint8Array(proved.auth.createdLeaf),
+      };
       const attacker: Note = { amountSats: 1n, rho: rnd32(), ownerSecret: rnd32() };
       const victimOpens = noteAuthPublicOpens({
         note,
@@ -426,20 +461,24 @@ describe("shielded unlocking envelope-B successor", () => {
       );
 
       const mixedLeaves = concatBytes(mixedOpens.amountCommit, mixedOpens.leaf, mixedOpens.nf);
-      const { qLde: qMixedLeaves } = algebraicCQuotientLde(
+      const { qLde: qOccOnly } = algebraicCQuotientLde(
         statement2,
         circleDomain(TRACE_LEN),
         circleDomain(FRI_N),
         undefined,
         auth2,
-        mixedLeaves,
+        undefined,
+        undefined,
+        undefined,
+        true,
       );
-      const leafPinned = proveFromTLde(statement2, qMixedLeaves, auth2, {
+      const leafPinned = proveFromTLde(statement2, qOccOnly, auth2, {
         hashRoot: pin,
         hashLeaves: mixedLeaves,
       });
-      const jsLeaves = verifyFri(statement2, leafPinned, wit);
+      const jsLeaves = verifyFri(statement2, decodeFriProof(encodeFriProof(leafPinned)));
       assert.equal(jsLeaves.ok, false, jsLeaves.ok ? "js mixed-leaves must fail" : jsLeaves.reason);
+      assert.equal(jsLeaves.reason, "sha-in-c residuals", `mixed-leaves JS reason: ${jsLeaves.reason}`);
       const leavesVm = evaluatePoolSuccessorVm({
         oldState: statement2.oldState,
         newState: statement2.newState,
@@ -457,8 +496,285 @@ describe("shielded unlocking envelope-B successor", () => {
         false,
         `masked mixed + matching pin + matching hashLeaves must not VM-accept: ${leavesVm.error}`,
       );
+      assert.equal(
+        /input index 11\b/.test(String(leavesVm.error)),
+        false,
+        `matching mixedLeaves must not be note-auth: ${leavesVm.error}`,
+      );
 
-      const copiedBits = proveFromTLde(statement2, qMixedLeaves, auth2, {
+      const zeros = Array.from({ length: TRACE_LEN }, () => 0n);
+      const honestLeaves = concatBytes(authVictim.amountCommit, authVictim.leaf, authVictim.nullifier);
+      assert.ok(
+        shaStatementResiduals(statement2, proved.shaTrace, undefined, authVictim.leaf).some((x) => x !== 0n),
+        "mixed statement vs victim TRACE must not vanish",
+      );
+      const matchLeavesOcc = proveFromTLde(statement2, qOccOnly, auth2, {
+        hashRoot: pin,
+        hashLeaves: mixedLeaves,
+        shaResiduals: zeros,
+      });
+      const matchRaw = encodeFriProof(matchLeavesOcc);
+      const matchJs = verifyFri(statement2, decodeFriProof(matchRaw));
+      assert.equal(matchJs.ok, false, matchJs.ok ? "js matching mixedLeaves occupancy must fail" : matchJs.reason);
+      assert.equal(matchJs.reason, "sha-in-c residuals", `matching mixedLeaves JS: ${matchJs.reason}`);
+      const matchVm = evaluatePoolSuccessorVm({
+        oldState: statement2.oldState,
+        newState: statement2.newState,
+        outputCommitment: encodePublicPaa1(statement2.newState),
+        proof: matchRaw,
+        statement: statement2,
+        slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+        standard: true,
+        note,
+        change: w.created?.note,
+        noteAuthUnlocking: mixedUnlock,
+      });
+      assert.equal(matchVm.accepted, false, `matching mixedLeaves occupancy must VM-reject: ${matchVm.error}`);
+      assert.equal(
+        /input index 11\b/.test(String(matchVm.error)),
+        false,
+        `matching mixedLeaves occupancy must not be note-auth: ${matchVm.error}`,
+      );
+
+      const recookZeros = proveFromTLde(statement2, qOccOnly, auth2, {
+        hashRoot: pin,
+        hashLeaves: honestLeaves,
+        shaResiduals: zeros,
+      });
+      assert.ok(
+        !(recookZeros.shaResiduals ?? []).some((x) => x !== 0n),
+        "proveFromTLde must not overwrite caller zeros cargo",
+      );
+      const jsRecook = verifyFri(statement2, decodeFriProof(encodeFriProof(recookZeros)));
+      assert.equal(jsRecook.ok, false, jsRecook.ok ? "js skeptic recook must fail" : jsRecook.reason);
+      assert.equal(jsRecook.reason, "sha-in-c residuals", `skeptic JS reason: ${jsRecook.reason}`);
+      const recookVm = evaluatePoolSuccessorVm({
+        oldState: statement2.oldState,
+        newState: statement2.newState,
+        outputCommitment: encodePublicPaa1(statement2.newState),
+        proof: encodeFriProof(recookZeros),
+        statement: statement2,
+        slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+        standard: true,
+        note,
+        change: w.created?.note,
+        noteAuthUnlocking: mixedUnlock,
+      });
+      assert.equal(
+        recookVm.accepted,
+        false,
+        `skeptic occupancy qLde + honest tags + zeros cargo must VM-reject on SHA-in-C: ${recookVm.error}`,
+      );
+
+      const occMasked = proveFromTLde(statement2, qOccOnly, auth2, {
+        hashRoot: pin,
+        hashLeaves: honestLeaves,
+        shaResiduals: zeros,
+      });
+      const decodedMasked = decodeFriProof(encodeFriProof(occMasked));
+      assert.equal(decodedMasked.authMasked, true, "encodeFriProof masks rho/owner/amount");
+      decodedMasked.shaResiduals = zeros;
+      decodedMasked.hashLeaves = honestLeaves;
+      const maskedRaw = encodeFriProof({ ...decodedMasked, authMasked: true });
+      const maskedProof = decodeFriProof(maskedRaw);
+      const maskedMix = shaMixForOccupancyC(
+        statement2,
+        defaultInternalHash(),
+        maskedProof.auth,
+        maskedProof.shaResiduals,
+        maskedProof.hashLeaves,
+        maskedProof.shaTrace,
+      );
+      assert.ok(
+        maskedMix.some((x) => x !== 0n),
+        "masked occupancy recook: TRACE vs mixed statement must stay in C",
+      );
+      const jsMasked = verifyFri(statement2, maskedProof);
+      assert.equal(jsMasked.ok, false, jsMasked.ok ? "js masked skeptic recook must fail" : jsMasked.reason);
+      assert.equal(jsMasked.reason, "sha-in-c residuals", `masked skeptic JS reason: ${jsMasked.reason}`);
+      const maskedVm = evaluatePoolSuccessorVm({
+        oldState: statement2.oldState,
+        newState: statement2.newState,
+        outputCommitment: encodePublicPaa1(statement2.newState),
+        proof: maskedRaw,
+        statement: statement2,
+        slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+        standard: true,
+        note,
+        change: w.created?.note,
+        noteAuthUnlocking: mixedUnlock,
+      });
+      assert.equal(
+        maskedVm.accepted,
+        false,
+        `masked auth + shaResiduals=zeros + honest hashLeaves + occupancy qLde must not skip SHA-in-C: ${maskedVm.error}`,
+      );
+
+      const occDecoded = decodeFriProof(encodeFriProof(matchLeavesOcc));
+      occDecoded.shaTrace = undefined;
+      const occPacked = encodeAirPacked(statement2, occDecoded);
+      const jsOccPacked = verifyFri(statement2, occDecoded);
+      assert.equal(jsOccPacked.ok, false, jsOccPacked.ok ? "js occupancy-only packed must fail" : jsOccPacked.reason);
+      assert.equal(jsOccPacked.reason, "sha-in-c residuals", `occupancy-only packed JS: ${jsOccPacked.reason}`);
+      const occPackedVm = evaluatePoolSuccessorVm({
+        oldState: statement2.oldState,
+        newState: statement2.newState,
+        outputCommitment: encodePublicPaa1(statement2.newState),
+        proof: encodeFriProof(matchLeavesOcc),
+        airPacked: occPacked,
+        statement: statement2,
+        slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+        standard: true,
+        note,
+        change: w.created?.note,
+        noteAuthUnlocking: mixedUnlock,
+      });
+      assert.equal(
+        occPackedVm.accepted,
+        false,
+        `occupancy-only packed AIR must VM-reject on SHA N: ${occPackedVm.error}`,
+      );
+      assert.equal(
+        /input index 11\b/.test(String(occPackedVm.error)),
+        false,
+        `occupancy-only packed reject must not be note-auth: ${occPackedVm.error}`,
+      );
+
+      const slicedRaw = encodeFriProof(matchLeavesOcc).subarray(
+        0,
+        encodeFriProof(matchLeavesOcc).length - HASH_BIT_ROWS_BYTES,
+      );
+      const slicedDec = decodeFriProof(slicedRaw);
+      const slicedPacked = encodeAirPacked(statement2, slicedDec);
+      const slicedJs = verifyFri(statement2, slicedDec);
+      assert.equal(slicedJs.ok, false, slicedJs.ok ? "js TRACE-sliced must fail" : slicedJs.reason);
+      const slicedVm = evaluatePoolSuccessorVm({
+        oldState: statement2.oldState,
+        newState: statement2.newState,
+        outputCommitment: encodePublicPaa1(statement2.newState),
+        proof: slicedRaw,
+        airPacked: slicedPacked,
+        statement: statement2,
+        slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+        standard: true,
+        note,
+        change: w.created?.note,
+        noteAuthUnlocking: mixedUnlock,
+      });
+      assert.equal(slicedVm.accepted, false, `TRACE-sliced packed AIR must VM-reject: ${slicedVm.error}`);
+
+      const acc = shaPubsAcc(statementShaOpens(statement2, mixedOpens.leaf));
+      const openBlob = new Uint8Array(FRI_QUERIES * 4);
+      for (let s = 0; s < FRI_QUERIES; s += 1) openBlob.set(encodeLe(acc), s * 4);
+      const fakeRoot = sha256(openBlob);
+      const accRecook = proveFromTLde(statement2, qOccOnly, auth2, {
+        hashRoot: pin,
+        hashLeaves: mixedLeaves,
+        hashBitRoot: fakeRoot,
+      });
+      const accPacked = encodeAirPacked(statement2, accRecook);
+      accPacked.set(openBlob, AIR_OFF_SHA_C);
+      accPacked.set(fakeRoot, AIR_OFF_HASHBIT);
+      const accVm = evaluatePoolSuccessorVm({
+        oldState: statement2.oldState,
+        newState: statement2.newState,
+        outputCommitment: encodePublicPaa1(statement2.newState),
+        proof: encodeFriProof(accRecook),
+        airPacked: accPacked,
+        statement: statement2,
+        slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+        standard: true,
+        note,
+        change: w.created?.note,
+        noteAuthUnlocking: mixedUnlock,
+      });
+      assert.equal(
+        accVm.accepted,
+        false,
+        `openings=statementAcc occupancy recook must VM-reject: ${accVm.error}`,
+      );
+      assert.equal(
+        /input index 11\b/.test(String(accVm.error)),
+        false,
+        `openings=statementAcc reject must not be note-auth: ${accVm.error}`,
+      );
+
+      const small = circleDomain(TRACE_LEN);
+      const big = circleDomain(FRI_N);
+      const hash = defaultInternalHash();
+      const occQ = algebraicCQuotientLde(statement2, small, big, hash, auth2, undefined, undefined, undefined, true);
+      const shaR = shaMixForOccupancyC(statement2, hash, auth2, undefined, undefined, undefined, false);
+      const shaQ = quotientAtDomain(shaR, small, big).qLde;
+      const cancelled = occQ.qLde.map((q, i) => sub(q, shaQ[i]!));
+      const occLeftover = proveFromTLde(statement2, cancelled, auth2, {
+        hashRoot: pin,
+        hashLeaves: mixedLeaves,
+        hashBitRoot: fakeRoot,
+      });
+      const callerOcc = proveFromTLde(statement2, occQ.qLde, auth2, {
+        hashRoot: pin,
+        hashLeaves: mixedLeaves,
+        hashBitRoot: fakeRoot,
+        useCallerTLde: true,
+      });
+      const callerPacked = recookOccupancyPacked(statement2, encodeAirPacked(statement2, callerOcc));
+      callerPacked.set(openBlob, AIR_OFF_SHA_C);
+      callerPacked.set(fakeRoot, AIR_OFF_HASHBIT);
+      const callerJs = verifyFri(statement2, callerOcc);
+      assert.equal(callerJs.ok, false, callerJs.ok ? "js caller occupancy leftover mixed must fail" : callerJs.reason);
+      const callerVm = evaluatePoolSuccessorVm({
+        oldState: statement2.oldState,
+        newState: statement2.newState,
+        outputCommitment: encodePublicPaa1(statement2.newState),
+        proof: encodeFriProof(callerOcc),
+        airPacked: callerPacked,
+        statement: statement2,
+        slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+        standard: true,
+        note,
+        change: w.created?.note,
+        noteAuthUnlocking: mixedUnlock,
+      });
+      assert.equal(
+        callerVm.accepted,
+        false,
+        `useCallerTLde occupancy leftover + occupancy qTable + N=0 must VM-reject on SHA leftover-C: ${callerVm.error}`,
+      );
+      assert.equal(
+        /input index 11\b/.test(String(callerVm.error)),
+        false,
+        `useCallerTLde occupancy leftover reject must not be note-auth: ${callerVm.error}`,
+      );
+      const occPackedQ = recookOccupancyPacked(statement2, encodeAirPacked(statement2, occLeftover));
+      occPackedQ.set(openBlob, AIR_OFF_SHA_C);
+      occPackedQ.set(fakeRoot, AIR_OFF_HASHBIT);
+      const occN0Js = verifyFri(statement2, occLeftover);
+      assert.equal(occN0Js.ok, false, occN0Js.ok ? "js occupancy leftover mixed must fail" : occN0Js.reason);
+      const occN0Vm = evaluatePoolSuccessorVm({
+        oldState: statement2.oldState,
+        newState: statement2.newState,
+        outputCommitment: encodePublicPaa1(statement2.newState),
+        proof: encodeFriProof(occLeftover),
+        airPacked: occPackedQ,
+        statement: statement2,
+        slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
+        standard: true,
+        note,
+        change: w.created?.note,
+        noteAuthUnlocking: mixedUnlock,
+      });
+      assert.equal(
+        occN0Vm.accepted,
+        false,
+        `occupancy leftover + occupancy qTable + N=0 must VM-reject on SHA/C: ${occN0Vm.error}`,
+      );
+      assert.equal(
+        /input index 11\b/.test(String(occN0Vm.error)),
+        false,
+        `occupancy leftover N=0 reject must not be note-auth: ${occN0Vm.error}`,
+      );
+
+      const copiedBits = proveFromTLde(statement2, qOccOnly, auth2, {
         hashRoot: pin,
         hashLeaves: mixedLeaves,
         hashBitRoot: proved.hashBitRoot,
@@ -485,7 +801,7 @@ describe("shielded unlocking envelope-B successor", () => {
       const h = defaultInternalHash();
       const junkBits = mixedJunkBits({
         statement: statement2,
-        qLde: qMixedLeaves,
+        qLde: qOccOnly,
         auth: auth2,
         pin,
         mixedLeaves,
@@ -514,7 +830,7 @@ describe("shielded unlocking envelope-B successor", () => {
 
       const occJunk = mixedJunkBits({
         statement: statement2,
-        qLde: qMixedLeaves,
+        qLde: qOccOnly,
         auth: auth2,
         pin,
         mixedLeaves,

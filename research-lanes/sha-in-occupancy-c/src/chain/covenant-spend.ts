@@ -52,7 +52,7 @@ import {
   poolLockP2sFor,
   poolLockP2sh32,
 } from "./covenant-p2s.ts";
-import { decodeFriProof, hashBitFoldShards } from "../backends/circle/fri.ts";
+import { decodeFriProof } from "../backends/circle/fri.ts";
 import { decodeState } from "../pool/state.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import {
@@ -587,9 +587,7 @@ export function compileCovenantSuccessor(args: {
           foldQueriesPerKernel(slotKernels),
           queryStart + f * foldQueriesPerKernel(slotKernels),
           airPacked,
-          foldQueriesPerKernel(slotKernels) === 6
-            ? hashBitFoldShards(decoded)[f]!
-            : queryPairShard(args.proof, queryStart + f * foldQueriesPerKernel(slotKernels), foldQueriesPerKernel(slotKernels)),
+          queryPairShard(args.proof, queryStart + f * foldQueriesPerKernel(slotKernels), foldQueriesPerKernel(slotKernels)),
         ),
       })),
       ...Array.from({ length: slotN }, (_, i) => ({

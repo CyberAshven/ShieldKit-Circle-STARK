@@ -66,22 +66,31 @@ function specAwareRecoversNote(unlockings: Uint8Array[], note: Note, viewingComm
     const body = firstPush(u);
     if (body.length >= 32 && containsPreimage(xorRepeat(body, viewingCommit), note)) return true;
   }
+  const rebuiltLeaf = hex(commitNote(note, H));
+  for (const u of unlockings) {
+    const xored = xorRepeat(u, viewingCommit);
+    if (hex(xored).includes(rebuiltLeaf) && containsPreimage(xored, note)) return true;
+  }
   const fold = unlockings
     .map(firstPush)
     .filter((b) => b.length >= HASH_BIT_SHARD_BYTES && b.length <= HASH_BIT_SHARD_BYTES + 256)
     .map((b) => b.subarray(0, HASH_BIT_SHARD_BYTES));
-  if (fold.length === HASH_BIT_SHARD_COUNT) {
+  const leftover = unlockings.map(firstPush).find((b) => b.length === 7200);
+  const rowSources: Uint8Array[][] = [];
+  if (fold.length === HASH_BIT_SHARD_COUNT) rowSources.push(fold);
+  if (leftover) {
+    rowSources.push(Array.from({ length: HASH_BIT_SHARD_COUNT }, (_, s) => leftover.subarray(s * HASH_BIT_SHARD_BYTES, (s + 1) * HASH_BIT_SHARD_BYTES)));
+  }
+  for (const shards of rowSources) {
     try {
-      const rows = decodeHashBitRows(fold);
+      const rows = decodeHashBitRows(shards);
       const msgs = messagesFromHashBitRows(rows);
       const blob = hex(concatBytes(msgs.amountCommitMsg, msgs.leafMsg, msgs.nfMsg));
       if (blob.includes(hex(note.rho)) || blob.includes(hex(note.ownerSecret)) || blob.includes(hex(amount8))) {
         return true;
       }
-      const rebuilt = sha256(concatBytes(commitAmount(note.amountSats, note.rho, H), note.rho, note.ownerSecret));
-      void rebuilt;
     } catch {
-      /* unpack of LDE vector as TRACE rows is expected to be garbage */
+      /* leftover pair-bind / LDE as TRACE w is garbage */
     }
   }
   return false;
@@ -189,7 +198,7 @@ describe("walked note unlocking does not publish the preimage", () => {
         newState: w.statement.newState,
         proof: raw,
         statement: w.statement,
-        lockKind: "p2sh32",
+        lockKind: "p2s",
         envelope: "consensus",
         slotKernels: SLOT_KERNEL_COUNT_CONSENSUS,
         note,

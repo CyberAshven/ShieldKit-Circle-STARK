@@ -5,7 +5,7 @@
  */
 import { createTestAuthenticationProgramBch, createVirtualMachineBch2026 } from "@bitauth/libauth";
 import { add, encodeLe, mul } from "../backends/circle/m31.ts";
-import { decodeFriProof, hashBitFoldShards, verifyFri, type FriProof } from "../backends/circle/fri.ts";
+import { decodeFriProof, verifyFri, type FriProof } from "../backends/circle/fri.ts";
 import { FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
 import {
   compileFriMerkleOnlyKernel,
@@ -364,13 +364,12 @@ export function buildPoolSuccessorTx(args: {
   const cqzUnlock = cqzKernelUnlocking(cqzCarrier);
   const foldQ = foldQueriesPerKernel(slotKernels);
   const foldLocks = Array.from({ length: foldN }, (_, f) => compileFoldLockP2sh32(foldQ, f * foldQ));
-  const hashBitShards = foldQ === 6 ? hashBitFoldShards(decodedProof) : undefined;
   const foldUnlocks = Array.from({ length: foldN }, (_, f) =>
     foldKernelUnlocking(
       foldQ,
       f * foldQ,
       airOnly,
-      args.foldPairShards?.[f] ?? hashBitShards?.[f] ?? queryPairShard(args.proof, f * foldQ, foldQ),
+      args.foldPairShards?.[f] ?? queryPairShard(args.proof, f * foldQ, foldQ),
     ),
   );
   const slotN = slotInputsCount(slotKernels);

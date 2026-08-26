@@ -199,6 +199,7 @@ describe("M31 / Newton / circle on 2026 VM", () => {
       defaultInternalHash(),
       packedFs.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES),
       packedFs.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES),
+      proof.hashRoot,
     );
     const i = qIdx[0]!;
     const { n, z, q } = nqzAt(d.statement, i);
@@ -376,6 +377,7 @@ describe("M31 / Newton / circle on 2026 VM", () => {
       defaultInternalHash(),
       packed.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES),
       packed.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES),
+      proof.hashRoot,
     )[0]!;
     const lock = cashAssemblyToBin(`${fsIndex0Asm()}\nOP_NIP\n<${i0}>\nOP_NUMEQUAL`);
     if (typeof lock === "string") throw new Error(lock);
@@ -402,6 +404,7 @@ describe("M31 / Newton / circle on 2026 VM", () => {
       defaultInternalHash(),
       packed.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES),
       packed.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES),
+      proof.hashRoot,
     )[3]!;
     const lock = cashAssemblyToBin(
       `<3> OP_TOALTSTACK\n${fsIndexFromAltSlotAsm()}\nOP_NIP\n<${i3}>\nOP_NUMEQUAL`,
@@ -445,7 +448,7 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     assert.notDeepEqual(k0, kLast);
   });
 
-  it("slot-0 recomputes FS index; cooked spender idx is ignored", () => {
+  it("isolated slot-0 reads packed idx; cooking it fails without bind-T", () => {
     const note: Note = {
       amountSats: 8_000n,
       rho: crypto.getRandomValues(new Uint8Array(32)),
@@ -457,9 +460,11 @@ describe("M31 / Newton / circle on 2026 VM", () => {
     );
     const proof = proveFri(d.statement, wDeposit(note, d.index, d.path));
     const packed = encodeAirPacked(d.statement, encodeFriProof(proof));
+    const honest = evalPadded(compileSlot0CqzLock(), pushData(packed));
+    assert.equal(honest.accepted, true, honest.error ?? "honest slot-0");
     packed[AIR_OFF_IDX] = (403 >> 8) & 0xff;
     packed[AIR_OFF_IDX + 1] = 403 & 0xff;
-    const ok = evalPadded(compileSlot0CqzLock(), pushData(packed));
-    assert.equal(ok.accepted, true, ok.error ?? "cooked idx must not change recomputed FS slot-0");
+    const cooked = evalPadded(compileSlot0CqzLock(), pushData(packed));
+    assert.equal(cooked.accepted, false, "isolated slot trusts packed idx; bind-T recomputes the table");
   });
 });

@@ -40,12 +40,14 @@ import {
   evalMaskPolyFromBlobAsm,
   fusedRPrepAsm,
   openingMaskAtBlobAsm,
+  shaPubsAccFrom96Asm,
   slotRCqzAsm,
   slotRCqzBodyBlobAsm,
 } from "../src/chain/r-kernel.ts";
+import { shaPubsAcc, statementShaOpens } from "../src/chain/note-auth-air.ts";
 import { encodeFeltBlob } from "../src/chain/m31-asm.ts";
 import { encodeStatement } from "../src/pool/statement.ts";
-import { sha256 } from "../src/pool/bytes.ts";
+import { concatBytes, sha256 } from "../src/pool/bytes.ts";
 import { UNLOCKING_MAX_BYTES } from "../src/chain/envelope.ts";
 import { defaultInternalHash } from "../src/backends/circle/internal-hash.ts";
 
@@ -88,6 +90,7 @@ function mix() {
     defaultInternalHash(),
     packed.subarray(AIR_OFF_EVEN, AIR_OFF_EVEN + AIR_NEWTON_BYTES),
     packed.subarray(AIR_OFF_ODD, AIR_OFF_ODD + AIR_NEWTON_BYTES),
+    proof.hashRoot,
   )[0]!;
   const nqz = nqzAt(d.statement, i0);
   const r = openingMaskAt(proof.viewingCommit!, i0, undefined, nqz.z);
@@ -196,10 +199,13 @@ OP_NUMEQUAL
     const lock = cashAssemblyToBin(`
 ${defineFn(SCALAR_MUL_FAST, 2, "fast")}
 ${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
+<0> OP_TOALTSTACK
 ${fusedRPrepAsm()}
 <0>
 ${slotRCqzBodyBlobAsm(2, 3)}
 OP_2DROP
+OP_DROP
+OP_FROMALTSTACK
 OP_DROP
 OP_1
 `);
@@ -210,10 +216,13 @@ OP_1
       const one = cashAssemblyToBin(`
 ${defineFn(SCALAR_MUL_FAST, 2, "fast")}
 ${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
+<0> OP_TOALTSTACK
 ${fusedRPrepAsm()}
 <${slot}>
 ${slotRCqzBodyBlobAsm(2, 3)}
 OP_2DROP
+OP_DROP
+OP_FROMALTSTACK
 OP_DROP
 OP_1
 `);
@@ -221,6 +230,41 @@ OP_1
       const got = evalPadded(one, inner);
       assert.equal(got.accepted, true, got.error ?? `fused slot ${slot}`);
     }
+    const mixedN = cashAssemblyToBin(`
+${defineFn(SCALAR_MUL_FAST, 2, "fast")}
+${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
+<1> OP_TOALTSTACK
+${fusedRPrepAsm()}
+<0>
+${slotRCqzBodyBlobAsm(2, 3)}
+OP_2DROP
+OP_DROP
+OP_FROMALTSTACK
+OP_DROP
+OP_1
+`);
+    if (typeof mixedN === "string") throw new Error(mixedN);
+    const mixedEv = evalPadded(mixedN, inner);
+    assert.equal(mixedEv.accepted, false, "fused slot must reject N ≠ (q−R)·Z");
+  });
+
+  it("shaPubsAccFrom96Asm matches JS shaPubsAcc", () => {
+    const { d, proof } = mix();
+    const pubs = statementShaOpens(d.statement, proof.auth.leaf);
+    const acc = shaPubsAcc(pubs);
+    const blob = concatBytes(pubs.amountCommit, pubs.leaf, pubs.nf);
+    const lock = cashAssemblyToBin(`${shaPubsAccFrom96Asm()}\n<${acc.toString()}>\nOP_NUMEQUAL`);
+    if (typeof lock === "string") throw new Error(lock);
+    const ev = evalPadded(lock, pushData(blob));
+    assert.equal(ev.accepted, true, ev.error ?? `acc=${acc}`);
+  });
+
+  it("leftover SHA-in-C vanish N is 0 at FS slot 0", () => {
+    const { packed } = mix();
+    const ok = evalPadded(compileNFromTSlot0Lock(0n), pushData(packed));
+    assert.equal(ok.accepted, true, ok.error ?? "honest leftover SHA-in-C N=0");
+    const bad = evalPadded(compileNFromTSlot0Lock(1n), pushData(packed));
+    assert.equal(bad.accepted, false, "nonzero leftover N must fail vanish");
   });
 
   it("honest (q−R)·Z == C(z) accepts", () => {

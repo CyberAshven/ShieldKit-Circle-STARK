@@ -135,10 +135,10 @@ describe("Circle FRI prove/verify", () => {
       createdLeaf: fake.noteCommitment,
       createdIndex: index,
       createdPath: path,
-    });
+    }, { occupancyOnly: true });
     const v = verifyFri(fake, forced);
     assert.equal(v.ok, false, "forced fake-membership proof must not verify");
-    assert.match(v.ok ? "" : v.reason, /membership|auth|path|leaf/i);
+    assert.match(v.ok ? "" : v.reason, /membership|auth|path|leaf|sha-in-c/i);
   });
 
   it("from-scratch fake nullifier: prove throws and a forced proof fails verify", () => {
@@ -163,10 +163,10 @@ describe("Circle FRI prove/verify", () => {
       createdLeaf: new Uint8Array(32),
       createdIndex: 0,
       createdPath: [],
-    });
+    }, { occupancyOnly: true });
     const v = verifyFri(fake, forced);
     assert.equal(v.ok, false);
-    assert.match(v.ok ? "" : v.reason, /nullifier|membership|auth|preimage/i);
+    assert.match(v.ok ? "" : v.reason, /nullifier|membership|auth|preimage|sha-in-c/i);
     const opened = verifyFri(fake, decodeFriProof(encodeFriProof(forced)), {}, { viewingKey: forced.viewingKey });
     assert.equal(opened.ok, false, "viewing-key verify must still reject fake nullifier");
     assert.match(opened.ok ? "" : opened.reason, /nullifier|membership|auth|preimage/i);
