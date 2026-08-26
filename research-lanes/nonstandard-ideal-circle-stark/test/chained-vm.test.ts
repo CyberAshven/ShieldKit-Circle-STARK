@@ -137,6 +137,25 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
     assert.equal(checked, 18, "18 tape hops carry the 36 unique-orbit queries");
   });
 
+  it("cqz rejects a tape hop whose NFT nfRoot does not match packed AIR", { timeout: 400_000 }, () => {
+    const { chain, wallet, old, tips } = buildChain();
+    const hop = chain.hops.find((h) => h.role === "tape" && h.index === 0)!;
+    const tx = decodeTransaction(hop.raw);
+    if (typeof tx === "string") throw new Error(tx);
+    const flipped = new Uint8Array(old);
+    flipped[96] ^= 0xff;
+    const sourceOutputs = tapeSourceOutputs({
+      q0: 0,
+      hopIndex: 0,
+      old: flipped,
+      wallet,
+      prevTape: BigInt(TAPE_VALUE),
+      tipLock: tips[0],
+    });
+    const r = createVirtualMachineBch2026(true).verify({ transaction: tx, sourceOutputs });
+    assert.notEqual(r, true, "packed AIR nfRoot must bind the carrier NFT");
+  });
+
   it("a tokenless carrier breaks cqz: it has no PAA1 commitment to bind against", { timeout: 400_000 }, () => {
     const { chain, wallet, old } = buildChain();
     const hop = chain.hops.find((h) => h.role === "tape" && h.index === 0)!;

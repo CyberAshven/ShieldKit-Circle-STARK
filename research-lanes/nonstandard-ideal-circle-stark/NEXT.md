@@ -4,7 +4,7 @@ A wall is a number, then the next construction. **Start is occupancy FRI10 / 124
 
 ## After dedicated booleanity kernels (measured, not the named end)
 
-Live: occupancy tLde = algebraicC Q + booleanity Q + mask. Packed nTable is `(q−R)·Z` (booleanity C). Isolated leftover EQUALVERIFYs that. Envelope **A** is 36-query fused folds in one standard tx (Chipnet `0ce65254…` / 97632 B). Envelope **B** is the occupancy completeness successor (Chipnet `62c1d6b9…` / **146168 B**), not FRI9 `81bb2cef…` / 498398 B. Envelope **C** chunks 36 queries across 19 hops (pay `cbfe3e19…` / 92011 B). CLI: `cd research-lanes/nonstandard-ideal-circle-stark` then `npx tsx src/cli.ts pool measure-tx --envelope a|b|c` / `pool land --envelope a|b|c`. Workflow: [`WORKFLOW.md`](WORKFLOW.md). FRI_VERSION 11.
+Live: occupancy tLde = algebraicC Q + booleanity Q + mask. Packed nTable is `(q−R)·Z` (booleanity C). Isolated leftover EQUALVERIFYs that. Envelope **A** is 36-query fused folds in one standard tx (Chipnet `ab367c76…` / 98112 B). Envelope **B** is the occupancy completeness successor (Chipnet `3a99aeaf…` / **147110 B**), not FRI9 `81bb2cef…` / 498398 B. Envelope **C** chunks 36 queries across 19 hops (pay `8b7bdbad…` / 92326 B). Occupancy B 3-note silent batch: `58030256…` / 144273 B. CLI: `cd research-lanes/nonstandard-ideal-circle-stark` then `npx tsx src/cli.ts pool measure-tx --envelope a|b|c` / `pool land --envelope a|b|c`. Workflow: [`WORKFLOW.md`](WORKFLOW.md). FRI_VERSION 11.
 
 Fused fold leftover stays vacuous N=0 (fold density). SHA-in-C is the three booleanity kernels. Isolated packed leftover still EQUALVERIFYs `(q−R)·Z == C`. Round-gates stay JS. Leaf/nf compressions stay note-auth.
 

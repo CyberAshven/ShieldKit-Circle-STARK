@@ -896,12 +896,12 @@ export function compileFundVerifierKernels(
   const batched = stepLocks.length > 0;
   const wantNote = !batched && includeNoteAuth(slotKernels, forceNoteAuth, occupancyA);
   const boolN = occupancyA ? 0 : booleanityKernelCount(slotKernels);
-  const extraCount =
-    (batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth, occupancyA)) +
-    foldN +
-    slotInputsCount(slotKernels) +
-    boolN +
-    stepLocks.length;
+  const prefixN = batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth, occupancyA);
+  const slotN = slotInputsCount(slotKernels);
+  const extraCount = prefixN + foldN + slotN + boolN + stepLocks.length;
+  // Same index as compileCovenantSuccessor: batch drops note-auth so boolInput0 is 17, not BOOL_CHECK_INPUT=18.
+  const boolInput0 = 1 + FRI_KERNEL_INPUTS + prefixN + foldN + slotN;
+  const fold0Pins = boolN > 0 ? foldBooleanityPins(boolInput0, 0, boolN) : [];
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
   const fee = 2_000n + BigInt(count) * 80n;
@@ -943,7 +943,7 @@ export function compileFundVerifierKernels(
         lockingBytecode: compileFoldLockP2sh32(
           foldQueriesPerKernel(slotKernels),
           f * foldQueriesPerKernel(slotKernels),
-          boolN > 0 && f === 0,
+          f === 0 ? fold0Pins : [],
         ),
         valueSatoshis: BigInt(kernelSats),
       })),

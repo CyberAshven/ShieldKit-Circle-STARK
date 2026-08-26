@@ -6,11 +6,12 @@ Chipnet only. Never mainnet. Unlocking/redeem ≤ 10 KB.
 
 ## Envelopes
 
-| Envelope | What | Size class | Land (2026-08-26) |
+| Envelope | What | Size class | Land (2026-08-27) |
 | --- | --- | ---: | --- |
-| **A** | 36 unique-orbit fused folds, standard Electrum. Omits B booleanity + note-auth. | ≤ 100000 B (~98 KB) | [0ce65254…](https://bchexplorer.cash/chipnet/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41) 97632 B |
-| **B** | Occupancy completeness: 36q + 3 booleanity kernels + note-auth. JSON-RPC (not Electrum). | ≤ 1000000 B (**~147 KB**) | [62c1d6b9…](https://bchexplorer.cash/chipnet/tx/62c1d6b956f2bf431a56622c0c2b96180bb1a5d80c9488920807f2af3a2f6541) **146168 B** |
-| **C** | Same completeness as B, 19 standard hops, counted-tip + cqz nfRoot/instance bind. | each hop (20000, 100000] | pay [cbfe3e19…](https://bchexplorer.cash/chipnet/tx/cbfe3e19720e92a92cfab00a641a25ee6c5a333e0fd776fe37630f48fd20e19c) 92011 B |
+| **A** | 36 unique-orbit fused folds, standard Electrum. Omits B booleanity + note-auth. | ≤ 100000 B (~98 KB) | [ab367c76…](https://bchexplorer.cash/chipnet/tx/ab367c767fc2e7b7f97c9f9bb0dc957edc81800c53b3db4bbc5eff4f74fcd973) 98112 B |
+| **B** | Occupancy completeness: 36q + 3 booleanity kernels + note-auth. JSON-RPC (not Electrum). | ≤ 1000000 B (**~147 KB**) | [3a99aeaf…](https://bchexplorer.cash/chipnet/tx/3a99aeaf48e59b3482ab163b544377337715f92056ef5d5294e6d7c5d58c9572) **147110 B** |
+| **C** | Same completeness as B, 19 standard hops, counted-tip + cqz nfRoot/instance bind. | each hop (20000, 100000] | pay [8b7bdbad…](https://bchexplorer.cash/chipnet/tx/8b7bdbadc45bc3ca40cfcce4b909f250df9960c532da38aace7655542c527570) 92326 B |
+| **B** N=3 | Silent step kernels (leaf/nf/amountCommit). Compact CAT+SHA pin. JSON-RPC. | **~141 KB** | [58030256…](https://bchexplorer.cash/chipnet/tx/58030256a1d3b5c817da50044f8a3fa4a8c42aea4642bc8a274356d4b47decf8) 144273 B |
 
 FRI9 2026-08-21 (`614b7077…` / `81bb2cef…` 498398 B / `06a6078a…`) is a **different** vk. Do not relabel.
 
@@ -33,6 +34,10 @@ npx tsx src/cli.ts pool land --envelope a
 npx tsx src/cli.ts pool land --envelope b
 npx tsx src/cli.ts pool land --envelope c
 npx tsx src/cli.ts pool land --envelope all
+
+# Occupancy B, N silent step kernels (JSON-RPC). Dry-run first: a failed live run can leave genesis on chain.
+npx tsx scripts/chipnet-land-batch.ts 3 .local/chipnet-batch --dry
+npx tsx scripts/chipnet-land-batch.ts 3 .local/chipnet-batch
 ```
 
 `workspaces/any-amount` CLI is still FRI9 4-slot until that freeze is lifted. Occupancy `--envelope a|b|c` is **this** binary.

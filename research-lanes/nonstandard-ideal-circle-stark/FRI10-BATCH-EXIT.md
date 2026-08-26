@@ -287,11 +287,11 @@ Verified in `test/batch-chained-vm.test.ts`: a 3-note batch built through
 VM**, three of them carrying their own note-auth kernel, and a forged intermediate
 root is rejected. FRI9 single-note chaining is asserted unchanged in the same file.
 
-**Still open:** nothing has been broadcast. `landC(..., batchNotes)` builds and
-signs but no N-note batch has touched Chipnet, so every claim here is about
-compiled and VM-verified transactions, not confirmed ones. The FRI10 switchover -
-bumping the version and moving all envelopes onto the batch family - remains an
-audit call.
+**Still open:** `landC(..., batchNotes)` (option A' tape hops) is not the Chipnet
+path. Occupancy B 3-note silent batch is on Chipnet: successor
+[`58030256…`](https://bchexplorer.cash/chipnet/tx/58030256a1d3b5c817da50044f8a3fa4a8c42aea4642bc8a274356d4b47decf8)
+/ 144273 B (JSON-RPC). The FRI10 switchover — bumping the version and moving all
+envelopes onto the batch family — remains an audit call.
 
 ## Option B, done as a NEW kernel (2026-08-22)
 

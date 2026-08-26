@@ -28,7 +28,8 @@ import { binToHex, hexToBin } from "@bitauth/libauth";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { runBatchSuccessor } from "../pool/mix-successor.ts";
-import { circleFriPlugin } from "../backends/circle/plugin.ts";
+import { decodeFriProof, verifyFri } from "../backends/circle/fri.ts";
+import { wBatchExit } from "../backends/circle/air.ts";
 import { encodePublicPaa1, utxoValueFor } from "../pool/state.ts";
 import { loadLabWallet } from "./wallet.ts";
 import { connectChipnet, listUnspent } from "./electrum.ts";
@@ -51,7 +52,8 @@ import { successorFeeCoinSats } from "./envelope.ts";
 import { createVirtualMachineBch2026, decodeTransaction } from "@bitauth/libauth";
 import { poolLockP2sh32 } from "./covenant-p2s.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
-import { compileFoldLockP2sh32, foldKernelCount, foldQueriesPerKernel } from "./fold-kernel.ts";
+import { compileFoldLockP2sh32, foldBooleanityPins, foldKernelCount, foldQueriesPerKernel, slotInputsCount } from "./fold-kernel.ts";
+import { booleanityKernelCount, compileBooleanityLockP2sh32, BOOL_SHARD_QUERIES } from "./booleanity-kernel.ts";
 import { compileGrindLockP2sh32 } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "./algebraic-c-kernel.ts";
 import { p2pkhLockingOf } from "./wallet.ts";
@@ -74,7 +76,7 @@ export async function landBatch(args: {
   if (noteCount < 1) throw new Error("need at least one note");
 
   const b = runBatchSuccessor({ depositCount: Math.max(6, noteCount), noteCount });
-  const v = circleFriPlugin.verify(b.statement, b.proof);
+  const v = verifyFri(b.statement, decodeFriProof(b.proof), wBatchExit(b.spends));
   if (!v.ok) throw new Error(`proof does not verify off chain: ${v.reason}`);
 
   const plan = stepPlan({
@@ -186,14 +188,21 @@ export async function landBatch(args: {
     });
     out.successorBytes = successor.txBytes;
     out.stepInputs = stepLocks.length;
+    mkdirSync(args.scratch, { recursive: true });
+    writeFileSync(join(args.scratch, `batch-${args.envelope}-${noteCount}.hex`), binToHex(successor.raw));
 
-    // PRE-FLIGHT. Run the real 2026 VM over the compiled successor before any
-    // broadcast. If the genesis covenant and the successor's redeem disagree,
-    // this catches it here instead of after genesis is on chain and spent.
+    // PRE-FLIGHT. Match occupancy extras: fused R (slotInputs=0) + 3 booleanity after folds.
+    // Consensus B is >100 KB; standard-mode VM would reject on size, not script.
     const tx = decodeTransaction(successor.raw);
     if (typeof tx === "string") throw new Error(`decode successor: ${tx}`);
     const kSats = 1000n;
     const nFold = foldQueriesPerKernel(slots);
+    const folds = foldKernelCount(slots);
+    const slotN = slotInputsCount(slots);
+    const boolN = booleanityKernelCount(slots, args.envelope === "consensus");
+    const prefixN = 3;
+    const boolInput0 = 1 + FRI_KERNEL_INPUTS + prefixN + folds + slotN;
+    const fold0Pins = boolN > 0 ? foldBooleanityPins(boolInput0, 0, boolN) : [];
     const sourceOutputs = [
       {
         lockingBytecode: poolLockP2sh32({ slotKernels: slots, finalNfRoot, stepLocks }),
@@ -212,25 +221,27 @@ export async function landBatch(args: {
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: kSats },
       { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: kSats },
       { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: kSats },
-      ...Array.from({ length: foldKernelCount(slots) }, (_, f) => ({
-        lockingBytecode: compileFoldLockP2sh32(nFold, f * nFold),
+      ...Array.from({ length: folds }, (_, f) => ({
+        lockingBytecode: compileFoldLockP2sh32(nFold, f * nFold, f === 0 ? fold0Pins : []),
         valueSatoshis: kSats,
       })),
-      ...Array.from({ length: slots }, (_, i) => {
+      ...Array.from({ length: slotN }, (_, i) => {
         const n = slots > SLOT_KERNEL_COUNT ? SLOTS_PER_KERNEL : 1;
         return { lockingBytecode: compileSlotsLockP2sh32(i * n, n), valueSatoshis: kSats };
       }),
+      ...Array.from({ length: boolN }, (_, i) => ({
+        lockingBytecode: compileBooleanityLockP2sh32(i * BOOL_SHARD_QUERIES),
+        valueSatoshis: kSats,
+      })),
       ...stepLocks.map((lock) => ({ lockingBytecode: lock, valueSatoshis: kSats })),
       { lockingBytecode: p2pkhLockingOf(wallet), valueSatoshis: BigInt(forFee.value) },
     ];
     if (tx.inputs.length !== sourceOutputs.length) {
       throw new Error(`pre-flight: ${tx.inputs.length} inputs vs ${sourceOutputs.length} source outputs`);
     }
-    const vm = createVirtualMachineBch2026(true).verify({ transaction: tx, sourceOutputs });
+    const vm = createVirtualMachineBch2026(args.envelope !== "consensus").verify({ transaction: tx, sourceOutputs });
     if (vm !== true) throw new Error(`pre-flight VM rejected the successor: ${String(vm).slice(0, 200)}`);
     out.preflight = "vm ok";
-    mkdirSync(args.scratch, { recursive: true });
-    writeFileSync(join(args.scratch, `batch-${args.envelope}-${noteCount}.hex`), binToHex(successor.raw));
     if (!args.dryRun) {
       const id = (await broadcastRetry(client, successor.raw, successor.txid)).txid;
       out.successor = id;

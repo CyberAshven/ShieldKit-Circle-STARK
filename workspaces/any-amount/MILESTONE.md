@@ -4,7 +4,7 @@
 **Unlocking + redeem:** ≤ 10 KB (Velma).  
 Old txids stay. They are not relabeled.
 
-## Now (2026-08-26)
+## Now (2026-08-27)
 
 Any-amount pool. Circle FRI is **plugin #1**, not the pool identity.
 
@@ -16,7 +16,21 @@ Three envelopes, size not the identity ([`ENVELOPES.md`](ENVELOPES.md)):
 | **B** | Completeness, consensus size allowed (FRI9 36-fold+36-slot land `81bb2cef…` / 498398 B). | this workspace `--envelope b` |
 | **C** | Same as B, multi-tx standard hops, counted-tip bind. | this workspace `--envelope c` |
 
-**Chipnet explorer.** Melroy [BCH Explorer](https://bchexplorer.cash/chipnet/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41) (`bchexplorer.cash/chipnet`); also [Paytaca Chipnet](https://chipnet.bchexplorer.info/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41). FRI9 2026-08-21 txs stay below; they are **not** occupancy.
+**Chipnet explorer.** Melroy [BCH Explorer](https://bchexplorer.cash/chipnet/tx/ab367c767fc2e7b7f97c9f9bb0dc957edc81800c53b3db4bbc5eff4f74fcd973) (`bchexplorer.cash/chipnet`); also [Paytaca Chipnet](https://chipnet.bchexplorer.info/tx/ab367c767fc2e7b7f97c9f9bb0dc957edc81800c53b3db4bbc5eff4f74fcd973). FRI9 2026-08-21 txs stay below; they are **not** occupancy.
+
+### Occupancy FRI11 lands (2026-08-27)
+
+36q / 20 grind / TRACE 64. Silent 3-note batch + C packed-AIR nfRoot bind. **A** Electrum. **B** JSON-RPC (~147 KB). **C** 19 Electrum hops. 2026-08-26 occupancy txs stay; they are not relabeled.
+
+| Envelope | Land | Bytes | Melroy | Paytaca Chipnet |
+| --- | --- | ---: | --- | --- |
+| **A** occupancy | successor | 98112 | [ab367c76…](https://bchexplorer.cash/chipnet/tx/ab367c767fc2e7b7f97c9f9bb0dc957edc81800c53b3db4bbc5eff4f74fcd973) | [ab367c76…](https://chipnet.bchexplorer.info/tx/ab367c767fc2e7b7f97c9f9bb0dc957edc81800c53b3db4bbc5eff4f74fcd973) |
+| **B** occupancy | successor | 147110 | [3a99aeaf…](https://bchexplorer.cash/chipnet/tx/3a99aeaf48e59b3482ab163b544377337715f92056ef5d5294e6d7c5d58c9572) | [3a99aeaf…](https://chipnet.bchexplorer.info/tx/3a99aeaf48e59b3482ab163b544377337715f92056ef5d5294e6d7c5d58c9572) |
+| **C** occupancy | pay hop | 92326 | [8b7bdbad…](https://bchexplorer.cash/chipnet/tx/8b7bdbadc45bc3ca40cfcce4b909f250df9960c532da38aace7655542c527570) | [8b7bdbad…](https://chipnet.bchexplorer.info/tx/8b7bdbadc45bc3ca40cfcce4b909f250df9960c532da38aace7655542c527570) |
+| **C** occupancy | tape hop 0 | 80449 | [036e398f…](https://bchexplorer.cash/chipnet/tx/036e398f9ede900119418e15af7bb27cccccd673326f3989aec92743e645ccc8) | [036e398f…](https://chipnet.bchexplorer.info/tx/036e398f9ede900119418e15af7bb27cccccd673326f3989aec92743e645ccc8) |
+| **B** occupancy | 3-note batch | 144273 | [58030256…](https://bchexplorer.cash/chipnet/tx/58030256a1d3b5c817da50044f8a3fa4a8c42aea4642bc8a274356d4b47decf8) | [58030256…](https://chipnet.bchexplorer.info/tx/58030256a1d3b5c817da50044f8a3fa4a8c42aea4642bc8a274356d4b47decf8) |
+
+A genesis [`925aa2b1…`](https://bchexplorer.cash/chipnet/tx/925aa2b1b55569e79c69bbe5faa11666ad678593b65f0cc02be900d4288c0136). B genesis [`fcdac0be…`](https://bchexplorer.cash/chipnet/tx/fcdac0be43e0b184f8bded97251983d0c26380ec8e9e62d2e082b32c2640d7d2). C genesis [`4a866dd6…`](https://bchexplorer.cash/chipnet/tx/4a866dd66249248e100d99f371a78e7295c3d13471ad732c660da4529afd943d). Batch genesis [`5b047415…`](https://bchexplorer.cash/chipnet/tx/5b0474157a7f08b206f166c15c974fa20bb0a2bc783f38cfe77404df58dc90e7).
 
 ### Occupancy FRI11 lands (2026-08-26)
 
