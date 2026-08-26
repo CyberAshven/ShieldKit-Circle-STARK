@@ -4,13 +4,21 @@
 **Unlocking + redeem:** ≤ 10 KB (Velma).  
 Old txids stay. They are not relabeled.
 
-## Now (2026-08-21)
+## Now (2026-08-26)
 
 Any-amount pool. Circle FRI is **plugin #1**, not the pool identity.
 
+Three envelopes, size not the identity ([`ENVELOPES.md`](ENVELOPES.md)):
+
+| Envelope | Bar | Where |
+| --- | --- | --- |
+| **A** | One standard Electrum tx. Occupancy FRI10 (QM31, 18 inputs, 6×6 fused folds). Incomplete is allowed (SHA-in-C not miner-forced). | [`research-lanes/sha-in-occupancy-c`](../../research-lanes/sha-in-occupancy-c/) |
+| **B** | Completeness, consensus size allowed (FRI9 36-fold+36-slot land `81bb2cef…` / 498398 B). | this workspace `--envelope b` |
+| **C** | Same as B, multi-tx standard hops, counted-tip bind. | this workspace `--envelope c` |
+
 | Knob | Live | Notes |
 | --- | --- | --- |
-| `--envelope a` / `b` / `c` | A 100 KB (1 fold + 4 R-slots); B one consensus tx, 36-query R; C the same work chunked across 19 standard txs (18 tape + 1 pay), every hop ≤ 100 KB | Dummy cargo is not the verifier. Unlocking 10 KB **per input** — chunk kernels. |
+| `--envelope a` / `b` / `c` | Product CLI here is still FRI9 4-slot A / 36-slot B / 19-hop C. Occupancy A runs from the sha-in-occupancy-c lane. | Dummy cargo is not the verifier. Unlocking 10 KB **per input** — chunk kernels. |
 | `--hash sha256` / `blake2s` / `poseidon2-m31` | default **sha256** (CashVM `OP_SHA256`) | Poseidon2-M31 is toorik Grain (ePrint 2023/323), not a lock opcode. |
 | `--plugin` | **circle-fri-m31** first; `hash-lab-v0` lab stub | Reserved sandwiches: `goldilocks-fri` (AIR+FRI), `air-whir` (AIR+WHIR), `spartan-whir` (Spartan+WHIR), `groth16` (pairing). `whir` is a PCS; `spartan` is an IOP. |
 
