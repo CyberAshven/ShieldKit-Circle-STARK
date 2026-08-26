@@ -5,12 +5,12 @@ Occupancy FRI11 Chipnet lands **2026-08-27** (silent batch + cqz nfRoot bind). 2
 | Envelope | Bytes | Path | Melroy |
 | --- | ---: | --- | --- |
 | **A** successor | 98112 | Electrum | [ab367c76…](https://bchexplorer.cash/chipnet/tx/ab367c767fc2e7b7f97c9f9bb0dc957edc81800c53b3db4bbc5eff4f74fcd973) |
-| **B** successor | 147110 | JSON-RPC | [3a99aeaf…](https://bchexplorer.cash/chipnet/tx/3a99aeaf48e59b3482ab163b544377337715f92056ef5d5294e6d7c5d58c9572) |
+| **B** successor | 147097 | JSON-RPC | [6b75a37d…](https://bchexplorer.cash/chipnet/tx/6b75a37d46fa3aeff7a20702f56b88e3e646fb6814fa124bc44556fc89fe3a9f) |
 | **C** pay hop | 92326 | Electrum | [8b7bdbad…](https://bchexplorer.cash/chipnet/tx/8b7bdbadc45bc3ca40cfcce4b909f250df9960c532da38aace7655542c527570) |
 | **C** tape hop 0 | 80449 | Electrum | [036e398f…](https://bchexplorer.cash/chipnet/tx/036e398f9ede900119418e15af7bb27cccccd673326f3989aec92743e645ccc8) |
 | **B** 3-note batch | 144273 | JSON-RPC | [58030256…](https://bchexplorer.cash/chipnet/tx/58030256a1d3b5c817da50044f8a3fa4a8c42aea4642bc8a274356d4b47decf8) |
 
-A/B in block `000000000000108de0…`. C pay/hop0 in `000000000000085006…`. Batch B 144273 B is occupancy (not FRI9 498 KB); public Electrum 404s until the lab miner includes it.
+A in block `000000000000108de0…`. C pay/hop0 in `000000000000085006…`. B leftover-bind `6b75a37d…` / 147097 B and batch `58030256…` / 144273 B are JSON-RPC (public Electrum 404s until the lab miner includes them). Not FRI9 498 KB.
 
 Prior occupancy 2026-08-26: A [0ce65254…](https://bchexplorer.cash/chipnet/tx/0ce652547723ce7a94efd343694e64745e4e5f169d1770cdc1953bbaa299ec41) 97632 B, B [62c1d6b9…](https://bchexplorer.cash/chipnet/tx/62c1d6b956f2bf431a56622c0c2b96180bb1a5d80c9488920807f2af3a2f6541) 146168 B, C pay [cbfe3e19…](https://bchexplorer.cash/chipnet/tx/cbfe3e19720e92a92cfab00a641a25ee6c5a333e0fd776fe37630f48fd20e19c) 92011 B.
 
