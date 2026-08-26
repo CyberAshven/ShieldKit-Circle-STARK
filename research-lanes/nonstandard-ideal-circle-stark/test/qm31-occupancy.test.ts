@@ -56,7 +56,7 @@ describe("QM31 occupancy + vk", () => {
     assert.equal(GRIND_BITS, 20);
     assert.equal(TRACE_LEN, 64);
     assert.equal(BLOWUP, 16);
-    assert.equal(FRI_VERSION, 10);
+    assert.equal(FRI_VERSION, 11);
     const w = soundnessWorksheet();
     assert.equal(w.field, "QM31");
     assert.equal(w.fieldBits, 124);

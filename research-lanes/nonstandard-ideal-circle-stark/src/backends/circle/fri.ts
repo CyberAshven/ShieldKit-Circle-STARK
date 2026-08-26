@@ -81,6 +81,7 @@ import {
 import { noteAuthBindFromStatement, noteAuthOpensFromStatement } from "../../chain/note-auth-bind.ts";
 import { assertHashTraceConstraints, buildHashBitTrace } from "../../chain/note-auth-air.ts";
 import {
+  booleanityMixLde,
   openShaBit,
   reconstructFeltsFromShards,
   shaBitLdeLeaves,
@@ -427,8 +428,11 @@ export function swapShaBitAndRegrind(
   const big = circleDomain(FRI_N);
   const built = shaBitLdeLeaves(witness, small, circleDomain(SHA_BIT_N));
   const bitRoot = new MerkleTree(built.leaves, hash).root;
+  const friCols = shaBitLdeLeaves(witness, small, big).columnsLde;
+  const mix = booleanityMixLde(friCols, small, big, hash, bitRoot);
   const { qLde } = algebraicCQuotientLde(statement, small, big, hash);
-  const occupancy = proveFromTLde(statement, qLde, proof.auth, {
+  const mixedQ = qLde.map((q, i) => add(q, mix.qLde[i]!));
+  const occupancy = proveFromTLde(statement, mixedQ, proof.auth, {
     hash,
     hashRoot: proof.hashRoot,
     hashLeaves: proof.hashLeaves,
@@ -438,7 +442,12 @@ export function swapShaBitAndRegrind(
   return {
     ...occupancy,
     hashBitRoot: bitRoot,
-    shaBit: openShaBit(built.leaves, qIdx.slice(0, SHA_BIT_QUERIES).map((i) => i % SHA_BIT_N), built.columnsLde, hash),
+    shaBit: openShaBit(
+      built.leaves,
+      qIdx.slice(0, SHA_BIT_QUERIES).map((i) => i % SHA_BIT_N),
+      built.columnsLde,
+      hash,
+    ),
   };
 }
 
@@ -469,7 +478,10 @@ export function proveFri(statement: PoolStatement, witness: FriWitness = {}, opt
   const vCommit = viewingCommit(viewingKey, hash);
   const bitBuilt = shaBitLdeLeaves(hashWit, small, circleDomain(SHA_BIT_N));
   const bitRoot = new MerkleTree(bitBuilt.leaves, hash).root;
-  const { qLde, zLde } = algebraicCQuotientLde(statement, small, big, hash);
+  const friCols = shaBitLdeLeaves(hashWit, small, big).columnsLde;
+  const mix = booleanityMixLde(friCols, small, big, hash, bitRoot);
+  const { qLde: occQ, zLde } = algebraicCQuotientLde(statement, small, big, hash);
+  const qLde = occQ.map((q, i) => add(q, mix.qLde[i]!));
   const onC = openingMaskCoeffs(vCommit, hash, "on");
   const offC = openingMaskCoeffs(vCommit, hash, "off");
   const tLde = qLde.map((q, i) => add(q, add(evalMaskPoly(onC, i), mul(zLde[i]!, evalMaskPoly(offC, i)))));
@@ -658,7 +670,9 @@ export function verifyFri(
 
   const cVec = algebraicC(publicCells(statement, hash), statement, hash);
   if (cVec.some((r) => r !== 0n)) return { ok: false, reason: "algebraicC" };
-  const { nLde, zLde } = algebraicCQuotientLde(statement, circleDomain(TRACE_LEN), circleDomain(FRI_N), hash);
+  const small = circleDomain(TRACE_LEN);
+  const big = circleDomain(FRI_N);
+  const { nLde, zLde } = algebraicCQuotientLde(statement, small, big, hash);
 
   const digest = hash.digest(encodeStatement(statement, hash));
   const commit = proof.viewingCommit && proof.viewingCommit.length === 32 ? proof.viewingCommit : new Uint8Array(32);
@@ -710,13 +724,28 @@ export function verifyFri(
       }
     }
   }
+  const extraC = Array.from({ length: FRI_N }, () => 0n);
+  const witNote = witness.spent?.note ?? witness.created?.note;
+  const mixAuth = !proof.authMasked ? openedNote(proof.auth) : undefined;
+  const mixNote = witNote ?? (mixAuth && mixAuth.rho.length === 32 ? mixAuth : undefined);
+  if (mixNote) {
+    const hashWit = {
+      amountSats: mixNote.amountSats,
+      rho: mixNote.rho,
+      owner: mixNote.ownerSecret,
+      poolInstanceId: statement.oldState.poolInstanceId,
+      action: statement.action,
+    };
+    const friCols = shaBitLdeLeaves(hashWit, small, big).columnsLde;
+    const mix = booleanityMixLde(friCols, small, big, hash, hashBitRoot);
+    for (let i = 0; i < FRI_N; i += 1) extraC[i] = mix.cLde[i]!;
+  }
   const expectedIdx = queryIndices(
     hash,
     hash.digest(concatBytes(grindSeed, writeU32BE(proof.grindNonce), new TextEncoder().encode("queries"))),
     FRI_N,
     FRI_QUERIES,
   );
-
   for (let q = 0; q < proof.queries.length; q += 1) {
     const query = proof.queries[q]!;
     if (query.index !== expectedIdx[q]) return { ok: false, reason: `query ${q} index` };
@@ -728,7 +757,7 @@ export function verifyFri(
     const openMask = proof.viewingCommit
       ? openingMaskAt(proof.viewingCommit, query.index, hash, zAt)
       : 0n;
-    if (mul(sub(query.traceValue, openMask), zAt) !== nAt) {
+    if (mul(sub(query.traceValue, openMask), zAt) !== add(nAt, extraC[query.index]!)) {
       return { ok: false, reason: "N != Q*Z" };
     }
     if (query.layers[0]!.value !== query.traceValue) {

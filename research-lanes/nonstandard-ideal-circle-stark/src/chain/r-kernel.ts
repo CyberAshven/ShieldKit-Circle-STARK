@@ -1,7 +1,7 @@
 /**
  * On-chain R_on(i) + Z(i)·R_off(i). Slot kernels check (qTable−R)·Z against
- * C(z) of the algebraicC residual interpolant (FRI_VERSION 9) — not nTable.
- * Honest C is the zero polynomial.
+ * packed booleanity C (amountCommit bit-AIR mixed into occupancy). Occupancy-only
+ * leftover is N=0; honest mixed leftover is T(T−1) batched.
  */
 import { cashAssemblyToBin } from "@bitauth/libauth";
 import {
@@ -13,6 +13,7 @@ import {
 import { M31_ADD, M31_MUL, M31_SUB } from "./m31-asm.ts";
 import {
   AIR_OFF_IDX,
+  AIR_OFF_NTABLE,
   AIR_OFF_OPEN_MASK,
   AIR_OFF_QTABLE,
   BE16_UNSIGNED,
@@ -23,6 +24,8 @@ import {
   packedMagicAsm,
   vanishingUnrolledAsm,
 } from "./air-cqz.ts";
+
+/** Input 0 first push is packed+pairs (always PUSHDATA2). */
 
 function hexPush(data: Uint8Array): string {
   return `<0x${Buffer.from(data).toString("hex")}>`;
@@ -316,10 +319,10 @@ ${M31_ADD}
 /**
  * Requires OP_DEFINE smulDef=fast, vanishDef=vanish.
  * Stack: packed i → packed i N Z
- * FRI_VERSION 9: N = C(z) of the algebraicC residual interpolant.
- * Honest residuals vanish ⇒ C is the zero polynomial ⇒ N = 0.
+ * N = packed nTable[slot] = (q−R)·Z = booleanity C at the occupancy query.
  */
-export function nAndZFromPackedIAsm(smulDef = 2, vanishDef = 3): string {
+export function nAndZFromPackedIAsm(smulDef = 2, vanishDef = 3, slot = 0): string {
+  const nOff = AIR_OFF_NTABLE + slot * 4;
   return `
 OP_DUP
 ${pushFelt(G1024.x)}
@@ -329,7 +332,10 @@ OP_OVER
 <${vanishDef}> OP_INVOKE
 OP_TOALTSTACK
 OP_2DROP
-<0>
+OP_OVER
+<${nOff}> OP_SPLIT OP_NIP
+<4> OP_SPLIT OP_DROP
+OP_BIN2NUM
 OP_FROMALTSTACK
 `;
 }
@@ -349,7 +355,7 @@ export function slotRCqzBodyAsm(slot = 0, smulDef = 2, vanishDef = 3): string {
   const qOff = AIR_OFF_QTABLE + slot * 4;
   return `
 ${fsIndexSlotAsm(slot)}
-${nAndZFromPackedIAsm(smulDef, vanishDef)}
+${nAndZFromPackedIAsm(smulDef, vanishDef, slot)}
 OP_DUP
 OP_TOALTSTACK
 OP_SWAP
@@ -406,7 +412,7 @@ OP_ROT
 `;
 }
 
-/** Stack: i → i N Z. Same as nAndZFromPackedI without a dummy packed under i. */
+/** Stack: i → i N Z. N is 0; fused leftover product is vacuous. Booleanity C is the extra kernels. */
 function nAndZFromIAsm(smulDef = 2, vanishDef = 3): string {
   return `
 OP_DUP
@@ -424,8 +430,9 @@ OP_FROMALTSTACK
 
 /**
  * Fused R: blob q24 idx12 slot → blob q24 idx12.
+ * Vacuous N=0 leftover; occupancy SHA-in-C is the booleanity kernels.
  */
-export function slotRCqzBodyBlobAsm(smulDef = 2, vanishDef = 3): string {
+export function slotRCqzBodyBlobAsm(smulDef = 2, vanishDef = 3, _queryIndex = 0): string {
   return `
 OP_DUP
 <2>

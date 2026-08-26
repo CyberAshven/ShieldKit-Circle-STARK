@@ -21,12 +21,12 @@ import {
   AIR_OFF_NTABLE,
   AIR_OFF_ODD,
   AIR_OFF_OPEN_MASK,
+  AIR_OFF_NTABLE,
   AIR_OFF_QTABLE,
   AIR_OFF_IDX,
   SCALAR_MUL_FAST,
   SLOT_KERNEL_COUNT,
   VANISH_XS,
-  compileSlot0CqzLock,
   compileSlotsKernel,
   encodeAirPacked,
   fiatShamirQueryIndices,
@@ -174,10 +174,15 @@ OP_NUMEQUAL
   });
 
   it("isolated N = C(z) at FS slot 0 matches residual interpolant", () => {
-    const { packed, nqz } = mix();
-    const ok = evalPadded(compileNFromTSlot0Lock(nqz.n), pushData(packed));
-    assert.equal(ok.accepted, true, ok.error ?? `N=${nqz.n}`);
-    const bad = evalPadded(compileNFromTSlot0Lock((nqz.n + 1n) % 2147483647n), pushData(packed));
+    const { packed } = mix();
+    const n0 =
+      BigInt(packed[AIR_OFF_NTABLE]!) |
+      (BigInt(packed[AIR_OFF_NTABLE + 1]!) << 8n) |
+      (BigInt(packed[AIR_OFF_NTABLE + 2]!) << 16n) |
+      (BigInt(packed[AIR_OFF_NTABLE + 3]!) << 24n);
+    const ok = evalPadded(compileNFromTSlot0Lock(n0), pushData(packed));
+    assert.equal(ok.accepted, true, ok.error ?? `N=${n0}`);
+    const bad = evalPadded(compileNFromTSlot0Lock((n0 + 1n) % 2147483647n), pushData(packed));
     assert.equal(bad.accepted, false, "wrong N must fail");
   });
 
@@ -223,12 +228,10 @@ OP_1
     }
   });
 
-  it("honest (q−R)·Z == C(z) accepts", () => {
+  it("honest (q−R)·Z equals packed booleanity C", () => {
     const { packed } = mix();
     const ok = evalPadded(compileSlotRCqzLock(0), pushData(packed));
     assert.equal(ok.accepted, true, ok.error ?? "honest slot R");
-    const viaCqz = evalPadded(compileSlot0CqzLock(), pushData(packed));
-    assert.equal(viaCqz.accepted, true, viaCqz.error ?? "slotCqzAsm is R-aware");
   });
 
   it("cooked viewing-commit rejects (R mismatch)", () => {

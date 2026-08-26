@@ -14,7 +14,7 @@ export const M31_P = 2147483647n;
 export const FIELD_BIT_LENGTH = 31;
 export const SECURE_FIELD_BIT_LENGTH = 124;
 /** SHA-256 of RULES.md; vk changes if RULES change. */
-export const RULES_SHA256 = "bc64c18b9b96e9cb9f692199d0513b7915167ca601f1621b7590a584e04f42fc";
+export const RULES_SHA256 = "5d7bac107945d433cf00d8a3affd875f07587f33e03d5551c432ca8f86453f54";
 /** True: F_fri is Stwo QM31; qTable/layer-0 stay M31. */
 export const STWO_FIELD_PARITY = true;
 
@@ -25,7 +25,7 @@ export const FRI_LOG_N = 10;
 export const FRI_QUERIES = 36;
 export const GRIND_BITS = 20;
 export const FRI_FINAL = 8;
-export const FRI_VERSION = 10;
+export const FRI_VERSION = 11;
 export const COMMITTED_LAYERS = Math.log2(FRI_N / FRI_FINAL); // 7
 /** Cubic merkle mix ⇒ deg(C) ~ 3T, Q = C/Z_H ⇒ rate 2/B. */
 export const RATE: "2/B" = "2/B";

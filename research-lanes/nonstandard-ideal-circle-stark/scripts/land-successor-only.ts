@@ -28,6 +28,7 @@ import {
   slotInputsCount,
 } from "../src/chain/fold-kernel.ts";
 import { compileNoteAuthLockP2sh32, prefixExtraKernelCount } from "../src/chain/note-auth-kernel.ts";
+import { booleanityKernelCount } from "../src/chain/booleanity-kernel.ts";
 import { compileGrindLockP2sh32 } from "../src/chain/grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "../src/chain/algebraic-c-kernel.ts";
 import { poolLockP2sh32 } from "../src/chain/covenant-p2s.ts";
@@ -46,7 +47,8 @@ if (!GENESIS || !INSTANCE || !CATEGORY || !KERNELS || !FEE_TX || !Number.isInteg
   throw new Error("usage: land-successor-only <genesis> <instance> <category> <kernels> <feeTx> <feePos> <feeValue> [out]");
 }
 
-const extraCount = prefixExtraKernelCount(SLOTS) + foldKernelCount(SLOTS) + slotInputsCount(SLOTS);
+const extraCount =
+  prefixExtraKernelCount(SLOTS) + foldKernelCount(SLOTS) + slotInputsCount(SLOTS) + booleanityKernelCount(SLOTS);
 const fri = [
   { tx_hash: KERNELS, tx_pos: 0, value: 121546 },
   ...Array.from({ length: FRI_KERNEL_INPUTS - 1 }, (_, i) => ({

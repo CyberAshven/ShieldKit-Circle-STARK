@@ -33,13 +33,13 @@ describe("QM31 occupancy pack (starting artifact; packed vk is occupancy RULES)"
     assert.equal(meta.vkId, SIBLING_OCCUPANCY_VK);
     assert.equal(VK_ID.endsWith(RULES_SHA256), true);
     assert.equal(VK_ID.includes("qm31"), true);
-    assert.equal(VK_ID.includes("fri10"), true);
+    assert.equal(VK_ID.includes("fri11"), true);
     assert.notEqual(liveRules, packedRules);
     assert.equal(liveRules, RULES_SHA256);
     assert.equal(packedRules, SIBLING_OCCUPANCY_RULES);
     assert.equal(meta.rulesSha256, SIBLING_OCCUPANCY_RULES);
     assert.equal(meta.rulesSha256OfPackedRules, SIBLING_OCCUPANCY_RULES);
-    assert.equal(FRI_VERSION, 10);
+    assert.equal(FRI_VERSION, 11);
     assert.equal(meta.completeness.friVersion, 10);
     assert.equal(meta.completeness.dummyPad, false);
     assert.equal(meta.completeness.leftoverBound, true);

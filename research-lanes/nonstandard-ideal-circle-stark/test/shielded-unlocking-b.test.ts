@@ -43,13 +43,13 @@ const hasPreimage = (u: Uint8Array, n: Note) => {
 
 describe("occupancy FRI10 / 124-bit start", () => {
   it("live params are occupancy FRI10 QM31 124-bit", () => {
-    assert.equal(FRI_VERSION, 10);
+    assert.equal(FRI_VERSION, 11);
     assert.equal(TRACE_LEN, 64);
     assert.equal(BLOWUP, 16);
     assert.equal(FRI_QUERIES, 36);
     assert.equal(GRIND_BITS, 20);
     assert.equal(VK_ID.includes("qm31"), true);
-    assert.equal(VK_ID.includes("fri10"), true);
+    assert.equal(VK_ID.includes("fri11"), true);
     const w = soundnessWorksheet();
     assert.equal(w.field, "QM31");
     assert.equal(w.fieldBits, 124);

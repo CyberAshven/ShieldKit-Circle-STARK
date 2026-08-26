@@ -12,7 +12,7 @@ describe("correspondence oracle + argument freeze", () => {
     assert.ok(spec.includes("ePrint 2021/582"), "spec names ethSTARK conjecture");
     assert.ok(spec.includes("JS-only"), "spec lists JS-only holes");
     assert.ok(spec.includes("checkBatchSpends"), "H1 batch-exit extra notes");
-    assert.equal(FRI_VERSION, 10);
+    assert.equal(FRI_VERSION, 11);
     assert.equal(FRI_QUERIES, 36);
   });
 

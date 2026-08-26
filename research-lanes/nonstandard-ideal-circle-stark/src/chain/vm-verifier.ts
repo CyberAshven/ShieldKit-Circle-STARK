@@ -42,6 +42,11 @@ import {
   noteAuthPublicOpens,
   noteAuthUnlockingFromProof,
 } from "./note-auth-kernel.ts";
+import {
+  booleanityKernelCount,
+  compileBooleanityLocks,
+  occupancyBoolUnlockings,
+} from "./booleanity-kernel.ts";
 import type { Note } from "../pool/notes.ts";
 import { uniqueTableAndIndex, compactPath, encodeLayerUnlocking, actualLayer } from "./merkle-multiproof.ts";
 import { encodeSteps, parentIndexOf } from "./vm-steps.ts";
@@ -356,6 +361,15 @@ export function buildPoolSuccessorTx(args: {
       airOnly,
     ),
   );
+  const boolN = booleanityKernelCount(slotKernels);
+  const boolUnlocks =
+    boolN > 0
+      ? occupancyBoolUnlockings({
+          note: args.note!,
+          statement: args.statement!,
+          packed: airOnly ?? encodeAirPacked(args.statement!, decodedEarly),
+        })
+      : [];
   const sourceOutputs = [
     {
       lockingBytecode: poolLock,
@@ -377,6 +391,10 @@ export function buildPoolSuccessorTx(args: {
         i * (slotKernels > SLOT_KERNEL_COUNT ? SLOTS_PER_KERNEL : 1),
         slotKernels > SLOT_KERNEL_COUNT ? SLOTS_PER_KERNEL : 1,
       ),
+      valueSatoshis: 1000n,
+    })),
+    ...compileBooleanityLocks().slice(0, boolN).map((lockingBytecode) => ({
+      lockingBytecode,
       valueSatoshis: 1000n,
     })),
     ...(funderNeed > 0n ? [{ lockingBytecode: funderLock, valueSatoshis: funderNeed }] : []),
@@ -455,6 +473,12 @@ export function buildPoolSuccessorTx(args: {
       })),
       ...slotUnlocks.map((unlocking, i) => ({
         outpointTransactionHash: dummyPrevout(0xc0, i),
+        outpointIndex: 0,
+        sequenceNumber: 0xffffffff,
+        unlockingBytecode: unlocking,
+      })),
+      ...boolUnlocks.map((unlocking, i) => ({
+        outpointTransactionHash: dummyPrevout(0xe0, i),
         outpointIndex: 0,
         sequenceNumber: 0xffffffff,
         unlockingBytecode: unlocking,

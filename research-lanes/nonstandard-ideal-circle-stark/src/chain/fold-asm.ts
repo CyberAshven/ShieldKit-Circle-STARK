@@ -248,7 +248,7 @@ function splitDropPrefixAsm(n: number): string {
 }
 
 /**
- * Consume packed once. No 1704-byte DUP/PICK.
+ * Consume packed once. No 1848-byte DUP/PICK.
  * Stack: packed → commit q24 idx final digest roots.
  */
 export function peelPackedFoldRAsm(nFold: number, queryIndex: number): string {
@@ -330,7 +330,7 @@ ${lambdaBlobFromDigestRootsAsm()}
 `;
 }
 
-export function foldDefinesAsm(): string {
+export function foldDefinesAsm(queryIndex = 0): string {
   const foldQm31 = FOLD_PAIR_QM31_ASM.split(CM31_MUL_ASM).join("<6> OP_INVOKE");
   return [
     defineFn(CIRCLE_ADD, 0, "cadd"),
@@ -341,7 +341,7 @@ export function foldDefinesAsm(): string {
     defineFn(BE8_MOD_P, 5, "be8"),
     defineFn(CM31_MUL_ASM, 6, "cmmul"),
     defineFn(vanishingUnrolledAsm(VANISH_XS), 7, "vanish"),
-    defineFn(slotRCqzBodyBlobAsm(1, 7), 8, "rslot"),
+    defineFn(slotRCqzBodyBlobAsm(1, 7, queryIndex), 8, "rslot"),
     defineFn(lambdaFromBlobAsm(), 9, "lamat"),
   ].join("\n");
 }
@@ -526,7 +526,7 @@ ${check}
 }
 
 /**
- * Stack in: invs pairs packed. Packed is consumed once (no 1704-byte copy).
+ * Stack in: invs pairs packed. Packed is consumed once (no 1848-byte copy).
  * Loop stack: commit q24 invs pairs λblob final128 p0..p6 i0..i6 idx q.
  * Pair/inv groups are split once per query so layer PICKs copy 8/32/4 bytes.
  * Leaves commit q24 idx for fused R (or three DROPs when R is not fused).

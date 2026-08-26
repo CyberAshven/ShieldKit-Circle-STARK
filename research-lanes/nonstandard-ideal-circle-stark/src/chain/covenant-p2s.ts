@@ -6,6 +6,7 @@ import { compileFoldLockP2sh32, foldKernelCount, foldQueriesPerKernel, slotInput
 import { compileGrindLockP2sh32 } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "./algebraic-c-kernel.ts";
 import { compileNoteAuthLockP2sh32, includeNoteAuth, prefixExtraKernelCount } from "./note-auth-kernel.ts";
+import { booleanityKernelCount } from "./booleanity-kernel.ts";
 import {
   EXTRACT_INSTANCE,
   EXTRACT_RESERVE_NUM,
@@ -79,9 +80,10 @@ function requireFriInputsAsm(
   const prefix = 1 + FRI_KERNEL_INPUTS;
   const batched = stepLocks.length > 0;
   const extraN = batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth);
+  const boolN = booleanityKernelCount(slotKernels);
   const lines = [
     "OP_TXINPUTCOUNT",
-    `<${prefix + extraN + foldN + slotN + stepLocks.length}>`,
+    `<${prefix + extraN + foldN + slotN + boolN + stepLocks.length}>`,
     "OP_GREATERTHANOREQUAL",
     "OP_VERIFY",
   ];
@@ -114,11 +116,13 @@ function requireFriInputsAsm(
       "OP_EQUALVERIFY",
     );
   }
+  // Booleanity locks are pinned by fold 0 (pool redeem is already at the
+  // leftover+packed unlocking cap). Count still binds: TXINPUTCOUNT above.
   // Step kernels last, one per note, each pinned to its own (R_in, R_out)
   // address so neither the order nor the count can be altered.
   for (const [j, lock] of stepLocks.entries()) {
     lines.push(
-      `<${prefix + extraN + foldN + slotN + j}>`,
+      `<${prefix + extraN + foldN + slotN + boolN + j}>`,
       "OP_UTXOBYTECODE",
       `<0x${binToHex(lock)}>`,
       "OP_EQUALVERIFY",

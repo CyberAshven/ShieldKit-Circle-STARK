@@ -2,11 +2,13 @@
 
 A wall is a number, then the next construction. **Start is occupancy FRI10 / 124-bit** ([`START.md`](START.md)). The search is [`PROMPT.md`](PROMPT.md).
 
-## After amountCommit bit-AIR path-walks (measured, not the named end)
+## After dedicated booleanity kernels (measured, not the named end)
 
-Chipnet `c8de3f2b…` / 123861 B: miner EQUALVERIFYs 32 path-walks of `want‖T` against hashBitRoot. Unique-table compact-index walks overflowed density (table PICK × depth × queries). Full siblings in grind unlocking buy the density budget; T stays in folds; leftover stays pair-bind. Next: mix booleanity Q into occupancy tLde (DEEP), then next-row round-gates, then leaf/nf compressions.
+Live: occupancy tLde = algebraicC Q + booleanity Q + mask. Packed nTable is `(q−R)·Z` (booleanity C). Isolated leftover EQUALVERIFYs that. Three consensus kernels after the folds recompute `Σ α^c T(T−1)` at 12 occupancy queries each (T from their own unlocking, α from leftover `hashBitRoot`) and EQUALVERIFY packed C. Honest isolated booleanity accepts under density (`4843305/5964800`, unlocking 7415). Zero nTable rejects. Silent unlocking. 32 bit-AIR path-walks. FRI_VERSION 11.
 
-Do not default to leftover SHA-LDE. Do not default to 36 extra hash-AIR inputs just because they meter ~95 kB. Occupancy FRI10 / 124-bit stays. Do not pad.
+Fused fold leftover stays vacuous N=0 (fold density). SHA-in-C is the three booleanity kernels. Isolated packed leftover still EQUALVERIFYs `(q−R)·Z == C`. Round-gates stay JS. Leaf/nf compressions stay note-auth.
+
+Do not default to leftover SHA-LDE. Do not default to 36 extra 576-column hash-AIR inputs. Occupancy FRI10 / 124-bit stays. Do not pad.
 
 ## Then, without dropping §2 or §6
 

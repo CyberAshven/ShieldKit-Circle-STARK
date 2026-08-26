@@ -3,15 +3,16 @@
  * TRACE bits are 0/1; LDE interpolants are M31. Booleanity C = T(T−1) vanishes
  * on TRACE, Q = C/Z is the occupancy FRI target (public algebraicC is already 0).
  * 36 query openings of 16 columns sit in each of 6 fold unlockings (same queries,
- * not extra inputs). Note-auth concatenates them into 384-byte leaves and walks
- * hashBitRoot. Round-function next-row gates stay JS until cargo allows T(ωx).
+ * not extra inputs). Occupancy tLde mixes booleanity Q. Note-auth concatenates
+ * T into 384-byte leaves, walks hashBitRoot, and EQUALVERIFYs T(T−1) vs packed C.
+ * Round-function next-row gates stay JS until cargo allows T(ωx).
  */
 import { vanishingOnTrace } from "../backends/circle/air.ts";
 import type { CirclePoint } from "../backends/circle/group.ts";
 import { interpolateCircle, evalCirclePoly } from "../backends/circle/interpolate.ts";
 import { MerkleTree } from "../backends/circle/merkle.ts";
 import { add, encodeLe, inv, mul, sub, type M31El } from "../backends/circle/m31.ts";
-import { TRACE_LEN } from "../backends/circle/params.ts";
+import { FRI_QUERIES, TRACE_LEN } from "../backends/circle/params.ts";
 import type { InternalHash } from "../backends/circle/internal-hash.ts";
 import { concatBytes } from "../pool/bytes.ts";
 import {
@@ -25,7 +26,7 @@ import { shaPublicPrefix } from "./sha-lde.ts";
 export const SHA_BIT_GROUP_COLS = BITS_PER_GROUP;
 export const SHA_BIT_FOLDS = 6;
 export const SHA_BIT_COLS_PER_FOLD = SHA_BIT_GROUP_COLS / SHA_BIT_FOLDS;
-/** 32×3+20=116 bits, occupancy stays 36. 256-leaf LDE, depth 8. Paths are full siblings. */
+/** 32 query-independent 256-leaf LDE (depth 8). Occupancy mix is on FRI_N separately. */
 export const SHA_BIT_QUERIES = 32;
 export const SHA_BIT_N = TRACE_LEN * 4;
 export const SHA_BIT_PREFIX = 12;
@@ -96,6 +97,21 @@ export function shaBitLdeLeaves(w: NoteAuthWitness, small: CirclePoint[], big: C
   return { columnsLde, leaves, prefix };
 }
 
+/** Booleanity Q on `big` (occupancy FRI_N). Honest C = T(T−1) vanishes on TRACE. */
+export function booleanityMixLde(
+  columnsLde: M31El[][],
+  small: CirclePoint[],
+  big: CirclePoint[],
+  hash: InternalHash,
+  bitRoot: Uint8Array,
+): { qLde: M31El[]; cLde: M31El[] } {
+  const alpha = booleanityAlpha(hash, bitRoot);
+  const qLde = booleanityBatchQLde(columnsLde, small, big, alpha);
+  const zLde = vanishingOnTrace(big, small);
+  const cLde = qLde.map((q, i) => mul(q, zLde[i]!));
+  return { qLde, cLde };
+}
+
 export function booleanityBatchQLde(
   columnsLde: M31El[][],
   small: CirclePoint[],
@@ -119,10 +135,13 @@ export function booleanityBatchQLde(
   return q;
 }
 
-export function booleanityAlpha(hash: InternalHash, bitRoot: Uint8Array): M31El {
-  const h = hash.digest(concatBytes(bitRoot, new TextEncoder().encode("sha-bool-α")));
+export function booleanityAlpha(_hash: InternalHash, bitRoot: Uint8Array): M31El {
   return (
-    (BigInt(h[0]!) | (BigInt(h[1]!) << 8n) | (BigInt(h[2]!) << 16n) | (BigInt(h[3]! & 0x7f) << 24n)) % 2147483647n
+    (BigInt(bitRoot[0]!) |
+      (BigInt(bitRoot[1]!) << 8n) |
+      (BigInt(bitRoot[2]!) << 16n) |
+      (BigInt(bitRoot[3]! & 0x7f) << 24n)) %
+    2147483647n
   );
 }
 
@@ -171,6 +190,43 @@ export function openShaBit(
     return out;
   });
   return { root: tree.root, table: new Uint8Array(0), compact, shards, leaves };
+}
+
+/** 36 occupancy-query openings of FRI_N bit columns (16 cols per fold shard). */
+/** Occupancy-query T openings (FRI_N LDE). Three kernels of 12×96 felts. */
+export const BOOL_QUERIES = FRI_QUERIES;
+export const BOOL_KERNEL_COUNT = 3;
+export const BOOL_SHARD_QUERIES = BOOL_QUERIES / BOOL_KERNEL_COUNT;
+export const BOOL_SHARD_BYTES = BOOL_SHARD_QUERIES * SHA_BIT_FELT_BYTES;
+
+export function encodeOccupancyBoolShards(columnsLde: M31El[][], queryIndex: number[]): Uint8Array[] {
+  if (queryIndex.length !== BOOL_QUERIES) throw new Error("bool queries");
+  if (columnsLde.length !== SHA_BIT_GROUP_COLS) throw new Error("bool cols");
+  return Array.from({ length: BOOL_KERNEL_COUNT }, (_, s) => {
+    const out = new Uint8Array(BOOL_SHARD_BYTES);
+    for (let q = 0; q < BOOL_SHARD_QUERIES; q += 1) {
+      const idx = queryIndex[s * BOOL_SHARD_QUERIES + q]!;
+      for (let c = 0; c < SHA_BIT_GROUP_COLS; c += 1) {
+        out.set(encodeLe(columnsLde[c]![idx]!), (q * SHA_BIT_GROUP_COLS + c) * 4);
+      }
+    }
+    return out;
+  });
+}
+
+export function encodeFriBitShards(columnsLde: M31El[][], queryIndex: number[]): Uint8Array[] {
+  if (queryIndex.length !== SHA_BIT_QUERIES) throw new Error("sha-bit queries");
+  return Array.from({ length: SHA_BIT_FOLDS }, (_, f) => {
+    const out = new Uint8Array(SHA_BIT_SHARD_BYTES);
+    for (let q = 0; q < SHA_BIT_QUERIES; q += 1) {
+      const idx = queryIndex[q]!;
+      for (let c = 0; c < SHA_BIT_COLS_PER_FOLD; c += 1) {
+        const col = f * SHA_BIT_COLS_PER_FOLD + c;
+        out.set(encodeLe(columnsLde[col]![idx]!), (q * SHA_BIT_COLS_PER_FOLD + c) * 4);
+      }
+    }
+    return out;
+  });
 }
 
 export function walkShaBitLeaf(

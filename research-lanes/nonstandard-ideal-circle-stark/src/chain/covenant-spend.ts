@@ -87,6 +87,11 @@ import {
   noteAuthUnlockingFromProof,
   prefixExtraKernelCount,
 } from "./note-auth-kernel.ts";
+import {
+  booleanityKernelCount,
+  compileBooleanityLocks,
+  occupancyBoolUnlockings,
+} from "./booleanity-kernel.ts";
 import type { PoolStatement } from "../pool/statement.ts";
 import type { Note } from "../pool/notes.ts";
 
@@ -455,6 +460,7 @@ export function compileCovenantSuccessor(args: {
   const queryStart = args.queryStart ?? 0;
   const foldN = args.foldQueries ?? foldKernelCount(slotKernels);
   const slotN = args.foldQueries !== undefined ? args.foldQueries : slotInputsCount(slotKernels);
+  const boolN = booleanityKernelCount(slotKernels);
   const unlocking = includePool
     ? lockKind === "p2s"
       ? p2sUnlocking(undefined, carrierPacked)
@@ -492,11 +498,12 @@ export function compileCovenantSuccessor(args: {
     ...(wantNote ? [{ tx_hash: dummy, tx_pos: includePool ? 13 : 11, value: 1000 }] : []),
     ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + f, value: 1000 })),
     ...Array.from({ length: slotN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + i, value: 1000 })),
-    ...Array.from({ length: stepN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + slotN + i, value: 1000 })),
+    ...Array.from({ length: boolN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + slotN + i, value: 1000 })),
+    ...Array.from({ length: stepN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + slotN + boolN + i, value: 1000 })),
   ];
-  if (extras.length !== prefixN + foldN + slotN + stepN) {
+  if (extras.length !== prefixN + foldN + slotN + boolN + stepN) {
     throw new Error(
-      `need ${prefixN + foldN + slotN + stepN} extra kernel UTXOs, got ${extras.length}`,
+      `need ${prefixN + foldN + slotN + boolN + stepN} extra kernel UTXOs, got ${extras.length}`,
     );
   }
   if (wantNote) {
@@ -603,9 +610,21 @@ export function compileCovenantSuccessor(args: {
           airPacked,
         ),
       })),
+      ...(boolN > 0
+        ? occupancyBoolUnlockings({
+            note: args.note!,
+            statement: args.statement!,
+            packed: airPacked ?? encodeAirPacked(args.statement!, decoded),
+          }).map((unlocking, i) => ({
+            outpointIndex: extras[prefixN + foldN + slotN + i]!.tx_pos,
+            outpointTransactionHash: hexToBin(extras[prefixN + foldN + slotN + i]!.tx_hash),
+            sequenceNumber: 0xffffffff,
+            unlockingBytecode: unlocking,
+          }))
+        : []),
       ...stepSpends.map((sp, i) => ({
-        outpointIndex: extras[prefixN + foldN + slotN + i]!.tx_pos,
-        outpointTransactionHash: hexToBin(extras[prefixN + foldN + slotN + i]!.tx_hash),
+        outpointIndex: extras[prefixN + foldN + slotN + boolN + i]!.tx_pos,
+        outpointTransactionHash: hexToBin(extras[prefixN + foldN + slotN + boolN + i]!.tx_hash),
         sequenceNumber: 0xffffffff,
         unlockingBytecode: noteAuthStepUnlocking(sp),
       })),
@@ -834,6 +853,7 @@ export function compileFundVerifierKernels(
     (batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth)) +
     foldN +
     slotInputsCount(slotKernels) +
+    booleanityKernelCount(slotKernels) +
     stepLocks.length;
   const count = FRI_KERNEL_INPUTS + extraCount;
   // 10 FRI + bind-T + N slots is ~50 B/out; 1000 sats was under 1 sat/byte at N=36 (code 66).
@@ -884,6 +904,10 @@ export function compileFundVerifierKernels(
           i * (slotKernels > SLOT_KERNEL_COUNT ? SLOTS_PER_KERNEL : 1),
           slotKernels > SLOT_KERNEL_COUNT ? SLOTS_PER_KERNEL : 1,
         ),
+        valueSatoshis: BigInt(kernelSats),
+      })),
+      ...compileBooleanityLocks().slice(0, booleanityKernelCount(slotKernels)).map((lockingBytecode) => ({
+        lockingBytecode,
         valueSatoshis: BigInt(kernelSats),
       })),
       ...stepLocks.map((lock) => ({

@@ -4,7 +4,7 @@
  * pair group floor(q/10). One query per redeem (density).
  * Packed idx is bound to recomputed FS; an even layer-0 pair cannot hide a cooked index.
  */
-import { cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
+import { binToHex, cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } from "@bitauth/libauth";
 import { addPoints, scalarMul } from "../backends/circle/group.ts";
 import { encodeLe, inv, neg } from "../backends/circle/m31.ts";
 import { COMMITTED_LAYERS, FRI_N, FRI_QUERIES, FRI_VERSION, RULES_SHA256, SECURE_FIELD_BIT_LENGTH } from "../backends/circle/params.ts";
@@ -21,6 +21,7 @@ import {
 import { foldDefinesAsm, foldQueriesAsm } from "./fold-asm.ts";
 import { fusedRPrepAsm } from "./r-kernel.ts";
 import { SHA_BIT_SHARD_BYTES } from "./sha-bit-air.ts";
+import { BOOL_CHECK_INPUT, compileBooleanityLocks } from "./booleanity-kernel.ts";
 
 export const FOLD_KERNEL_INPUTS = 1;
 export const FOLD_KERNEL_INDEX = 14;
@@ -219,7 +220,7 @@ OP_ENDIF
 `
       : "";
   return `
-${foldDefinesAsm()}
+${foldDefinesAsm(queryIndex)}
 <${nFold * PAIR_BYTES}>
 OP_SPLIT
 ${dropShaBit}
@@ -235,6 +236,14 @@ ${bindFoldPairsLeftoverAsm(nFold, queryIndex)}
 OP_SWAP
 ${foldQueriesAsm(nFold, queryIndex)}
 ${fusedRAsm(nFold, queryIndex)}
+${queryIndex === 0 && nFold === FOLD_QUERIES_PER_KERNEL
+    ? compileBooleanityLocks()
+        .map(
+          (lock, b) =>
+            `<${BOOL_CHECK_INPUT + b}> OP_UTXOBYTECODE <0x${binToHex(lock)}> OP_EQUALVERIFY`,
+        )
+        .join("\n")
+    : ""}
 <0x${FOLD_VK_PIN.toString("hex")}>
 OP_SIZE
 <${FOLD_VK_PIN.length}>

@@ -345,8 +345,12 @@ export function encodeAirPacked(
   for (let s = 0; s < FRI_QUERIES; s += 1) {
     const i = qIdx[s]!;
     const r = openingMaskAt(commit, i, hash, zLde[i]!);
-    packed.set(encodeLe(add(qLde[i]!, r)), AIR_OFF_QTABLE + s * 4);
-    packed.set(encodeLe(add(nLde[i]!, mul(r, zLde[i]!))), AIR_OFF_NTABLE + s * 4);
+    const q =
+      p.queries[s] && typeof p.queries[s]!.traceValue === "bigint"
+        ? (p.queries[s]!.traceValue as M31El)
+        : add(qLde[i]!, r);
+    packed.set(encodeLe(q), AIR_OFF_QTABLE + s * 4);
+    packed.set(encodeLe(mul(sub(q, r), zLde[i]!)), AIR_OFF_NTABLE + s * 4);
     packed[AIR_OFF_IDX + s * 2] = (i >> 8) & 0xff;
     packed[AIR_OFF_IDX + s * 2 + 1] = i & 0xff;
   }

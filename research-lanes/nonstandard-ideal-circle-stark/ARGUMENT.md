@@ -1,16 +1,16 @@
 # Argument = vk (nonstandard QM31 family)
 
 ```
-family = circle-fri-m31-qm31-t64-b16-q36-g20-fri10-bc64c18b9b96e9cb9f692199d0513b7915167ca601f1621b7590a584e04f42fc
+family = circle-fri-m31-qm31-t64-b16-q36-g20-fri11-5d7bac107945d433cf00d8a3affd875f07587f33e03d5551c432ca8f86453f54
 vk = (none until every RULES.md line holds)
-rulesSha256 = bc64c18b9b96e9cb9f692199d0513b7915167ca601f1621b7590a584e04f42fc
+rulesSha256 = 5d7bac107945d433cf00d8a3affd875f07587f33e03d5551c432ca8f86453f54
 ```
 
 ethSTARK (ePrint 2021/582) query conjecture is named, speculative, not Stwo-128. JS-only `checkBatchSpends` extra notes are unfinished (RULES §3). SHA round-gates (`assertHashTraceConstraints`) are not miner-run.
 
 **Starting artifact:** [`survey/artifacts/qm31-fri10/`](survey/artifacts/qm31-fri10/) ([`START.md`](START.md)). Chipnet `60d186de…` / 99043 B. FRI10, QM31 124-bit. Packed hex pins sibling RULES `de1f4dcf…`; live compiles pin this RULES. Not the named end (§6 / §7 open).
 
-This family: **B = M31** (circle, Merkle, qTable, layer-0 pairs, inverses, AIR cells). **F_fri = QM31** (7 λ, post-fold layers 1–6, final). **H = SHA-256**. qTable / layer-0 are 4-byte. Live note-auth unlocking is silent. Miner EQUALVERIFYs 32 bit-AIR path-walks of `A[0:4]‖L[0:4]‖N[0:4]‖T` (T from fold shards) against leftover `hashBitRoot`; grind carries the full sibling paths; leftover stays pair-bind. Thirty-six extra 576-column hash-AIR inputs remain a measured option. SHA round-gates are JS `assertHashTraceConstraints`.
+This family: **B = M31** (circle, Merkle, qTable, layer-0 pairs, inverses, AIR cells). **F_fri = QM31** (7 λ, post-fold layers 1–6, final). **H = SHA-256**. qTable / layer-0 are 4-byte. Live note-auth unlocking is silent. Occupancy FRI mixes amountCommit booleanity Q (FRI_N LDE). Leftover `(q−R)·Z` equals packed booleanity C, not occupancy-zero. Three post-fold kernels EQUALVERIFY that C against `Σ α^c T(T−1)` at the 36 occupancy queries (12 per input; α from `hashBitRoot`). Miner EQUALVERIFYs 32 bit-AIR path-walks of `A[0:4]‖L[0:4]‖N[0:4]‖T` (T from fold shards) against leftover `hashBitRoot`; grind carries the full sibling paths; leftover stays pair-bind. Note-auth walks membership and nullifier. Round-gates stay JS `assertHashTraceConstraints`. Thirty-six extra 576-column hash-AIR inputs remain a measured option.
 
 ## Soundness worksheet
 
@@ -23,6 +23,18 @@ This family: **B = M31** (circle, Merkle, qTable, layer-0 pairs, inverses, AIR c
 | min | \(\min(128, 124, \ldots) \approx 124 \ge 100\) | floor |
 
 n=32/q=8 is refused. d5 is not the fold alphabet.
+
+## Starknet / StarkWare (worksheet, not a theorem)
+
+| knob | this lab | public Stwo / Starknet |
+|---|---|---|
+| Field | QM31 ~124 | QM31 ~124 (Stwo) |
+| Domain | circle \(x^2+y^2=1\) | circle (Stwo); Starknet historically PrimeField STARKs |
+| Query bits | \(36\times 3+20=128\) at rate \(2/B\), ethSTARK toy | Stwo uses its own query/pow accounting, not this worksheet |
+| On-chain verifier | BCH 2026 VM, chunked kernels, ≤10 KB unlocking | Cairo / Starknet OS |
+| min | \(\min(128,124)\approx 124\ge 100\) | published Stwo 96/128 targets are a different proof system |
+
+This is not Stwo-as-theorem and not a Starknet proof size claim. Floor is 100. Target is 128 query-conjecture bits.
 
 ## Sibling squeeze (evidence, different family)
 
