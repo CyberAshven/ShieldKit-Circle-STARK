@@ -11,6 +11,7 @@ import {
   AIR_OFF_DIGEST,
   AIR_OFF_FINAL,
   AIR_OFF_IDX,
+  AIR_OFF_NTABLE,
   AIR_OFF_OPEN_MASK,
   AIR_OFF_QTABLE,
   AIR_OFF_ROOTS,
@@ -249,13 +250,14 @@ function splitDropPrefixAsm(n: number): string {
 
 /**
  * Consume packed once. No 1848-byte DUP/PICK.
- * Stack: packed → commit q24 idx final digest roots.
+ * Stack: packed → commit q24 idx n24 final digest roots.
  */
 export function peelPackedFoldRAsm(nFold: number, queryIndex: number): string {
   const rootsLen = COMMITTED_LAYERS * 32;
   const qOff = AIR_OFF_QTABLE - (AIR_OFF_OPEN_MASK + 32) + queryIndex * 4;
   const idxOff = AIR_OFF_IDX + queryIndex * 2 - (AIR_OFF_QTABLE + queryIndex * 4 + nFold * 4);
-  const finalOff = AIR_OFF_FINAL - (AIR_OFF_IDX + queryIndex * 2 + nFold * 2);
+  const nOff = AIR_OFF_NTABLE + queryIndex * 4 - (AIR_OFF_IDX + queryIndex * 2 + nFold * 2);
+  const finalOff = AIR_OFF_FINAL - (AIR_OFF_NTABLE + queryIndex * 4 + nFold * 4);
   return `
 <${rootsLen}>
 OP_SPLIT
@@ -274,6 +276,9 @@ ${splitDropPrefixAsm(qOff)}
 OP_SPLIT
 ${splitDropPrefixAsm(idxOff)}
 <${nFold * 2}>
+OP_SPLIT
+${splitDropPrefixAsm(nOff)}
+<${nFold * 4}>
 OP_SPLIT
 ${splitDropPrefixAsm(finalOff)}
 <128>
@@ -322,7 +327,7 @@ OP_FROMALTSTACK
 `;
 }
 
-/** Stack: packed → commit q24 idx final λblob. */
+/** Stack: packed → commit q24 idx n24 final λblob. */
 export function lambdaBlobFromPackedAsm(nFold: number, queryIndex: number): string {
   return `
 ${peelPackedFoldRAsm(nFold, queryIndex)}
@@ -529,7 +534,7 @@ ${check}
  * Stack in: invs pairs packed. Packed is consumed once (no 1848-byte copy).
  * Loop stack: commit q24 invs pairs λblob final128 p0..p6 i0..i6 idx q.
  * Pair/inv groups are split once per query so layer PICKs copy 8/32/4 bytes.
- * Leaves commit q24 idx for fused R (or three DROPs when R is not fused).
+ * Parks n24 on alt (net-zero loop) and leaves commit q24 idx n24 for fused R.
  */
 export function foldQueriesAsm(nFold: number, queryIndex = 0): string {
   const pairBytes = PAIR_GROUP_BYTES;
@@ -537,6 +542,8 @@ export function foldQueriesAsm(nFold: number, queryIndex = 0): string {
   const layers = Array.from({ length: COMMITTED_LAYERS }, (_, r) => layerFoldAsm(r)).join("\n");
   return `
 ${lambdaBlobFromPackedAsm(nFold, queryIndex)}
+OP_ROT
+OP_TOALTSTACK
 OP_SWAP
 OP_ROT
 OP_TOALTSTACK
@@ -653,6 +660,7 @@ OP_SIZE
 OP_NUMEQUALVERIFY
 OP_SWAP
 OP_ROT
+OP_FROMALTSTACK
 `;
 }
 

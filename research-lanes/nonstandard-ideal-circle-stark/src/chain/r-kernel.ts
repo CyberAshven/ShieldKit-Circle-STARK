@@ -1,7 +1,7 @@
 /**
  * On-chain R_on(i) + Z(i)·R_off(i). Slot kernels check (qTable−R)·Z against
- * packed booleanity C (amountCommit bit-AIR mixed into occupancy). Occupancy-only
- * leftover is N=0; honest mixed leftover is T(T−1) batched.
+ * packed booleanity C (amountCommit bit-AIR mixed into occupancy). Fused leftover
+ * EQUALVERIFYs (q−R)·Z against peeled nTable. Occupancy-only leftover still rejects.
  */
 import { cashAssemblyToBin } from "@bitauth/libauth";
 import {
@@ -393,10 +393,11 @@ OP_ENDIF
 
 /**
  * Mask blob from peeled pieces. Packed is already consumed by the fold peel.
- * Stack: commit q24 idx12 → blob q24 idx12.
+ * Stack: commit q24 idx12 n24 → blob q24 idx12 n24.
  */
 export function fusedRPrepAsm(): string {
   return `
+OP_TOALTSTACK
 OP_ROT
 OP_SIZE
 <32>
@@ -409,35 +410,20 @@ OP_CAT
 ${maskCoeffBlobAsm()}
 OP_ROT
 OP_ROT
-`;
-}
-
-/** Stack: i → i N Z. N is 0; fused leftover product is vacuous. Booleanity C is the extra kernels. */
-function nAndZFromIAsm(smulDef = 2, vanishDef = 3): string {
-  return `
-OP_DUP
-${pushFelt(G1024.x)}
-${pushFelt(G1024.y)}
-<${smulDef}> OP_INVOKE
-OP_OVER
-<${vanishDef}> OP_INVOKE
-OP_TOALTSTACK
-OP_2DROP
-<0>
 OP_FROMALTSTACK
 `;
 }
 
 /**
- * Fused R: blob q24 idx12 slot → blob q24 idx12.
- * Vacuous N=0 leftover; occupancy SHA-in-C is the booleanity kernels.
+ * Fused R: blob q24 idx12 n24 slot → blob q24 idx12 n24.
+ * Miner-run leftover: (q−R)·Z EQUALVERIFY packed nTable[local] (local=slot, not FS i).
  */
 export function slotRCqzBodyBlobAsm(smulDef = 2, vanishDef = 3, _queryIndex = 0): string {
   return `
 OP_DUP
 <2>
 OP_MUL
-OP_2 OP_PICK
+OP_3 OP_PICK
 OP_SWAP
 OP_SPLIT
 OP_NIP
@@ -445,7 +431,19 @@ OP_NIP
 OP_SPLIT
 OP_DROP
 ${BE16_UNSIGNED}
+OP_OVER
+<4>
+OP_MUL
+OP_5 OP_PICK
 OP_SWAP
+OP_SPLIT
+OP_NIP
+<4>
+OP_SPLIT
+OP_DROP
+OP_BIN2NUM
+OP_TOALTSTACK
+OP_OVER
 <4>
 OP_MUL
 OP_3 OP_PICK
@@ -456,19 +454,24 @@ OP_NIP
 OP_SPLIT
 OP_DROP
 OP_BIN2NUM
+OP_OVER
+${pushFelt(G1024.x)}
+${pushFelt(G1024.y)}
+<${smulDef}> OP_INVOKE
+OP_OVER
+<${vanishDef}> OP_INVOKE
 OP_TOALTSTACK
-${nAndZFromIAsm(smulDef, vanishDef)}
-OP_DROP
-OP_4 OP_PICK
-OP_2 OP_PICK
+OP_2DROP
+OP_FROMALTSTACK
+OP_7 OP_PICK
+OP_3 OP_PICK
 OP_2 OP_PICK
 ${openingMaskAtBlobAsm()}
 OP_FROMALTSTACK
 OP_SWAP
 ${M31_SUB}
-OP_1 OP_PICK
+OP_SWAP
 ${M31_MUL}
-OP_0
 OP_NUMEQUALVERIFY
 OP_DROP
 OP_DROP

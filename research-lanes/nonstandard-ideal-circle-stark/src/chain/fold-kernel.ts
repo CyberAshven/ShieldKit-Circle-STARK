@@ -193,14 +193,14 @@ OP_2DROP
 }
 
 function fusedRAsm(nFold: number, queryIndex: number): string {
-  if (nFold !== FOLD_QUERIES_PER_KERNEL) return "OP_DROP\nOP_DROP\nOP_DROP\n";
+  if (nFold !== FOLD_QUERIES_PER_KERNEL) return "OP_DROP\nOP_DROP\nOP_DROP\nOP_DROP\n";
   const one = (local: number): string => `<${local}>\n<8> OP_INVOKE\n`;
   void queryIndex;
   return `
 ${fusedRPrepAsm()}
 ${Array.from({ length: nFold }, (_, i) => one(i)).join("\n")}
 OP_2DROP
-OP_DROP
+OP_2DROP
 `;
 }
 

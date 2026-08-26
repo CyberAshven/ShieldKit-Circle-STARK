@@ -77,7 +77,12 @@ describe("envelope A/B/C occupancy gating", () => {
     assert.equal(booleanityKernelCount(SLOT_KERNEL_COUNT_CONSENSUS, false), 0);
     assert.equal(booleanityKernelCount(SLOT_KERNEL_COUNT_CONSENSUS, true), 3);
     const fused = slotRCqzBodyBlobAsm(1, 7, 0);
-    assert.ok(fused.includes("OP_0"), "fused leftover still N=0 (nTable bind overflowed fold stack)");
+    assert.equal(
+      /OP_0\s*\nOP_NUMEQUALVERIFY/.test(fused),
+      false,
+      "fused leftover must not be vacuous N=0",
+    );
+    assert.ok(fused.includes("OP_NUMEQUALVERIFY"), "fused leftover EQUALVERIFYs (q-R)·Z against nTable");
     const nfBind = bindPackedNfAndIdAsm();
     assert.ok(nfBind.includes("<96>"), "cqz binds packed nullifierRoot beyond noteRoot");
   });

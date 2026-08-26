@@ -21,7 +21,6 @@ import {
   AIR_OFF_NTABLE,
   AIR_OFF_ODD,
   AIR_OFF_OPEN_MASK,
-  AIR_OFF_NTABLE,
   AIR_OFF_QTABLE,
   AIR_OFF_IDX,
   SCALAR_MUL_FAST,
@@ -191,13 +190,14 @@ OP_NUMEQUAL
     const commit = packed.subarray(AIR_OFF_OPEN_MASK, AIR_OFF_OPEN_MASK + 32);
     const q24 = packed.subarray(AIR_OFF_QTABLE, AIR_OFF_QTABLE + 24);
     const idx = packed.subarray(AIR_OFF_IDX, AIR_OFF_IDX + 12);
+    const n24 = packed.subarray(AIR_OFF_NTABLE, AIR_OFF_NTABLE + 24);
     const hexPush = (data: Uint8Array) => `<0x${Buffer.from(data).toString("hex")}>`;
     const defineFn = (asm: string, index: number, name: string): string => {
       const body = cashAssemblyToBin(asm);
       if (typeof body === "string") throw new Error(`${name}: ${body}`);
       return `${hexPush(body)}\n<${index}>\nOP_DEFINE`;
     };
-    const inner = Uint8Array.of(...pushData(commit), ...pushData(q24), ...pushData(idx));
+    const inner = Uint8Array.of(...pushData(commit), ...pushData(q24), ...pushData(idx), ...pushData(n24));
     const lock = cashAssemblyToBin(`
 ${defineFn(SCALAR_MUL_FAST, 2, "fast")}
 ${defineFn(vanishingUnrolledAsm(VANISH_XS), 3, "vanish")}
@@ -205,7 +205,7 @@ ${fusedRPrepAsm()}
 <0>
 ${slotRCqzBodyBlobAsm(2, 3)}
 OP_2DROP
-OP_DROP
+OP_2DROP
 OP_1
 `);
     if (typeof lock === "string") throw new Error(lock);
@@ -219,7 +219,7 @@ ${fusedRPrepAsm()}
 <${slot}>
 ${slotRCqzBodyBlobAsm(2, 3)}
 OP_2DROP
-OP_DROP
+OP_2DROP
 OP_1
 `);
       if (typeof one === "string") throw new Error(one);

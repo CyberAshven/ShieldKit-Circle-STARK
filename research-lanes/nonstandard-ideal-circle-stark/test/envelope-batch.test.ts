@@ -33,6 +33,7 @@ import { booleanityKernelCount, compileBooleanityLockP2sh32, BOOL_SHARD_QUERIES 
 import { compileGrindLockP2sh32 } from "../src/chain/grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "../src/chain/algebraic-c-kernel.ts";
 import { createLabWallet, p2pkhLockingOf } from "../src/chain/wallet.ts";
+import { writeI64LE } from "../src/pool/bytes.ts";
 
 /**
  * Envelope B is the 36-orbit completeness object. The 1-note successor is a
@@ -197,11 +198,16 @@ describe("envelope B: N notes walked on chain in one consensus transaction", () 
     const built = buildFor(ENV_B, 3);
     const tx = decodeTransaction(built.tx.raw);
     if (typeof tx === "string") throw new Error(tx);
-    const rawHex = Buffer.from(built.tx.raw).toString("hex");
     assert.ok(built.stepSpends.length >= 2, "N≥2 on-chain step kernels");
+    const unlockHex = tx.inputs.map((i) => Buffer.from(i.unlockingBytecode).toString("hex")).join("");
     for (const sp of built.stepSpends) {
-      assert.equal(rawHex.includes(Buffer.from(sp.note.rho).toString("hex")), false, "batch unlocking silent rho");
-      assert.equal(rawHex.includes(Buffer.from(sp.note.ownerSecret).toString("hex")), false, "batch unlocking silent owner");
+      assert.equal(unlockHex.includes(Buffer.from(sp.note.rho).toString("hex")), false, "batch unlocking silent rho");
+      assert.equal(unlockHex.includes(Buffer.from(sp.note.ownerSecret).toString("hex")), false, "batch unlocking silent owner");
+      assert.equal(
+        unlockHex.includes(Buffer.from(writeI64LE(sp.note.amountSats)).toString("hex")),
+        false,
+        "batch unlocking silent amount8",
+      );
     }
     assert.ok(built.tx.txBytes <= 1_000_000, `batch B txBytes ${built.tx.txBytes}`);
     const sourceOutputs = sourceOutputsFor(built, built.stepLocks);
@@ -311,9 +317,11 @@ describe("envelope A: the same step kernels in a standard 100 KB transaction", (
     const outs = sourceOutputsFor(built, built.stepLocks);
     assert.equal(tx.inputs.length, outs.length, "input count must line up");
     assert.ok(built.tx.txBytes <= 100_000, `A must stay standard-size (${built.tx.txBytes})`);
-    const rawHex = Buffer.from(built.tx.raw).toString("hex");
+    const unlockHex = tx.inputs.map((i) => Buffer.from(i.unlockingBytecode).toString("hex")).join("");
     for (const sp of built.stepSpends) {
-      assert.equal(rawHex.includes(Buffer.from(sp.note.rho).toString("hex")), false);
+      assert.equal(unlockHex.includes(Buffer.from(sp.note.rho).toString("hex")), false);
+      assert.equal(unlockHex.includes(Buffer.from(sp.note.ownerSecret).toString("hex")), false);
+      assert.equal(unlockHex.includes(Buffer.from(writeI64LE(sp.note.amountSats)).toString("hex")), false);
     }
     const maxUnlock = Math.max(...tx.inputs.map((i) => i.unlockingBytecode.length));
     assert.ok(maxUnlock <= 10_000, `batch A unlock ${maxUnlock}`);

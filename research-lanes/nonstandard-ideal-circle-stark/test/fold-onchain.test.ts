@@ -230,8 +230,8 @@ ${lambdaFromPackedAsm()}
     const d = deposit();
     const proof = proveFri(d.statement, d.witness);
     const raw = encodeFriProof(proof);
-    assert.equal(verifyFri(d.statement, proof).ok, true);
-    const on = evaluateOnChainVerify(d.statement, raw);
+    assert.equal(verifyFri(d.statement, proof, d.witness).ok, true);
+    const on = evaluateOnChainVerify(d.statement, raw, d.witness);
     assert.equal(on.stark.ok, true, on.stark.ok ? "" : on.stark.reason);
     assert.equal(on.pool.accepted, true, on.pool.error ?? "honest fold successor");
   });

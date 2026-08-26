@@ -5,7 +5,7 @@
  */
 import { createTestAuthenticationProgramBch, createVirtualMachineBch2026 } from "@bitauth/libauth";
 import { add, encodeLe, mul } from "../backends/circle/m31.ts";
-import { decodeFriProof, verifyFri, type FriProof } from "../backends/circle/fri.ts";
+import { decodeFriProof, verifyFri, type FriProof, type FriWitness } from "../backends/circle/fri.ts";
 import { FRI_N, FRI_QUERIES } from "../backends/circle/params.ts";
 import {
   compileFriMerkleOnlyKernel,
@@ -784,6 +784,7 @@ export function evaluateMissingProofPool(oldState: AnyAmountState): VmEval {
 export function evaluateOnChainVerify(
   statement: PoolStatement,
   proof: Uint8Array,
+  witness: FriWitness = {},
 ): { accepted: boolean; pool: VmEval; stark: ReturnType<typeof verifyFri> } {
   const pool = evaluatePoolSuccessorVm({
     oldState: statement.oldState,
@@ -791,7 +792,7 @@ export function evaluateOnChainVerify(
     proof,
     statement,
   });
-  const stark = verifyFri(statement, decodeFriProof(proof));
+  const stark = verifyFri(statement, decodeFriProof(proof), witness);
   return { accepted: pool.accepted && stark.ok, pool, stark };
 }
 
