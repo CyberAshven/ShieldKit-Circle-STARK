@@ -204,7 +204,19 @@ OP_DROP
 `;
 }
 
-export function foldKernelAsm(nFold = 1, queryIndex = 0, pinBooleanity = false): string {
+export type FoldPinLock = { index: number; lock: Uint8Array };
+
+export function foldBooleanityPins(input0: number, start = 0, count = 3): FoldPinLock[] {
+  return compileBooleanityLocks()
+    .slice(start, start + count)
+    .map((lock, i) => ({ index: input0 + i, lock }));
+}
+
+export function foldKernelAsm(
+  nFold = 1,
+  queryIndex = 0,
+  pinBooleanity: boolean | FoldPinLock[] = false,
+): string {
   const invsLen = nFold * INV_GROUP_BYTES;
   const dropShaBit =
     nFold === FOLD_QUERIES_PER_KERNEL
@@ -236,14 +248,14 @@ ${bindFoldPairsLeftoverAsm(nFold, queryIndex)}
 OP_SWAP
 ${foldQueriesAsm(nFold, queryIndex)}
 ${fusedRAsm(nFold, queryIndex)}
-${pinBooleanity && queryIndex === 0 && nFold === FOLD_QUERIES_PER_KERNEL
-    ? compileBooleanityLocks()
-        .map(
-          (lock, b) =>
-            `<${BOOL_CHECK_INPUT + b}> OP_UTXOBYTECODE <0x${binToHex(lock)}> OP_EQUALVERIFY`,
-        )
-        .join("\n")
-    : ""}
+${(Array.isArray(pinBooleanity)
+    ? pinBooleanity
+    : pinBooleanity
+      ? compileBooleanityLocks().map((lock, b) => ({ index: BOOL_CHECK_INPUT + b, lock }))
+      : []
+  )
+    .map((p) => `<${p.index}> OP_UTXOBYTECODE <0x${binToHex(p.lock)}> OP_EQUALVERIFY`)
+    .join("\n")}
 <0x${FOLD_VK_PIN.toString("hex")}>
 OP_SIZE
 <${FOLD_VK_PIN.length}>
@@ -280,7 +292,11 @@ OP_NIP
 
 const FOLD_REDEEM_PAD = 0;
 
-export function compileFoldKernel(nFold = 1, queryIndex = 0, pinBooleanity = false): Uint8Array {
+export function compileFoldKernel(
+  nFold = 1,
+  queryIndex = 0,
+  pinBooleanity: boolean | FoldPinLock[] = false,
+): Uint8Array {
   const bin = cashAssemblyToBin(foldKernelAsm(nFold, queryIndex, pinBooleanity));
   if (typeof bin === "string") throw new Error(`fold-kernel: ${bin}`);
   if (bin.length >= FOLD_REDEEM_PAD) return bin;
@@ -296,7 +312,11 @@ export function compileFoldKernel(nFold = 1, queryIndex = 0, pinBooleanity = fal
   return out;
 }
 
-export function compileFoldLockP2sh32(nFold = 1, queryIndex = 0, pinBooleanity = false): Uint8Array {
+export function compileFoldLockP2sh32(
+  nFold = 1,
+  queryIndex = 0,
+  pinBooleanity: boolean | FoldPinLock[] = false,
+): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compileFoldKernel(nFold, queryIndex, pinBooleanity)));
 }
 
@@ -312,7 +332,7 @@ export function foldKernelUnlocking(
   packed?: Uint8Array,
   pairShard?: Uint8Array,
   shaBitShard?: Uint8Array,
-  pinBooleanity = false,
+  pinBooleanity: boolean | FoldPinLock[] = false,
 ): Uint8Array {
   const redeem = pushRedeem(compileFoldKernel(nFold, queryIndex, pinBooleanity));
   if (!packed || packed.length < AIR_PACKED_SIZE) return redeem;

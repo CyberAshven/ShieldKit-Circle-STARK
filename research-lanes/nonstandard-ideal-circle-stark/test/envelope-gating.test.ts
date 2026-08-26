@@ -211,6 +211,15 @@ describe("envelope A/B/C occupancy gating", () => {
       change,
     });
     assert.ok(chain.hops.length >= 2);
+    const hop0 = decodeTransaction(chain.hops[0]!.raw);
+    const hop3 = decodeTransaction(chain.hops[3]!.raw);
+    if (typeof hop0 === "string") throw new Error(hop0);
+    if (typeof hop3 === "string") throw new Error(hop3);
+    assert.ok(
+      hop0.inputs.length > hop3.inputs.length,
+      "C hops 0-2 carry B booleanity extras",
+    );
+    assert.ok(chain.hops[0]!.txBytes > chain.hops[3]!.txBytes, "completeness hops are larger");
     for (const [i, hop] of chain.hops.entries()) {
       const u = maxUnlock(hop.raw);
       assert.ok(hop.txBytes <= RELAY_STANDARD_TX_BYTES, `C hop ${i} ${hop.txBytes}`);

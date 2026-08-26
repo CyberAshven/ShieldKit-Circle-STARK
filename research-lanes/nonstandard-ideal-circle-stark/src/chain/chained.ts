@@ -27,7 +27,8 @@ import { concatBytes } from "../pool/bytes.ts";
 import { compileCovenantSuccessor, type MeasuredTx } from "./covenant-spend.ts";
 import { compileCqzLockP2sh32, compileSlotsLockP2sh32 } from "./air-cqz.ts";
 import { compileNoteAuthLockP2sh32 } from "./note-auth-kernel.ts";
-import { compileFoldLockP2sh32 } from "./fold-kernel.ts";
+import { compileBooleanityLockP2sh32, BOOL_KERNEL_COUNT, BOOL_SHARD_QUERIES } from "./booleanity-kernel.ts";
+import { compileFoldLockP2sh32, foldBooleanityPins } from "./fold-kernel.ts";
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { successorFeeCoinSats, TAPE_HOP_OUT_SATS } from "./envelope.ts";
 import { FRI_QUERIES } from "../backends/circle/params.ts";
@@ -318,6 +319,9 @@ export function compileChainedWithdraw(args: {
       tapeTipNextLock: tipLocks[i + 1],
       kernelUtxos: group?.fri,
       extraKernels: group?.extra,
+      booleanitySlice:
+        !batch && args.note && args.statement && i < BOOL_KERNEL_COUNT ? { start: i, count: 1 } : undefined,
+      note: !batch && i < BOOL_KERNEL_COUNT ? args.note : undefined,
       pool: args.pool,
       // Output 0 carries this hop's intermediate root; cqz binds only noteRoot
       // and seq, both unchanged across a full-note batch, so this is legal.
@@ -409,8 +413,8 @@ export function compileChainedWithdraw(args: {
  *
  * compileChainedWithdraw takes per-hop kernels via `tapeKernels`; without it each
  * hop compiles against dummy prevouts (44../aa..) and any node answers
- * "Missing inputs". Each hop needs 10 FRI + 5 extras (1 cqz + 2 fold + 2 slot)
- * + 1 AIR carrier = 16 outputs.
+ * "Missing inputs". Each hop needs FRI_KERNEL_INPUTS FRI + 5 extras
+ * (1 cqz + 2 fold + 2 slot), hops 0-2 add note-auth + booleanity, plus 1 AIR carrier.
  *
  * Fold and slot unlockings use ABSOLUTE query indices (covenant-spend passes
  * `queryStart + f`), so hop g gets fold/slot locks for q0 = g*QUERIES_PER_TAPE_HOP,
@@ -449,9 +453,14 @@ export function compileTapeKernelGroups(args: {
       `noteAuthHops ${args.noteAuthHops.length} != tapeHops ${args.tapeHops}`,
     );
   }
-  // 5 extras per hop (cqz + 2 fold + 2 slots), plus the note lock on hops that
-  // carry one. Offsets are cumulative because that count varies per hop.
-  const extrasAt = (g: number) => 5 + (noteAt(g) ? 1 : 0);
+  // Default occupancy C: hops 0-2 carry one booleanity kernel + note-auth.
+  // Batch mode (`noteAuthHops`) keeps its own note flags and skips booleanity.
+  const completenessAt = (g: number) => !args.noteAuthHops && g < BOOL_KERNEL_COUNT;
+  const hasNote = (g: number) => noteAt(g);
+  const hasBool = (g: number) => completenessAt(g);
+  // 5 extras per hop (cqz + 2 fold + 2 slots), plus note (batch) / booleanity
+  // (occupancy hops 0-2). Offsets are cumulative because that count varies.
+  const extrasAt = (g: number) => 5 + (hasNote(g) ? 1 : 0) + (hasBool(g) ? 1 : 0);
   const baseAt = (g: number) => {
     let off = 0;
     for (let i = 0; i < g; i += 1) off += FRI_KERNEL_INPUTS + extrasAt(i);
@@ -469,15 +478,29 @@ export function compileTapeKernelGroups(args: {
     // extras, in the order compileCovenantSuccessor consumes them
     outputs.push({ lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: kernelSats });
     // Must sit directly after cqz: compileCovenantSuccessor reads extras as
-    // [cqz, note?, folds, slots] on a tape hop.
-    if (noteAt(g)) {
+    // [cqz, note?, folds, slots, booleanity?] on a tape hop.
+    if (hasNote(g)) {
       outputs.push({ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: kernelSats });
     }
+    const prefixN = hasNote(g) ? 2 : 1;
+    const foldN = QUERIES_PER_TAPE_HOP;
+    const slotN = QUERIES_PER_TAPE_HOP;
+    const boolInput0 = 1 + FRI_KERNEL_INPUTS + prefixN + foldN + slotN;
+    const fold0Pins = hasBool(g) ? foldBooleanityPins(boolInput0, g, 1) : [];
     for (let f = 0; f < QUERIES_PER_TAPE_HOP; f += 1) {
-      outputs.push({ lockingBytecode: compileFoldLockP2sh32(1, q0 + f), valueSatoshis: kernelSats });
+      outputs.push({
+        lockingBytecode: compileFoldLockP2sh32(1, q0 + f, f === 0 ? fold0Pins : []),
+        valueSatoshis: kernelSats,
+      });
     }
     for (let i = 0; i < QUERIES_PER_TAPE_HOP; i += 1) {
       outputs.push({ lockingBytecode: compileSlotsLockP2sh32(q0 + i), valueSatoshis: kernelSats });
+    }
+    if (hasBool(g)) {
+      outputs.push({
+        lockingBytecode: compileBooleanityLockP2sh32(g * BOOL_SHARD_QUERIES),
+        valueSatoshis: kernelSats,
+      });
     }
   }
 

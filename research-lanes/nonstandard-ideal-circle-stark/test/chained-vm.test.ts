@@ -22,7 +22,9 @@ import { encodePublicPaa1, utxoValueFor } from "../src/pool/state.ts";
 import { FRI_QUERIES } from "../src/backends/circle/params.ts";
 import { compileFriQueryLockP2sh32 } from "../src/chain/fri-kernel.ts";
 import { compileCqzLockP2sh32, compileSlotsLockP2sh32, SLOT_KERNEL_COUNT } from "../src/chain/air-cqz.ts";
-import { compileFoldLockP2sh32 } from "../src/chain/fold-kernel.ts";
+import { compileFoldLockP2sh32, foldBooleanityPins } from "../src/chain/fold-kernel.ts";
+import { compileBooleanityLockP2sh32, BOOL_KERNEL_COUNT, BOOL_SHARD_QUERIES } from "../src/chain/booleanity-kernel.ts";
+import { FRI_KERNEL_INPUTS } from "../src/chain/fri-kernel.ts";
 import { compileGrindLockP2sh32 } from "../src/chain/grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "../src/chain/algebraic-c-kernel.ts";
 import { compileNoteAuthLockP2sh32 } from "../src/chain/note-auth-kernel.ts";
@@ -47,8 +49,8 @@ function buildChain() {
     const base = g * 15;
     const at = (i: number) => ({ tx_hash: FUNDER, tx_pos: base + i, value: Number(KERNEL_SATS) });
     return {
-      fri: Array.from({ length: 10 }, (_, i) => at(i)),
-      extra: Array.from({ length: 5 }, (_, i) => at(10 + i)),
+      fri: Array.from({ length: FRI_KERNEL_INPUTS }, (_, i) => at(i)),
+      extra: Array.from({ length: g < 3 ? 6 : 5 }, (_, i) => at(10 + i)),
       carrier: { tx_hash: GEN, tx_pos: 2 + g, value: Number(TAPE_HOP_OUT_SATS) },
     };
   });
@@ -62,23 +64,30 @@ function buildChain() {
     pool: { tx_hash: POOL, tx_pos: 0, value: utxoValueFor(mix.oldState), category: CAT, commitment: old },
     newState: mix.newState,
     statement: mix.statement,
-    kernelUtxos: Array.from({ length: 10 }, (_, i) => ({ tx_hash: "cc".repeat(32), tx_pos: i, value: 1000 })),
-    extraKernels: Array.from({ length: 9 }, (_, i) => ({ tx_hash: "cc".repeat(32), tx_pos: 10 + i, value: 1000 })),
+    kernelUtxos: Array.from({ length: FRI_KERNEL_INPUTS }, (_, i) => ({ tx_hash: "cc".repeat(32), tx_pos: i, value: 1000 })),
+    extraKernels: Array.from({ length: 9 }, (_, i) => ({ tx_hash: "cc".repeat(32), tx_pos: FRI_KERNEL_INPUTS + i, value: 1000 })),
     note: mix.spent.note,
     change: mix.witness.created?.note,
   });
   return { chain, mix, wallet, old, tapeHops, tips: tapeTipLockChain(hash256(mix.proof), tapeHops) };
 }
 
-/** Source outputs for a tape hop: sibling NFT, 10 FRI, cqz, 2 fold, 2 slot, tape tip. */
+/** Source outputs for a tape hop: carrier, FRI, cqz, folds, slots, optional booleanity, tip. */
 function tapeSourceOutputs(args: {
   q0: number;
+  hopIndex: number;
   old: Uint8Array;
   wallet: ReturnType<typeof createLabWallet>;
   prevTape: bigint;
   carrierToken?: boolean;
   tipLock?: Uint8Array;
 }) {
+  const completeness = args.hopIndex < BOOL_KERNEL_COUNT;
+  const prefixN = 1;
+  const foldN = 2;
+  const slotN = 2;
+  const boolInput0 = 1 + FRI_KERNEL_INPUTS + prefixN + foldN + slotN;
+  const fold0Pins = completeness ? foldBooleanityPins(boolInput0, args.hopIndex, 1) : [];
   const carrier = {
     lockingBytecode: proofCargoLock(),
     valueSatoshis: TAPE_HOP_OUT_SATS,
@@ -88,18 +97,24 @@ function tapeSourceOutputs(args: {
   };
   return [
     carrier,
-    ...Array.from({ length: 10 }, () => ({ lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: KERNEL_SATS })),
+    ...Array.from({ length: FRI_KERNEL_INPUTS }, (_, i) => ({
+      lockingBytecode: compileFriQueryLockP2sh32(i),
+      valueSatoshis: KERNEL_SATS,
+    })),
     { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: KERNEL_SATS },
-    { lockingBytecode: compileFoldLockP2sh32(1, args.q0), valueSatoshis: KERNEL_SATS },
+    { lockingBytecode: compileFoldLockP2sh32(1, args.q0, fold0Pins), valueSatoshis: KERNEL_SATS },
     { lockingBytecode: compileFoldLockP2sh32(1, args.q0 + 1), valueSatoshis: KERNEL_SATS },
     { lockingBytecode: compileSlotsLockP2sh32(args.q0), valueSatoshis: KERNEL_SATS },
     { lockingBytecode: compileSlotsLockP2sh32(args.q0 + 1), valueSatoshis: KERNEL_SATS },
+    ...(completeness
+      ? [{ lockingBytecode: compileBooleanityLockP2sh32(args.hopIndex * BOOL_SHARD_QUERIES), valueSatoshis: KERNEL_SATS }]
+      : []),
     { lockingBytecode: args.tipLock ?? p2pkhLockingOf(args.wallet), valueSatoshis: args.prevTape },
   ];
 }
 
 describe("envelope C on the 2026 VM (full transaction context)", () => {
-  it("every tape hop verifies with its sibling NFT and absolute-index fold/slot locks", () => {
+  it("every tape hop verifies with its sibling NFT and absolute-index fold/slot locks", { timeout: 400_000 }, () => {
     const { chain, wallet, old, tips } = buildChain();
     const vm = createVirtualMachineBch2026(true);
     let checked = 0;
@@ -109,6 +124,7 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
       if (typeof tx === "string") throw new Error(tx);
       const sourceOutputs = tapeSourceOutputs({
         q0: hop.index * QUERIES_PER_TAPE_HOP,
+        hopIndex: hop.index,
         old,
         wallet,
         prevTape: hop.index === 0 ? BigInt(TAPE_VALUE) : TAPE_HOP_OUT_SATS,
@@ -121,7 +137,7 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
     assert.equal(checked, 18, "18 tape hops carry the 36 unique-orbit queries");
   });
 
-  it("a tokenless carrier breaks cqz: it has no PAA1 commitment to bind against", () => {
+  it("a tokenless carrier breaks cqz: it has no PAA1 commitment to bind against", { timeout: 400_000 }, () => {
     const { chain, wallet, old } = buildChain();
     const hop = chain.hops.find((h) => h.role === "tape" && h.index === 0)!;
     const tx = decodeTransaction(hop.raw);
@@ -129,12 +145,12 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
     // Same hop, but input 0 carries no token — the shape that shipped before the
     // sibling NFTs and drew "Invalid OP_SPLIT range (code 16)" from BCHN.
     const { tips: t2 } = buildChain();
-    const sourceOutputs = tapeSourceOutputs({ q0: 0, old, wallet, prevTape: BigInt(TAPE_VALUE), carrierToken: false, tipLock: t2[0] });
+    const sourceOutputs = tapeSourceOutputs({ q0: 0, hopIndex: 0, old, wallet, prevTape: BigInt(TAPE_VALUE), carrierToken: false, tipLock: t2[0] });
     const r = createVirtualMachineBch2026(true).verify({ transaction: tx, sourceOutputs });
     assert.notEqual(r, true, "cqz must reject a carrier with no token commitment");
   });
 
-  it("the pay hop verifies against a pool lock that expects note-auth at 4 slots", () => {
+  it("the pay hop verifies against a pool lock that expects note-auth at 4 slots", { timeout: 400_000 }, () => {
     const { chain, mix, wallet, old, tips, tapeHops } = buildChain();
     const pay = chain.hops[chain.payIndex]!;
     const tx = decodeTransaction(pay.raw);
@@ -145,7 +161,10 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
         valueSatoshis: BigInt(utxoValueFor(mix.oldState)),
         token: { amount: 0n, category: CAT, nft: { capability: "mutable" as const, commitment: old } },
       },
-      ...Array.from({ length: 10 }, () => ({ lockingBytecode: compileFriQueryLockP2sh32(), valueSatoshis: KERNEL_SATS })),
+      ...Array.from({ length: FRI_KERNEL_INPUTS }, (_, i) => ({
+        lockingBytecode: compileFriQueryLockP2sh32(i),
+        valueSatoshis: KERNEL_SATS,
+      })),
       { lockingBytecode: compileCqzLockP2sh32(), valueSatoshis: KERNEL_SATS },
       { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: KERNEL_SATS },
       { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: KERNEL_SATS },
@@ -200,7 +219,7 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
     assert.notDeepEqual(pinned, pinnedOther, "a different digest must give a different pool lock");
   });
 
-  it("a tape hop that does not recreate the next tip lock is rejected", () => {
+  it("a tape hop that does not recreate the next tip lock is rejected", { timeout: 400_000 }, () => {
     const { chain, wallet, old } = buildChain();
     const hop = chain.hops.find((h) => h.role === "tape" && h.index === 0)!;
     const tx = decodeTransaction(hop.raw);
@@ -209,7 +228,7 @@ describe("envelope C on the 2026 VM (full transaction context)", () => {
     // against the successor of whatever lock is actually being spent, so this must
     // fail - that is what stops the digest being swapped mid-tape.
     const wrong = tapeTipLockChain(new Uint8Array(32).fill(0x77), 18)[0]!;
-    const sourceOutputs = tapeSourceOutputs({ q0: 0, old, wallet, prevTape: BigInt(TAPE_VALUE), tipLock: wrong });
+    const sourceOutputs = tapeSourceOutputs({ q0: 0, hopIndex: 0, old, wallet, prevTape: BigInt(TAPE_VALUE), tipLock: wrong });
     sourceOutputs[sourceOutputs.length - 1] = { lockingBytecode: wrong, valueSatoshis: BigInt(TAPE_VALUE) };
     const r = createVirtualMachineBch2026(true).verify({ transaction: tx, sourceOutputs });
     assert.notEqual(r, true, "spending a foreign tip lock must not verify");

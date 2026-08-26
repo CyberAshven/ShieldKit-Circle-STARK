@@ -29,6 +29,8 @@ import {
   shaBitLdeLeaves,
 } from "./sha-bit-air.ts";
 
+export { BOOL_KERNEL_COUNT, BOOL_SHARD_QUERIES };
+
 function hexPush(data: Uint8Array): string {
   return `<0x${Buffer.from(data).toString("hex")}>`;
 }
@@ -218,14 +220,20 @@ export function occupancyBoolShardsFromNote(args: {
   return encodeOccupancyBoolShards(friCols, qIdx);
 }
 
-export function occupancyBoolUnlockings(args: {
-  note: Note;
-  statement: PoolStatement;
-  packed: Uint8Array;
-  hash?: InternalHash;
-}): Uint8Array[] {
+export function occupancyBoolUnlockings(
+  args: {
+    note: Note;
+    statement: PoolStatement;
+    packed: Uint8Array;
+    hash?: InternalHash;
+  },
+  slice?: { start?: number; count?: number },
+): Uint8Array[] {
   const shards = occupancyBoolShardsFromNote(args);
-  return shards.map((shard, s) => {
+  const start = slice?.start ?? 0;
+  const count = slice?.count ?? shards.length;
+  return shards.slice(start, start + count).map((shard, i) => {
+    const s = start + i;
     const redeem = pushRedeem(compileBooleanityKernel(s * BOOL_SHARD_QUERIES));
     const push = pushData(shard);
     const out = new Uint8Array(push.length + redeem.length);

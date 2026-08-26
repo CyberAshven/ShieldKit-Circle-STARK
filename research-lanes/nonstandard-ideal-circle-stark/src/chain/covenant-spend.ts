@@ -76,7 +76,7 @@ import {
   SLOTS_PER_KERNEL,
   slotsKernelUnlocking,
 } from "./air-cqz.ts";
-import { compileFoldLockP2sh32, foldKernelCount, foldKernelUnlocking, foldQueriesPerKernel, slotInputsCount } from "./fold-kernel.ts";
+import { compileFoldLockP2sh32, foldBooleanityPins, foldKernelCount, foldKernelUnlocking, foldQueriesPerKernel, slotInputsCount } from "./fold-kernel.ts";
 import { compileGrindLockP2sh32, grindKernelUnlocking } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32, algebraicCKernelUnlocking } from "./algebraic-c-kernel.ts";
 import { compileNoteAuthStepLockP2sh32, noteAuthStepUnlocking } from "./note-auth-step-kernel.ts";
@@ -380,15 +380,18 @@ export function compileCovenantSuccessor(args: {
   tapeTipNextLock?: Uint8Array;
   /** Terminal tip lock the pool covenant pins (pay hop only). */
   tapeTipLock?: Uint8Array;
-  /** Envelope B SHA-in-C kernels. Default on when envelope is not standard. */
+  /** Envelope B SHA-in-C kernels. Default on when envelope is consensus. */
   booleanity?: boolean;
+  /** Envelope C: one booleanity kernel on a tape hop (`start` is 0..2). */
+  booleanitySlice?: { start: number; count: number };
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
     args.slotKernels ?? SLOT_KERNEL_COUNT_CONSENSUS;
   const occupancyA = args.envelope !== "consensus" && slotKernels > SLOT_KERNEL_COUNT && !args.forceNoteAuth;
   const wantBool = args.booleanity ?? args.envelope === "consensus";
-  const boolN = booleanityKernelCount(slotKernels, wantBool);
+  const boolStart = args.booleanitySlice?.start ?? 0;
+  const boolN = args.booleanitySlice?.count ?? booleanityKernelCount(slotKernels, wantBool);
   const fee = args.feeSats ?? successorFeeSats(args.envelope ?? "standard");
   const value = utxoValueFor(args.newState);
   const poolIn = BigInt(args.pool.value);
@@ -420,7 +423,7 @@ export function compileCovenantSuccessor(args: {
       ? false
       : args.includePool !== false
         ? includeNoteAuth(slotKernels) || Boolean(args.note)
-        : Boolean(args.note);
+        : Boolean(args.note) && args.booleanitySlice === undefined;
   if (depositNeed > 0n && !args.feeUtxo) {
     throw new Error("deposit successor needs a funder utxo for the net");
   }
@@ -497,25 +500,39 @@ export function compileCovenantSuccessor(args: {
   // and slot index by one.
   const prefixN =
     stepN > 0 ? 3 : prefixExtraKernelCount(slotKernels, includePool, wantNote, occupancyA);
-  const extras = args.extraKernels ?? [
-    { tx_hash: dummy, tx_pos: 10, value: 1000 },
-    ...(includePool
-      ? [
-          { tx_hash: dummy, tx_pos: 11, value: 1000 },
-          { tx_hash: dummy, tx_pos: 12, value: 1000 },
-        ]
-      : []),
-    ...(wantNote ? [{ tx_hash: dummy, tx_pos: includePool ? 13 : 11, value: 1000 }] : []),
-    ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + f, value: 1000 })),
-    ...Array.from({ length: slotN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + i, value: 1000 })),
-    ...Array.from({ length: boolN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + slotN + i, value: 1000 })),
-    ...Array.from({ length: stepN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + slotN + boolN + i, value: 1000 })),
+  const extraNeed = prefixN + foldN + slotN + boolN + stepN;
+  const extras = [
+    ...(args.extraKernels ?? [
+      { tx_hash: dummy, tx_pos: 10, value: 1000 },
+      ...(includePool
+        ? [
+            { tx_hash: dummy, tx_pos: 11, value: 1000 },
+            { tx_hash: dummy, tx_pos: 12, value: 1000 },
+          ]
+        : []),
+      ...(wantNote ? [{ tx_hash: dummy, tx_pos: includePool ? 13 : 11, value: 1000 }] : []),
+      ...Array.from({ length: foldN }, (_, f) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + f, value: 1000 })),
+      ...Array.from({ length: slotN }, (_, i) => ({ tx_hash: dummy, tx_pos: 10 + prefixN + foldN + i, value: 1000 })),
+      ...Array.from({ length: boolN }, (_, i) => ({
+        tx_hash: dummy,
+        tx_pos: 10 + prefixN + foldN + slotN + i,
+        value: 1000,
+      })),
+      ...Array.from({ length: stepN }, (_, i) => ({
+        tx_hash: dummy,
+        tx_pos: 10 + prefixN + foldN + slotN + boolN + i,
+        value: 1000,
+      })),
+    ]),
   ];
-  if (extras.length !== prefixN + foldN + slotN + boolN + stepN) {
-    throw new Error(
-      `need ${prefixN + foldN + slotN + boolN + stepN} extra kernel UTXOs, got ${extras.length}`,
-    );
+  while (extras.length < extraNeed) {
+    extras.push({ tx_hash: dummy, tx_pos: 10 + extras.length, value: 1000 });
   }
+  if (extras.length !== extraNeed) {
+    throw new Error(`need ${extraNeed} extra kernel UTXOs, got ${extras.length}`);
+  }
+  const boolInput0 = 1 + FRI_KERNEL_INPUTS + prefixN + foldN + slotN;
+  const foldPins = boolN > 0 ? foldBooleanityPins(boolInput0, boolStart, boolN) : [];
   if (wantNote) {
     if (!args.note) throw new Error("note-auth kernel needs the opened note (not the OTP-masked proof field)");
     if (!args.noteSpent && !args.statement) {
@@ -540,7 +557,11 @@ export function compileCovenantSuccessor(args: {
         outpointIndex: args.carrierUtxo?.tx_pos ?? 0,
         outpointTransactionHash: hexToBin(args.carrierUtxo?.tx_hash ?? "aa".repeat(32)),
         sequenceNumber: 0xffffffff,
-        unlockingBytecode: packedAirCarrierUnlocking(airPacked ?? new Uint8Array(AIR_PACKED_SIZE)),
+        unlockingBytecode: packedAirCarrierUnlocking(
+          carrierPacked instanceof Uint8Array && carrierPacked.length >= AIR_PACKED_SIZE
+            ? carrierPacked
+            : (airPacked ?? new Uint8Array(AIR_PACKED_SIZE)),
+        ),
       };
   const baseInputs = [
       in0,
@@ -611,7 +632,7 @@ export function compileCovenantSuccessor(args: {
           airPacked,
           queryPairShard(args.proof, queryStart + f * foldQueriesPerKernel(slotKernels), foldQueriesPerKernel(slotKernels)),
           occupancyA ? undefined : decoded.shaBit?.shards[f],
-          boolN > 0 && f === 0 && queryStart === 0,
+          f === 0 ? foldPins : [],
         ),
       })),
       ...Array.from({ length: slotN }, (_, i) => ({
@@ -625,11 +646,14 @@ export function compileCovenantSuccessor(args: {
         ),
       })),
       ...(boolN > 0
-        ? occupancyBoolUnlockings({
-            note: args.note!,
-            statement: args.statement!,
-            packed: airPacked ?? encodeAirPacked(args.statement!, decoded),
-          }).map((unlocking, i) => ({
+        ? occupancyBoolUnlockings(
+            {
+              note: args.note!,
+              statement: args.statement!,
+              packed: airPacked ?? encodeAirPacked(args.statement!, decoded),
+            },
+            { start: boolStart, count: boolN },
+          ).map((unlocking, i) => ({
             outpointIndex: extras[prefixN + foldN + slotN + i]!.tx_pos,
             outpointTransactionHash: hexToBin(extras[prefixN + foldN + slotN + i]!.tx_hash),
             sequenceNumber: 0xffffffff,

@@ -249,15 +249,15 @@ OP_EQUALVERIFY
 }
 
 /**
- * 18-input successors: grind first push is SHA bit-AIR full merkle paths.
+ * Occupancy B (21 inputs): grind first push is SHA bit-AIR full merkle paths.
  * AmountCommit 96-col LDE openings live in the 6 fold unlockings. This kernel
  * concatenates T, prefixes A/L/N, and path-walks hashBitRoot.
- * Isolated 2-input note-auth skips this (TXINPUTCOUNT < 18).
+ * Envelope A (17) and C pay hop (18 = 4-slot + tape) skip this (TXINPUTCOUNT < 21).
  */
 export const HASH_BIT_CHECK_ASM = `
 ${shaBitWalkFnAsm()}
 OP_TXINPUTCOUNT
-<18>
+<21>
 OP_GREATERTHANOREQUAL
 OP_IF
 ${shaBitPrefixWantAsm()}
