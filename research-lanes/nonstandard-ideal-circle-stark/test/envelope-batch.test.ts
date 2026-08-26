@@ -28,7 +28,7 @@ import {
   SLOT_KERNEL_COUNT_CONSENSUS,
   SLOTS_PER_KERNEL,
 } from "../src/chain/air-cqz.ts";
-import { compileFoldLockP2sh32, foldKernelCount, foldQueriesPerKernel, slotInputsCount } from "../src/chain/fold-kernel.ts";
+import { compileFoldLockP2sh32, foldBooleanityPins, foldKernelCount, foldQueriesPerKernel, slotInputsCount } from "../src/chain/fold-kernel.ts";
 import { booleanityKernelCount, compileBooleanityLockP2sh32, BOOL_SHARD_QUERIES } from "../src/chain/booleanity-kernel.ts";
 import { compileGrindLockP2sh32 } from "../src/chain/grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "../src/chain/algebraic-c-kernel.ts";
@@ -152,8 +152,11 @@ function sourceOutputsFor(built: ReturnType<typeof buildFor>, stepLocks: Uint8Ar
     ...Array.from({ length: built.folds }, (_, f) => {
       const nFold = foldQueriesPerKernel(built.env.slots);
       const boolN = booleanityKernelCount(built.env.slots, built.env.envelope === "consensus");
+      const prefixN = 3;
+      const boolInput0 = 1 + FRI_KERNEL_INPUTS + prefixN + built.folds + slotInputsCount(built.env.slots);
+      const fold0Pins = boolN > 0 ? foldBooleanityPins(boolInput0, 0, boolN) : [];
       return {
-        lockingBytecode: compileFoldLockP2sh32(nFold, f * nFold, boolN > 0 && f === 0),
+        lockingBytecode: compileFoldLockP2sh32(nFold, f * nFold, f === 0 ? fold0Pins : []),
         valueSatoshis: KERNEL_SATS,
       };
     }),
@@ -204,11 +207,8 @@ describe("envelope B: N notes walked on chain in one consensus transaction", () 
     const sourceOutputs = sourceOutputsFor(built, built.stepLocks);
     assert.equal(tx.inputs.length, sourceOutputs.length, "input count must line up");
     const maxUnlock = Math.max(...tx.inputs.map((i) => i.unlockingBytecode.length));
-    if (maxUnlock <= 10_000) {
-      assert.equal(verdict(tx, sourceOutputs, built.env.standard), true, "the batched consensus transaction must verify");
-    } else {
-      assert.ok(maxUnlock > 10_000, "occupancy leftover+step pins exceed 10 KB pool unlocking");
-    }
+    assert.ok(maxUnlock <= 10_000, `batch B unlock ${maxUnlock}`);
+    assert.equal(verdict(tx, sourceOutputs, built.env.standard), true, "the batched consensus transaction must verify");
   });
 
   it("the covenant REQUIRES the step kernels — dropping one is rejected", () => {
@@ -316,9 +316,8 @@ describe("envelope A: the same step kernels in a standard 100 KB transaction", (
       assert.equal(rawHex.includes(Buffer.from(sp.note.rho).toString("hex")), false);
     }
     const maxUnlock = Math.max(...tx.inputs.map((i) => i.unlockingBytecode.length));
-    if (maxUnlock <= 10_000) {
-      assert.equal(verdict(tx, outs, built.env.standard), true, "a batched standard transaction must verify");
-    }
+    assert.ok(maxUnlock <= 10_000, `batch A unlock ${maxUnlock}`);
+    assert.equal(verdict(tx, outs, built.env.standard), true, "a batched standard transaction must verify");
   });
 
   it("the covenant pins A's steps too — dropping one is rejected", () => {

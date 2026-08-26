@@ -2,7 +2,7 @@ import { binToHex, cashAssemblyToBin, encodeLockingBytecodeP2sh32, hash256 } fro
 import { compileFriQueryLockP2sh32, FRI_KERNEL_INPUTS } from "./fri-kernel.ts";
 import { encodeLayerRootsPrefix } from "./fri-openings.ts";
 import { AIR_PACKED_SIZE, compileCqzLockP2sh32, compileSlotsLockP2sh32, SLOT_KERNEL_COUNT, SLOTS_PER_KERNEL } from "./air-cqz.ts";
-import { compileFoldLockP2sh32, foldKernelCount, foldQueriesPerKernel, slotInputsCount } from "./fold-kernel.ts";
+import { compileFoldLockP2sh32, foldBooleanityPins, foldKernelCount, foldQueriesPerKernel, slotInputsCount } from "./fold-kernel.ts";
 import { compileGrindLockP2sh32 } from "./grind-kernel.ts";
 import { compileAlgebraicCLockP2sh32 } from "./algebraic-c-kernel.ts";
 import { compileNoteAuthLockP2sh32, includeNoteAuth, prefixExtraKernelCount } from "./note-auth-kernel.ts";
@@ -15,6 +15,7 @@ import {
   encodeWalkSteps,
 } from "./note-merkle.ts";
 import { STATE_BASE_SATS } from "../pool/state.ts";
+import { sha256 } from "../pool/bytes.ts";
 import { AIR_OFF_PAYOUT, extractCellAsm } from "./air-cqz.ts";
 
 /**
@@ -100,8 +101,10 @@ function requireFriInputsAsm(
     const noteHex = binToHex(compileNoteAuthLockP2sh32());
     lines.push(`<${prefix + 3}>`, "OP_UTXOBYTECODE", `<0x${noteHex}>`, "OP_EQUALVERIFY");
   }
+  const boolInput0 = prefix + extraN + foldN + slotN;
+  const fold0Pins = booleanity && boolN > 0 ? foldBooleanityPins(boolInput0, 0, boolN) : [];
   for (let f = 0; f < foldN; f += 1) {
-    const foldHex = binToHex(compileFoldLockP2sh32(foldQ, f * foldQ, booleanity && f === 0));
+    const foldHex = binToHex(compileFoldLockP2sh32(foldQ, f * foldQ, f === 0 ? fold0Pins : []));
     lines.push(
       `<${prefix + extraN + f}>`,
       "OP_UTXOBYTECODE",
@@ -120,15 +123,17 @@ function requireFriInputsAsm(
   }
   // Booleanity locks are pinned by fold 0 (pool redeem is already at the
   // leftover+packed unlocking cap). Count still binds: TXINPUTCOUNT above.
-  // Step kernels last, one per note, each pinned to its own (R_in, R_out)
-  // address so neither the order nor the count can be altered.
-  for (const [j, lock] of stepLocks.entries()) {
-    lines.push(
-      `<${prefix + extraN + foldN + slotN + boolN + j}>`,
-      "OP_UTXOBYTECODE",
-      `<0x${binToHex(lock)}>`,
-      "OP_EQUALVERIFY",
-    );
+  // Step locks are hashed as one CAT so N pins do not blow the leftover+packed
+  // 10 KB pool unlocking. Order is the CAT order; swapping two locks changes
+  // the hash. TXINPUTCOUNT binds N.
+  if (stepLocks.length > 0) {
+    const base = prefix + extraN + foldN + slotN + boolN;
+    const cat = Buffer.concat(stepLocks.map((l) => Buffer.from(l)));
+    lines.push(`<${base}>`, "OP_UTXOBYTECODE");
+    for (let j = 1; j < stepLocks.length; j += 1) {
+      lines.push(`<${base + j}>`, "OP_UTXOBYTECODE", "OP_CAT");
+    }
+    lines.push("OP_SHA256", `<0x${binToHex(sha256(cat))}>`, "OP_EQUALVERIFY");
   }
   return lines.join("\n");
 }

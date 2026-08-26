@@ -21,6 +21,8 @@ A Chipnet lab for one consensus May-2026 transaction that is B under RULES: Circ
 
 Consensus still binds unlocking/redeem at **10 000 B** each and op-cost at `800 × (41 + unlocking)`. Dropping 100 KB does not drop those. It lets the SHA AIR sit on **extra inputs** (~95 kB extra, ~194 kB with occupancy) instead of leftover shards.
 
+**Occupancy B is ~147 KB** (Chipnet `62c1d6b9…` / 146168 B), not FRI9 498 KB. Commands: [`WORKFLOW.md`](WORKFLOW.md).
+
 ## Run
 
 ```bash
