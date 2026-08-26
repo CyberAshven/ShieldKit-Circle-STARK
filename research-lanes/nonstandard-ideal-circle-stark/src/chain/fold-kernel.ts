@@ -204,7 +204,7 @@ OP_DROP
 `;
 }
 
-export function foldKernelAsm(nFold = 1, queryIndex = 0): string {
+export function foldKernelAsm(nFold = 1, queryIndex = 0, pinBooleanity = false): string {
   const invsLen = nFold * INV_GROUP_BYTES;
   const dropShaBit =
     nFold === FOLD_QUERIES_PER_KERNEL
@@ -236,7 +236,7 @@ ${bindFoldPairsLeftoverAsm(nFold, queryIndex)}
 OP_SWAP
 ${foldQueriesAsm(nFold, queryIndex)}
 ${fusedRAsm(nFold, queryIndex)}
-${queryIndex === 0 && nFold === FOLD_QUERIES_PER_KERNEL
+${pinBooleanity && queryIndex === 0 && nFold === FOLD_QUERIES_PER_KERNEL
     ? compileBooleanityLocks()
         .map(
           (lock, b) =>
@@ -280,8 +280,8 @@ OP_NIP
 
 const FOLD_REDEEM_PAD = 0;
 
-export function compileFoldKernel(nFold = 1, queryIndex = 0): Uint8Array {
-  const bin = cashAssemblyToBin(foldKernelAsm(nFold, queryIndex));
+export function compileFoldKernel(nFold = 1, queryIndex = 0, pinBooleanity = false): Uint8Array {
+  const bin = cashAssemblyToBin(foldKernelAsm(nFold, queryIndex, pinBooleanity));
   if (typeof bin === "string") throw new Error(`fold-kernel: ${bin}`);
   if (bin.length >= FOLD_REDEEM_PAD) return bin;
   const pairs = Math.ceil((FOLD_REDEEM_PAD - bin.length) / 2);
@@ -296,8 +296,8 @@ export function compileFoldKernel(nFold = 1, queryIndex = 0): Uint8Array {
   return out;
 }
 
-export function compileFoldLockP2sh32(nFold = 1, queryIndex = 0): Uint8Array {
-  return encodeLockingBytecodeP2sh32(hash256(compileFoldKernel(nFold, queryIndex)));
+export function compileFoldLockP2sh32(nFold = 1, queryIndex = 0, pinBooleanity = false): Uint8Array {
+  return encodeLockingBytecodeP2sh32(hash256(compileFoldKernel(nFold, queryIndex, pinBooleanity)));
 }
 
 function pushRedeem(data: Uint8Array): Uint8Array {
@@ -312,8 +312,9 @@ export function foldKernelUnlocking(
   packed?: Uint8Array,
   pairShard?: Uint8Array,
   shaBitShard?: Uint8Array,
+  pinBooleanity = false,
 ): Uint8Array {
-  const redeem = pushRedeem(compileFoldKernel(nFold, queryIndex));
+  const redeem = pushRedeem(compileFoldKernel(nFold, queryIndex, pinBooleanity));
   if (!packed || packed.length < AIR_PACKED_SIZE) return redeem;
   const invs = foldInvsBlob(packed, queryIndex, nFold);
   const pairs = pairShard ?? new Uint8Array(nFold * PAIR_BYTES);

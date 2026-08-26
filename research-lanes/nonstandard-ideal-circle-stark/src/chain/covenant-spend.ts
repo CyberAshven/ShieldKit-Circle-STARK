@@ -125,10 +125,12 @@ function lockOf(
   tapeTipLock?: Uint8Array,
   finalNfRoot?: Uint8Array,
   stepLocks: readonly Uint8Array[] = [],
+  booleanity?: boolean,
+  omitNoteAuth = false,
 ): Uint8Array {
   return kind === "p2s"
-    ? poolLockP2sFor({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot, stepLocks })
-    : poolLockP2sh32({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot, stepLocks });
+    ? poolLockP2sFor({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot, stepLocks, booleanity, omitNoteAuth })
+    : poolLockP2sh32({ slotKernels, forceNoteAuth, tapeTipLock, finalNfRoot, stepLocks, booleanity, omitNoteAuth });
 }
 
 function measureOf(
@@ -202,11 +204,12 @@ export function compileCovenantSpend(args: {
    * successor cannot spend what genesis created.
    */
   stepLocks?: readonly Uint8Array[];
+  booleanity?: boolean;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
-  const slotKernels =
-    args.slotKernels ??
-    (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
+  const slotKernels = args.slotKernels ?? SLOT_KERNEL_COUNT_CONSENSUS;
+  const wantBool = args.booleanity ?? args.envelope === "consensus";
+  const omitNoteAuth = args.envelope !== "consensus" && slotKernels > SLOT_KERNEL_COUNT && !args.forceNoteAuth;
   const c = compiler();
   const data = { keys: { privateKeys: { key: privateKeyOf(args.wallet) } } };
   const siblingCount = args.siblingNfts?.count ?? 0;
@@ -258,6 +261,8 @@ export function compileCovenantSpend(args: {
           args.tapeTipLock,
           args.finalNfRoot,
           args.stepLocks ?? [],
+          wantBool,
+          omitNoteAuth,
         ),
         valueSatoshis: value,
         token: {
@@ -375,11 +380,15 @@ export function compileCovenantSuccessor(args: {
   tapeTipNextLock?: Uint8Array;
   /** Terminal tip lock the pool covenant pins (pay hop only). */
   tapeTipLock?: Uint8Array;
+  /** Envelope B SHA-in-C kernels. Default on when envelope is not standard. */
+  booleanity?: boolean;
 }): MeasuredTx {
   const lockKind = args.lockKind ?? "p2sh32";
   const slotKernels =
-    args.slotKernels ??
-    (args.envelope === "consensus" ? SLOT_KERNEL_COUNT_CONSENSUS : SLOT_KERNEL_COUNT);
+    args.slotKernels ?? SLOT_KERNEL_COUNT_CONSENSUS;
+  const occupancyA = args.envelope !== "consensus" && slotKernels > SLOT_KERNEL_COUNT && !args.forceNoteAuth;
+  const wantBool = args.booleanity ?? args.envelope === "consensus";
+  const boolN = booleanityKernelCount(slotKernels, wantBool);
   const fee = args.feeSats ?? successorFeeSats(args.envelope ?? "standard");
   const value = utxoValueFor(args.newState);
   const poolIn = BigInt(args.pool.value);
@@ -407,7 +416,7 @@ export function compileCovenantSuccessor(args: {
   // A batch drops the audited kernel: one SHA256(old || nf) == new step cannot
   // express N insertions, and the step kernels do that job instead.
   const wantNote =
-    stepN > 0
+    occupancyA || stepN > 0
       ? false
       : args.includePool !== false
         ? includeNoteAuth(slotKernels) || Boolean(args.note)
@@ -460,7 +469,6 @@ export function compileCovenantSuccessor(args: {
   const queryStart = args.queryStart ?? 0;
   const foldN = args.foldQueries ?? foldKernelCount(slotKernels);
   const slotN = args.foldQueries !== undefined ? args.foldQueries : slotInputsCount(slotKernels);
-  const boolN = booleanityKernelCount(slotKernels);
   const unlocking = includePool
     ? lockKind === "p2s"
       ? p2sUnlocking(undefined, carrierPacked)
@@ -470,6 +478,8 @@ export function compileCovenantSuccessor(args: {
           tapeTipLock: args.tapeTipLock,
           finalNfRoot: args.finalNfRoot,
           stepLocks,
+          booleanity: wantBool,
+          omitNoteAuth: occupancyA,
         })
     : packedAirCarrierUnlocking(packed instanceof Uint8Array ? packed : encodeAirPacked(args.statement!, decoded));
   const shards = friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
@@ -486,7 +496,7 @@ export function compileCovenantSuccessor(args: {
   // the same 3 (requireFriInputsAsm), and a mismatch here would shift every fold
   // and slot index by one.
   const prefixN =
-    stepN > 0 ? 3 : prefixExtraKernelCount(slotKernels, includePool, wantNote);
+    stepN > 0 ? 3 : prefixExtraKernelCount(slotKernels, includePool, wantNote, occupancyA);
   const extras = args.extraKernels ?? [
     { tx_hash: dummy, tx_pos: 10, value: 1000 },
     ...(includePool
@@ -552,7 +562,10 @@ export function compileCovenantSuccessor(args: {
               outpointIndex: extras[1]!.tx_pos,
               outpointTransactionHash: hexToBin(extras[1]!.tx_hash),
               sequenceNumber: 0xffffffff,
-              unlockingBytecode: grindKernelUnlocking(airPacked, decoded.shaBit?.compact),
+              unlockingBytecode: grindKernelUnlocking(
+                airPacked,
+                occupancyA ? undefined : decoded.shaBit?.compact,
+              ),
             },
             {
               outpointIndex: extras[2]!.tx_pos,
@@ -597,7 +610,8 @@ export function compileCovenantSuccessor(args: {
           queryStart + f * foldQueriesPerKernel(slotKernels),
           airPacked,
           queryPairShard(args.proof, queryStart + f * foldQueriesPerKernel(slotKernels), foldQueriesPerKernel(slotKernels)),
-          decoded.shaBit?.shards[f],
+          occupancyA ? undefined : decoded.shaBit?.shards[f],
+          boolN > 0 && f === 0 && queryStart === 0,
         ),
       })),
       ...Array.from({ length: slotN }, (_, i) => ({
@@ -681,6 +695,8 @@ export function compileCovenantSuccessor(args: {
           args.tapeTipLock,
           args.finalNfRoot,
           stepLocks,
+          wantBool,
+          occupancyA,
         ),
         valueSatoshis: value,
         token: {
@@ -896,6 +912,7 @@ export function compileFundVerifierKernels(
         lockingBytecode: compileFoldLockP2sh32(
           foldQueriesPerKernel(slotKernels),
           f * foldQueriesPerKernel(slotKernels),
+          booleanityKernelCount(slotKernels) > 0 && f === 0,
         ),
         valueSatoshis: BigInt(kernelSats),
       })),

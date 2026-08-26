@@ -291,6 +291,8 @@ export function buildPoolSuccessorTx(args: {
   /** Opened note for the B note-auth kernel. */
   note?: Note;
   change?: Note;
+  /** Envelope B SHA-in-C kernels. Default on for consensus (standard === false). */
+  booleanity?: boolean;
 }): {
   transaction: {
     version: number;
@@ -309,7 +311,9 @@ export function buildPoolSuccessorTx(args: {
 } {
   const slotKernels = args.slotKernels ?? SLOT_KERNEL_COUNT;
   const standard = args.standard ?? slotKernels <= SLOT_KERNEL_COUNT;
-  const poolLock = poolLockP2sh32({ slotKernels });
+  const occupancyA = standard && slotKernels > SLOT_KERNEL_COUNT;
+  const wantBool = args.booleanity ?? !standard;
+  const poolLock = poolLockP2sh32({ slotKernels, booleanity: wantBool, omitNoteAuth: occupancyA });
   const category = args.category ?? new Uint8Array(32).fill(0x11);
   const poolValue = utxoValueFor(args.oldState);
   const newValue = args.outputValueSats ?? utxoValueFor(args.newState);
@@ -343,14 +347,17 @@ export function buildPoolSuccessorTx(args: {
   const shards = args.kernelUnlockings ?? friShardUnlockings(args.proof, { allPairGroups: foldN > 1 });
   const cqzUnlock = cqzKernelUnlocking(cqzCarrier);
   const foldQ = foldQueriesPerKernel(slotKernels);
-  const foldLocks = Array.from({ length: foldN }, (_, f) => compileFoldLockP2sh32(foldQ, f * foldQ));
+  const foldLocks = Array.from({ length: foldN }, (_, f) =>
+    compileFoldLockP2sh32(foldQ, f * foldQ, wantBool && f === 0),
+  );
   const foldUnlocks = Array.from({ length: foldN }, (_, f) =>
     foldKernelUnlocking(
       foldQ,
       f * foldQ,
       airOnly,
       args.foldPairShards?.[f] ?? queryPairShard(args.proof, f * foldQ, foldQ),
-      decodedEarly.shaBit?.shards[f],
+      occupancyA ? undefined : decodedEarly.shaBit?.shards[f],
+      wantBool && f === 0,
     ),
   );
   const slotN = slotInputsCount(slotKernels);
@@ -361,7 +368,7 @@ export function buildPoolSuccessorTx(args: {
       airOnly,
     ),
   );
-  const boolN = booleanityKernelCount(slotKernels);
+  const boolN = booleanityKernelCount(slotKernels, wantBool);
   const boolUnlocks =
     boolN > 0
       ? occupancyBoolUnlockings({
@@ -384,7 +391,9 @@ export function buildPoolSuccessorTx(args: {
     { lockingBytecode: cqzLock, valueSatoshis: 1000n },
     { lockingBytecode: compileGrindLockP2sh32(), valueSatoshis: 1000n },
     { lockingBytecode: compileAlgebraicCLockP2sh32(), valueSatoshis: 1000n },
-    ...(includeNoteAuth(slotKernels) ? [{ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: 1000n }] : []),
+    ...(includeNoteAuth(slotKernels, false, occupancyA)
+      ? [{ lockingBytecode: compileNoteAuthLockP2sh32(), valueSatoshis: 1000n }]
+      : []),
     ...foldLocks.map((lockingBytecode) => ({ lockingBytecode, valueSatoshis: 1000n })),
     ...slotUnlocks.map((_, i) => ({
       lockingBytecode: compileSlotsLockP2sh32(
@@ -408,7 +417,11 @@ export function buildPoolSuccessorTx(args: {
         ? packedWithPairs(prefix, args.proof)
         : prefix
       : prefix;
-  const poolUnlock = p2sh32Unlocking(undefined, carrier, { slotKernels });
+  const poolUnlock = p2sh32Unlocking(undefined, carrier, {
+    slotKernels,
+    booleanity: wantBool,
+    omitNoteAuth: occupancyA,
+  });
   const transaction = {
     version: 2,
     locktime: 0,
@@ -437,7 +450,7 @@ export function buildPoolSuccessorTx(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: grindKernelUnlocking(
           packedEarly instanceof Uint8Array ? packedEarly : undefined,
-          decodedEarly.shaBit?.compact,
+          occupancyA ? undefined : decodedEarly.shaBit?.compact,
         ),
       },
       {
@@ -446,7 +459,7 @@ export function buildPoolSuccessorTx(args: {
         sequenceNumber: 0xffffffff,
         unlockingBytecode: algebraicCKernelUnlocking(),
       },
-      ...(includeNoteAuth(slotKernels)
+      ...(includeNoteAuth(slotKernels, false, occupancyA)
         ? [
             {
               outpointTransactionHash: new Uint8Array(32).fill(0xa3),

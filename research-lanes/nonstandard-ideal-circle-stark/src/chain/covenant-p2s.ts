@@ -70,6 +70,8 @@ function requireFriInputsAsm(
    * satisfy. Empty for FRI9, which keeps the layout byte-identical.
    */
   stepLocks: readonly Uint8Array[] = [],
+  booleanity = booleanityKernelCount(slotKernels) > 0,
+  omitNoteAuth = false,
 ): string {
   const cqzHex = binToHex(compileCqzLockP2sh32());
   const grindHex = binToHex(compileGrindLockP2sh32());
@@ -79,8 +81,8 @@ function requireFriInputsAsm(
   const slotN = slotInputsCount(slotKernels);
   const prefix = 1 + FRI_KERNEL_INPUTS;
   const batched = stepLocks.length > 0;
-  const extraN = batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth);
-  const boolN = booleanityKernelCount(slotKernels);
+  const extraN = batched ? 3 : prefixExtraKernelCount(slotKernels, true, forceNoteAuth, omitNoteAuth);
+  const boolN = booleanity ? booleanityKernelCount(slotKernels, true) : 0;
   const lines = [
     "OP_TXINPUTCOUNT",
     `<${prefix + extraN + foldN + slotN + boolN + stepLocks.length}>`,
@@ -94,12 +96,12 @@ function requireFriInputsAsm(
   lines.push(`<${prefix}>`, "OP_UTXOBYTECODE", `<0x${cqzHex}>`, "OP_EQUALVERIFY");
   lines.push(`<${prefix + 1}>`, "OP_UTXOBYTECODE", `<0x${grindHex}>`, "OP_EQUALVERIFY");
   lines.push(`<${prefix + 2}>`, "OP_UTXOBYTECODE", `<0x${algHex}>`, "OP_EQUALVERIFY");
-  if (!batched && includeNoteAuth(slotKernels, forceNoteAuth)) {
+  if (!batched && includeNoteAuth(slotKernels, forceNoteAuth, omitNoteAuth)) {
     const noteHex = binToHex(compileNoteAuthLockP2sh32());
     lines.push(`<${prefix + 3}>`, "OP_UTXOBYTECODE", `<0x${noteHex}>`, "OP_EQUALVERIFY");
   }
   for (let f = 0; f < foldN; f += 1) {
-    const foldHex = binToHex(compileFoldLockP2sh32(foldQ, f * foldQ));
+    const foldHex = binToHex(compileFoldLockP2sh32(foldQ, f * foldQ, booleanity && f === 0));
     lines.push(
       `<${prefix + extraN + f}>`,
       "OP_UTXOBYTECODE",
@@ -328,6 +330,10 @@ export function compilePoolCovenant(opts?: {
    * ends. Omit for FRI9.
    */
   stepLocks?: readonly Uint8Array[];
+  /** Envelope B: three occupancy booleanity kernels after the folds. Off on A. */
+  booleanity?: boolean;
+  /** Envelope A occupancy: 36-query folds without the B note-auth kernel. */
+  omitNoteAuth?: boolean;
 }): Uint8Array {
   const slots = opts?.slotKernels ?? SLOT_KERNEL_COUNT;
   const requireTape = opts?.tapeTipLock
@@ -342,7 +348,7 @@ OP_TXINPUTCOUNT OP_1SUB OP_UTXOBYTECODE <0x${binToHex(opts.tapeTipLock)}> OP_EQU
 <0> OP_OUTPUTTOKENCOMMITMENT <96> OP_SPLIT OP_NIP <0x${binToHex(opts.finalNfRoot)}> OP_EQUALVERIFY`
     : "";
   const bin = cashAssemblyToBin(
-    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false, opts?.stepLocks ?? [])}${requireTape}${requireFinalRoot}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
+    `${FIVE_POINT_PAA1}\n${requireFriInputsAsm(slots, opts?.forceNoteAuth ?? false, opts?.stepLocks ?? [], opts?.booleanity ?? booleanityKernelCount(slots) > 0, opts?.omitNoteAuth ?? false)}${requireTape}${requireFinalRoot}\n${BIND_PAA1}\n${DROP_LAYER_ROOTS}`,
   );
   if (typeof bin === "string") throw new Error(`covenant compile: ${bin}`);
   return bin;
@@ -360,6 +366,8 @@ export function poolLockP2sh32(opts?: {
   finalNfRoot?: Uint8Array;
   /** Option B: per-note step-kernel locks. See compilePoolCovenant. */
   stepLocks?: readonly Uint8Array[];
+  booleanity?: boolean;
+  omitNoteAuth?: boolean;
 }): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compilePoolCovenant(opts)));
 }
@@ -372,6 +380,8 @@ export function poolLockP2sFor(opts?: {
   finalNfRoot?: Uint8Array;
   /** Option B: per-note step-kernel locks. See compilePoolCovenant. */
   stepLocks?: readonly Uint8Array[];
+  booleanity?: boolean;
+  omitNoteAuth?: boolean;
 }): Uint8Array {
   return compilePoolCovenant(opts);
 }
@@ -456,6 +466,8 @@ export function p2sh32Unlocking(
     finalNfRoot?: Uint8Array;
     /** Option B: must match the lock's step pins, for the same reason. */
     stepLocks?: readonly Uint8Array[];
+    booleanity?: boolean;
+    omitNoteAuth?: boolean;
   },
 ): Uint8Array {
   const redeem = pushData(compilePoolCovenant(opts));

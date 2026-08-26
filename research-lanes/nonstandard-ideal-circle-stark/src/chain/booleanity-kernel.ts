@@ -140,8 +140,9 @@ OP_1
 export const BOOLEANITY_KERNEL_ASM = booleanityKernelAsm(0);
 export const BOOLEANITY_DATA_KERNEL_ASM = booleanityKernelAsm(BOOL_SHARD_QUERIES);
 
-export function booleanityKernelCount(slotKernels: number): number {
-  return slotKernels > SLOT_KERNEL_COUNT ? BOOL_KERNEL_COUNT : 0;
+export function booleanityKernelCount(slotKernels: number, enabled?: boolean): number {
+  const on = enabled ?? slotKernels > SLOT_KERNEL_COUNT;
+  return on && slotKernels > SLOT_KERNEL_COUNT ? BOOL_KERNEL_COUNT : 0;
 }
 
 function compileOrThrow(asm: string, name: string): Uint8Array {

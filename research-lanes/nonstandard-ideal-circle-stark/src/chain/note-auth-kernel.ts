@@ -405,13 +405,19 @@ export function compileNoteAuthLockP2sh32(): Uint8Array {
   return encodeLockingBytecodeP2sh32(hash256(compileNoteAuthKernel()));
 }
 
-export function includeNoteAuth(slotKernels: number, force = false): boolean {
+export function includeNoteAuth(slotKernels: number, force = false, omit = false): boolean {
+  if (omit && !force) return false;
   return force || slotKernels > SLOT_KERNEL_COUNT;
 }
 
-export function prefixExtraKernelCount(slotKernels: number, includePool = true, forceNoteAuth = false): number {
+export function prefixExtraKernelCount(
+  slotKernels: number,
+  includePool = true,
+  forceNoteAuth = false,
+  omitNoteAuth = false,
+): number {
   if (!includePool) return forceNoteAuth ? 2 : 1;
-  return includeNoteAuth(slotKernels, forceNoteAuth) ? 4 : 3;
+  return includeNoteAuth(slotKernels, forceNoteAuth, omitNoteAuth) ? 4 : 3;
 }
 
 export function noteAuthKernelUnlocking(args: {
