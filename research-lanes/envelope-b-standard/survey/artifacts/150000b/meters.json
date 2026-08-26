@@ -1,0 +1,472 @@
+{
+  "mark": 150000,
+  "firstCross": {
+    "txBytes": 116476,
+    "standardAccepted": false,
+    "standardError": "Unable to verify standard transaction: transaction exceeds maximum standard byte length. This transaction is 116476 bytes, but the maximum standard transaction size is 100000 bytes.",
+    "consensusAccepted": true,
+    "inputs": [
+      {
+        "i": 0,
+        "unlocking": 5021,
+        "maximumOperationCost": 4049600,
+        "maximumHashDigestIterations": 2531
+      },
+      {
+        "i": 1,
+        "unlocking": 7675,
+        "maximumOperationCost": 6172800,
+        "maximumHashDigestIterations": 3858
+      },
+      {
+        "i": 2,
+        "unlocking": 6400,
+        "maximumOperationCost": 5152800,
+        "maximumHashDigestIterations": 3220
+      },
+      {
+        "i": 3,
+        "unlocking": 5401,
+        "maximumOperationCost": 4353600,
+        "maximumHashDigestIterations": 2721
+      },
+      {
+        "i": 4,
+        "unlocking": 5129,
+        "maximumOperationCost": 4136000,
+        "maximumHashDigestIterations": 2585
+      },
+      {
+        "i": 5,
+        "unlocking": 4823,
+        "maximumOperationCost": 3891200,
+        "maximumHashDigestIterations": 2432
+      },
+      {
+        "i": 6,
+        "unlocking": 4616,
+        "maximumOperationCost": 3725600,
+        "maximumHashDigestIterations": 2328
+      },
+      {
+        "i": 7,
+        "unlocking": 4508,
+        "maximumOperationCost": 3639200,
+        "maximumHashDigestIterations": 2274
+      },
+      {
+        "i": 8,
+        "unlocking": 7147,
+        "maximumOperationCost": 5750400,
+        "maximumHashDigestIterations": 3594
+      },
+      {
+        "i": 9,
+        "unlocking": 151,
+        "maximumOperationCost": 153600,
+        "maximumHashDigestIterations": 96
+      },
+      {
+        "i": 10,
+        "unlocking": 175,
+        "maximumOperationCost": 172800,
+        "maximumHashDigestIterations": 108
+      },
+      {
+        "i": 11,
+        "unlocking": 1684,
+        "maximumOperationCost": 1380000,
+        "maximumHashDigestIterations": 862
+      },
+      {
+        "i": 12,
+        "unlocking": 3790,
+        "maximumOperationCost": 3064800,
+        "maximumHashDigestIterations": 1915
+      },
+      {
+        "i": 13,
+        "unlocking": 3792,
+        "maximumOperationCost": 3066400,
+        "maximumHashDigestIterations": 1916
+      },
+      {
+        "i": 14,
+        "unlocking": 3792,
+        "maximumOperationCost": 3066400,
+        "maximumHashDigestIterations": 1916
+      },
+      {
+        "i": 15,
+        "unlocking": 3792,
+        "maximumOperationCost": 3066400,
+        "maximumHashDigestIterations": 1916
+      },
+      {
+        "i": 16,
+        "unlocking": 3792,
+        "maximumOperationCost": 3066400,
+        "maximumHashDigestIterations": 1916
+      },
+      {
+        "i": 17,
+        "unlocking": 3792,
+        "maximumOperationCost": 3066400,
+        "maximumHashDigestIterations": 1916
+      },
+      {
+        "i": 18,
+        "unlocking": 3792,
+        "maximumOperationCost": 3066400,
+        "maximumHashDigestIterations": 1916
+      },
+      {
+        "i": 19,
+        "unlocking": 3792,
+        "maximumOperationCost": 3066400,
+        "maximumHashDigestIterations": 1916
+      },
+      {
+        "i": 20,
+        "unlocking": 3792,
+        "maximumOperationCost": 3066400,
+        "maximumHashDigestIterations": 1916
+      },
+      {
+        "i": 21,
+        "unlocking": 4702,
+        "maximumOperationCost": 3794400,
+        "maximumHashDigestIterations": 2371
+      },
+      {
+        "i": 22,
+        "unlocking": 4702,
+        "maximumOperationCost": 3794400,
+        "maximumHashDigestIterations": 2371
+      },
+      {
+        "i": 23,
+        "unlocking": 4702,
+        "maximumOperationCost": 3794400,
+        "maximumHashDigestIterations": 2371
+      },
+      {
+        "i": 24,
+        "unlocking": 4702,
+        "maximumOperationCost": 3794400,
+        "maximumHashDigestIterations": 2371
+      },
+      {
+        "i": 25,
+        "unlocking": 4702,
+        "maximumOperationCost": 3794400,
+        "maximumHashDigestIterations": 2371
+      },
+      {
+        "i": 26,
+        "unlocking": 4702,
+        "maximumOperationCost": 3794400,
+        "maximumHashDigestIterations": 2371
+      }
+    ]
+  },
+  "liveSuccessor": {
+    "txBytes": 92405,
+    "standardTxAccepted": true,
+    "standardTxError": null,
+    "verifyFri": true,
+    "friVersion": 9,
+    "queries": 36,
+    "hash": "sha256",
+    "inputs": [
+      {
+        "i": 0,
+        "unlocking": 4901,
+        "accepted": true,
+        "error": null,
+        "operationCost": 124604,
+        "maximumOperationCost": 3953600,
+        "hashDigestIterations": 23,
+        "maximumHashDigestIterations": 2471,
+        "opPct": 3.15,
+        "hashPct": 0.93
+      },
+      {
+        "i": 1,
+        "unlocking": 7992,
+        "accepted": true,
+        "error": null,
+        "operationCost": 2523310,
+        "maximumOperationCost": 6426400,
+        "hashDigestIterations": 797,
+        "maximumHashDigestIterations": 4016,
+        "opPct": 39.26,
+        "hashPct": 19.85
+      },
+      {
+        "i": 2,
+        "unlocking": 6613,
+        "accepted": true,
+        "error": null,
+        "operationCost": 1859678,
+        "maximumOperationCost": 5323200,
+        "hashDigestIterations": 724,
+        "maximumHashDigestIterations": 3327,
+        "opPct": 34.94,
+        "hashPct": 21.76
+      },
+      {
+        "i": 3,
+        "unlocking": 5053,
+        "accepted": true,
+        "error": null,
+        "operationCost": 1677934,
+        "maximumOperationCost": 4075200,
+        "hashDigestIterations": 652,
+        "maximumHashDigestIterations": 2547,
+        "opPct": 41.17,
+        "hashPct": 25.6
+      },
+      {
+        "i": 4,
+        "unlocking": 3890,
+        "accepted": true,
+        "error": null,
+        "operationCost": 1507829,
+        "maximumOperationCost": 3144800,
+        "hashDigestIterations": 580,
+        "maximumHashDigestIterations": 1965,
+        "opPct": 47.95,
+        "hashPct": 29.52
+      },
+      {
+        "i": 5,
+        "unlocking": 2792,
+        "accepted": true,
+        "error": null,
+        "operationCost": 1339869,
+        "maximumOperationCost": 2266400,
+        "hashDigestIterations": 508,
+        "maximumHashDigestIterations": 1416,
+        "opPct": 59.12,
+        "hashPct": 35.88
+      },
+      {
+        "i": 6,
+        "unlocking": 1925,
+        "accepted": true,
+        "error": null,
+        "operationCost": 1178731,
+        "maximumOperationCost": 1572800,
+        "hashDigestIterations": 436,
+        "maximumHashDigestIterations": 983,
+        "opPct": 74.94,
+        "hashPct": 44.35
+      },
+      {
+        "i": 7,
+        "unlocking": 1388,
+        "accepted": true,
+        "error": null,
+        "operationCost": 1027234,
+        "maximumOperationCost": 1143200,
+        "hashDigestIterations": 364,
+        "maximumHashDigestIterations": 714,
+        "opPct": 89.86,
+        "hashPct": 50.98
+      },
+      {
+        "i": 8,
+        "unlocking": 5937,
+        "accepted": true,
+        "error": null,
+        "operationCost": 4502048,
+        "maximumOperationCost": 4782400,
+        "hashDigestIterations": 185,
+        "maximumHashDigestIterations": 2989,
+        "opPct": 94.14,
+        "hashPct": 6.19
+      },
+      {
+        "i": 9,
+        "unlocking": 151,
+        "accepted": true,
+        "error": null,
+        "operationCost": 129091,
+        "maximumOperationCost": 153600,
+        "hashDigestIterations": 13,
+        "maximumHashDigestIterations": 96,
+        "opPct": 84.04,
+        "hashPct": 13.54
+      },
+      {
+        "i": 10,
+        "unlocking": 175,
+        "accepted": true,
+        "error": null,
+        "operationCost": 124449,
+        "maximumOperationCost": 172800,
+        "hashDigestIterations": 4,
+        "maximumHashDigestIterations": 108,
+        "opPct": 72.02,
+        "hashPct": 3.7
+      },
+      {
+        "i": 11,
+        "unlocking": 1681,
+        "accepted": true,
+        "error": null,
+        "operationCost": 235484,
+        "maximumOperationCost": 1377600,
+        "hashDigestIterations": 117,
+        "maximumHashDigestIterations": 861,
+        "opPct": 17.09,
+        "hashPct": 13.59
+      },
+      {
+        "i": 12,
+        "unlocking": 3401,
+        "accepted": true,
+        "error": null,
+        "operationCost": 2466065,
+        "maximumOperationCost": 2753600,
+        "hashDigestIterations": 111,
+        "maximumHashDigestIterations": 1721,
+        "opPct": 89.56,
+        "hashPct": 6.45
+      },
+      {
+        "i": 13,
+        "unlocking": 3403,
+        "accepted": true,
+        "error": null,
+        "operationCost": 2489500,
+        "maximumOperationCost": 2755200,
+        "hashDigestIterations": 111,
+        "maximumHashDigestIterations": 1722,
+        "opPct": 90.36,
+        "hashPct": 6.45
+      },
+      {
+        "i": 14,
+        "unlocking": 3403,
+        "accepted": true,
+        "error": null,
+        "operationCost": 2455814,
+        "maximumOperationCost": 2755200,
+        "hashDigestIterations": 111,
+        "maximumHashDigestIterations": 1722,
+        "opPct": 89.13,
+        "hashPct": 6.45
+      },
+      {
+        "i": 15,
+        "unlocking": 3403,
+        "accepted": true,
+        "error": null,
+        "operationCost": 2484077,
+        "maximumOperationCost": 2755200,
+        "hashDigestIterations": 111,
+        "maximumHashDigestIterations": 1722,
+        "opPct": 90.16,
+        "hashPct": 6.45
+      },
+      {
+        "i": 16,
+        "unlocking": 3403,
+        "accepted": true,
+        "error": null,
+        "operationCost": 2489003,
+        "maximumOperationCost": 2755200,
+        "hashDigestIterations": 111,
+        "maximumHashDigestIterations": 1722,
+        "opPct": 90.34,
+        "hashPct": 6.45
+      },
+      {
+        "i": 17,
+        "unlocking": 3403,
+        "accepted": true,
+        "error": null,
+        "operationCost": 2479161,
+        "maximumOperationCost": 2755200,
+        "hashDigestIterations": 111,
+        "maximumHashDigestIterations": 1722,
+        "opPct": 89.98,
+        "hashPct": 6.45
+      },
+      {
+        "i": 18,
+        "unlocking": 4702,
+        "accepted": true,
+        "error": null,
+        "operationCost": 3358219,
+        "maximumOperationCost": 3794400,
+        "hashDigestIterations": 603,
+        "maximumHashDigestIterations": 2371,
+        "opPct": 88.5,
+        "hashPct": 25.43
+      },
+      {
+        "i": 19,
+        "unlocking": 4702,
+        "accepted": true,
+        "error": null,
+        "operationCost": 3358459,
+        "maximumOperationCost": 3794400,
+        "hashDigestIterations": 603,
+        "maximumHashDigestIterations": 2371,
+        "opPct": 88.51,
+        "hashPct": 25.43
+      },
+      {
+        "i": 20,
+        "unlocking": 4702,
+        "accepted": true,
+        "error": null,
+        "operationCost": 3354961,
+        "maximumOperationCost": 3794400,
+        "hashDigestIterations": 603,
+        "maximumHashDigestIterations": 2371,
+        "opPct": 88.42,
+        "hashPct": 25.43
+      },
+      {
+        "i": 21,
+        "unlocking": 4702,
+        "accepted": true,
+        "error": null,
+        "operationCost": 3359072,
+        "maximumOperationCost": 3794400,
+        "hashDigestIterations": 603,
+        "maximumHashDigestIterations": 2371,
+        "opPct": 88.53,
+        "hashPct": 25.43
+      },
+      {
+        "i": 22,
+        "unlocking": 4702,
+        "accepted": true,
+        "error": null,
+        "operationCost": 3359158,
+        "maximumOperationCost": 3794400,
+        "hashDigestIterations": 603,
+        "maximumHashDigestIterations": 2371,
+        "opPct": 88.53,
+        "hashPct": 25.43
+      },
+      {
+        "i": 23,
+        "unlocking": 4702,
+        "accepted": true,
+        "error": null,
+        "operationCost": 3358260,
+        "maximumOperationCost": 3794400,
+        "hashDigestIterations": 603,
+        "maximumHashDigestIterations": 2371,
+        "opPct": 88.51,
+        "hashPct": 25.43
+      }
+    ]
+  }
+}

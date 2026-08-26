@@ -6,6 +6,8 @@ Rolling GitHub pre-release tag: **`v0.0.1`** (overwritten on each `@ABLalgorithm
 
 ## Latest
 
+Envelopes: **A** occupancy standard tx (FRI10 QM31, may be incomplete) in [`research-lanes/sha-in-occupancy-c`](research-lanes/sha-in-occupancy-c/); **B** completeness at consensus size; **C** B as chained standard hops. Contract: [`workspaces/any-amount/ENVELOPES.md`](workspaces/any-amount/ENVELOPES.md). FRI9 Chipnet txids are not relabeled.
+
 ZKP plugin hook is **off-chain + registry**: default `circle-fri-m31`, second family `hash-lab-v0` (**not private**, **not sound**) on the same statement. On-chain redeem is still Circle fold/C=QZ. Internal hash is a drop-in knob (default SHA-256, BLAKE2s and Poseidon2-M31 alternates). Poseidon2-M31 is prover-side only; Monolith is not shipped. On-chain `OP_SHA256` is the SHA-256 backend of the default knob, not a second tree. On-chain Circle verifier is Merkle+fold+C=QZ (`OP_SHA256`). Openings use \(R_{\mathrm{on}}+Z R_{\mathrm{off}}\) (SHA-256; not a Lean HVZK theorem). Confidential bar is notes+OTP+unlinked fee+hiding net/reserve commits; pool UTXO stays `STATE_BASE` (script cannot Maxwell-hide it). One-set aggregated pool. Latest Chipnet lands: standard `23fd1b7d…` (79525 B, Electrum) and consensus `9362df54…` (283992 B, JSON-RPC). Not better-than-XMR or Zcash. Scoreboard: [`workspaces/any-amount/STATUS.md`](workspaces/any-amount/STATUS.md). Accumulating lands: [`MILESTONE.md`](workspaces/any-amount/MILESTONE.md). Ciphertext vs proof: [`Reference/literature/notes/ciphertext-vs-circle-stark.md`](Reference/literature/notes/ciphertext-vs-circle-stark.md).
 
 ## Start here (CLI navigator)

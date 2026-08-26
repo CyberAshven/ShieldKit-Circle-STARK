@@ -1,0 +1,29 @@
+{
+  "mark": 400000,
+  "txBytes": 363237,
+  "txid": "8007bfad355125b25a0ab638ba0a0dff1834dba4330a0a908a74a4a020822cf8",
+  "inputs": 87,
+  "maxUnlocking": 7147,
+  "friVersion": 9,
+  "queries": 36,
+  "vkId": "circle-fri-m31-t64-b16-q36-g20-fri9",
+  "hash": "sha256",
+  "conjecturalBits": 128,
+  "verifyFri": {
+    "ok": true
+  },
+  "standardAccepted": false,
+  "standardError": "Unable to verify standard transaction: transaction exceeds maximum standard byte length. This transaction is 363237 bytes, but the maximum standard transaction size is 100000 bytes.",
+  "consensusAccepted": true,
+  "consensusError": null,
+  "standardLimit": 100000,
+  "completeness": {
+    "friVersion": 9,
+    "uniqueOrbits": 36,
+    "grind": 20,
+    "sha256": "sha256",
+    "worksheetBits": 128,
+    "dummyPad": false
+  },
+  "unlockingSum": 359249
+}

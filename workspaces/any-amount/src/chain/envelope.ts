@@ -1,10 +1,12 @@
 /**
  * BCH size envelopes. Relay policy ≠ consensus.
- * One tx: standard 100 KB, consensus 1 MB.
- * Chained / anchored txs (standard or not) can go much larger (user: 32 MB).
- * After Velma, **both** script/redeem size **and** input bytecode are 10 KB
- * (the old ~1650-byte input-bytecode box is gone). Chunk the verifier across inputs.
- * Chipnet + a miner can include nonstandard txs. Never mainnet from this lab.
+ * A = occupancy standard (≤ 100 KB Electrum; may be incomplete). FRI10 lives in
+ * research-lanes/sha-in-occupancy-c. This CLI --envelope a is still FRI9 4-slot
+ * until that packing is wired here.
+ * B = completeness, consensus ≤ 1 MB allowed.
+ * C = B chunked; each hop ≤ 100 KB.
+ * After Velma, **both** script/redeem size **and** input bytecode are 10 KB.
+ * Chipnet only. Never mainnet from this lab.
  */
 import { concatBytes } from "../pool/bytes.ts";
 

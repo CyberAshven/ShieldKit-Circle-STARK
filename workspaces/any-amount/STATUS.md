@@ -1,4 +1,10 @@
-# Status (2026-08-21)
+# Status (2026-08-26)
+
+**Envelopes (size is not the identity):** see [`ENVELOPES.md`](ENVELOPES.md).
+**A** = occupancy standard tx (FRI10 QM31, 18-input, 6×6 fused folds; may be incomplete).
+**B** = completeness at consensus size. **C** = B chunked across standard hops.
+Occupancy lane: [`research-lanes/sha-in-occupancy-c`](../../research-lanes/sha-in-occupancy-c/).
+FRI9 Chipnet txids below are not relabeled.
 
 **Pre-release.** Off-chain TypeScript prover/verifier + a 2026 pool lock that
 **binds** the new 128-byte PAA1 NFT and spends **10 FRI-kernel inputs** that

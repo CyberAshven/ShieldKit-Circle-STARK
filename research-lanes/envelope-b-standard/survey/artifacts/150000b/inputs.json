@@ -1,0 +1,113 @@
+{
+  "txBytes": 116476,
+  "inputs": [
+    {
+      "i": 0,
+      "unlocking": 5021
+    },
+    {
+      "i": 1,
+      "unlocking": 7675
+    },
+    {
+      "i": 2,
+      "unlocking": 6400
+    },
+    {
+      "i": 3,
+      "unlocking": 5401
+    },
+    {
+      "i": 4,
+      "unlocking": 5129
+    },
+    {
+      "i": 5,
+      "unlocking": 4823
+    },
+    {
+      "i": 6,
+      "unlocking": 4616
+    },
+    {
+      "i": 7,
+      "unlocking": 4508
+    },
+    {
+      "i": 8,
+      "unlocking": 7147
+    },
+    {
+      "i": 9,
+      "unlocking": 151
+    },
+    {
+      "i": 10,
+      "unlocking": 175
+    },
+    {
+      "i": 11,
+      "unlocking": 1684
+    },
+    {
+      "i": 12,
+      "unlocking": 3790
+    },
+    {
+      "i": 13,
+      "unlocking": 3792
+    },
+    {
+      "i": 14,
+      "unlocking": 3792
+    },
+    {
+      "i": 15,
+      "unlocking": 3792
+    },
+    {
+      "i": 16,
+      "unlocking": 3792
+    },
+    {
+      "i": 17,
+      "unlocking": 3792
+    },
+    {
+      "i": 18,
+      "unlocking": 3792
+    },
+    {
+      "i": 19,
+      "unlocking": 3792
+    },
+    {
+      "i": 20,
+      "unlocking": 3792
+    },
+    {
+      "i": 21,
+      "unlocking": 4702
+    },
+    {
+      "i": 22,
+      "unlocking": 4702
+    },
+    {
+      "i": 23,
+      "unlocking": 4702
+    },
+    {
+      "i": 24,
+      "unlocking": 4702
+    },
+    {
+      "i": 25,
+      "unlocking": 4702
+    },
+    {
+      "i": 26,
+      "unlocking": 4702
+    }
+  ]
+}
