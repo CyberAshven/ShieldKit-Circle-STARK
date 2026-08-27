@@ -12,6 +12,7 @@ Do not default to leftover SHA-LDE. Do not default to 36 extra 576-column hash-A
 
 ## Then, without dropping §2 or §6
 
+- Amount hiding: live tag is SHA `amountCommit` (computational hiding, hash binding). Do not glue Pedersen beside it. Next hash-native elevation is statistically hiding CRHF commits + same Circle FRI — new vk. Full handoff: [`AMOUNT-HIDING.md`](AMOUNT-HIDING.md).
 - RULES §7 walk-in later.
 - RULES §1 stays gating.
 
