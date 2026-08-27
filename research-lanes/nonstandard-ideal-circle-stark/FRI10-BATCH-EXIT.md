@@ -289,8 +289,8 @@ root is rejected. FRI9 single-note chaining is asserted unchanged in the same fi
 
 **Still open:** `landC(..., batchNotes)` (option A' tape hops) is not the Chipnet
 path. Occupancy B 3-note silent batch is on Chipnet: successor
-[`58030256…`](https://bchexplorer.cash/chipnet/tx/58030256a1d3b5c817da50044f8a3fa4a8c42aea4642bc8a274356d4b47decf8)
-/ 144273 B (JSON-RPC). The FRI10 switchover — bumping the version and moving all
+[`a1c406aa…`](https://bchexplorer.cash/chipnet/tx/a1c406aa95f7a4beddfcb9a7672331be68ec5ea27482d3ce1acd0ecbcd8c9d47)
+/ 143204 B (JSON-RPC). The FRI10 switchover — bumping the version and moving all
 envelopes onto the batch family — remains an audit call.
 
 ## Option B, done as a NEW kernel (2026-08-22)

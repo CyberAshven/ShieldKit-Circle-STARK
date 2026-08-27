@@ -8,10 +8,10 @@ Chipnet only. Never mainnet. Unlocking/redeem ≤ 10 KB.
 
 | Envelope | What | Size class | Land (2026-08-27) |
 | --- | --- | ---: | --- |
-| **A** | 36 unique-orbit fused folds, standard Electrum. Omits B booleanity + note-auth. | ≤ 100000 B (~98 KB) | [ab367c76…](https://bchexplorer.cash/chipnet/tx/ab367c767fc2e7b7f97c9f9bb0dc957edc81800c53b3db4bbc5eff4f74fcd973) 98112 B |
+| **A** | 36 unique-orbit fused folds, standard Electrum. Omits B booleanity + note-auth. Miner-run fused leftover. | ≤ 100000 B (~98 KB) | [18bc53d6…](https://bchexplorer.cash/chipnet/tx/18bc53d6c9899673b6d62cd1cc83032c41405136a18d1de7cda2074262c95909) 97736 B |
 | **B** | Occupancy completeness: 36q + 3 booleanity kernels + note-auth. JSON-RPC (not Electrum). Miner-run fused leftover. | ≤ 1000000 B (**~147 KB**) | [6b75a37d…](https://bchexplorer.cash/chipnet/tx/6b75a37d46fa3aeff7a20702f56b88e3e646fb6814fa124bc44556fc89fe3a9f) **147097 B** |
 | **C** | Same completeness as B, 19 standard hops, counted-tip + cqz nfRoot/instance bind. | each hop (20000, 100000] | pay [8b7bdbad…](https://bchexplorer.cash/chipnet/tx/8b7bdbadc45bc3ca40cfcce4b909f250df9960c532da38aace7655542c527570) 92326 B |
-| **B** N=3 | Silent step kernels (leaf/nf/amountCommit). Compact CAT+SHA pin. JSON-RPC. | **~141 KB** | [58030256…](https://bchexplorer.cash/chipnet/tx/58030256a1d3b5c817da50044f8a3fa4a8c42aea4642bc8a274356d4b47decf8) 144273 B |
+| **B** N=3 | Silent step kernels (leaf/nf/amountCommit). Compact CAT+SHA pin. JSON-RPC. Leftover-bind. | **~140 KB** | [a1c406aa…](https://bchexplorer.cash/chipnet/tx/a1c406aa95f7a4beddfcb9a7672331be68ec5ea27482d3ce1acd0ecbcd8c9d47) 143204 B |
 
 FRI9 2026-08-21 (`614b7077…` / `81bb2cef…` 498398 B / `06a6078a…`) is a **different** vk. Do not relabel.
 
@@ -50,4 +50,4 @@ npx tsx --test --test-timeout 180000 --test-name-pattern "3-note batch verifies"
 npx tsx --test test/onchain-privacy.test.ts test/note-auth-step-kernel.test.ts
 ```
 
-Explorer: Melroy `https://bchexplorer.cash/chipnet/tx/<txid>` and Paytaca `https://chipnet.bchexplorer.info/tx/<txid>`. B > 100 KB will 404 on public Electrum until the lab miner includes it.
+Explorer: BCH explorer `https://bchexplorer.cash/chipnet/tx/<txid>` and Paytaca `https://chipnet.bchexplorer.info/tx/<txid>`. B > 100 KB will 404 on public Electrum until the lab miner includes it.
