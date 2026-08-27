@@ -129,7 +129,7 @@ Pedersen amount tag + FRI argument: perfect hiding of `C` **only if** no `v`-dep
 | `test/envelope-batch.test.ts` | N≥2, unlocking omits rho/owner/amount8 |
 | `test/chained-vm.test.ts` | Packed nfRoot bind |
 
-Parent notebook (no GitHub remote): `Reference/prior-art/voidify.md`, `Reference/prior-art/any-amount-profile.md`, `Reference/literature/notes/zkp-agnostic-architecture.md`, `Reference/prior-art/bcr-privacy-threads.md`.
+This file is self-contained. Extra voidify / any-amount notes may exist beside this clone; they are not required to continue.
 
 ---
 
